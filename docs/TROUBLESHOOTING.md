@@ -22,3 +22,19 @@
 - Viele Geräte nutzen HTTP Digest. Wenn Digest scheitert, teste im Browser/Onvif Device Manager, ob Credentials korrekt sind.
 - Manche Geräte erwarten zusätzliche SOAP-Header oder andere Endpoints.
 
+## Dev-Server Fehler: "Cannot find module './###.js'"
+
+Das ist meist ein korrupter Next.js Cache unter `.next/` (z. B. nach abgebrochenen Builds oder Hot-Reload).
+
+Fix:
+
+```bash
+rm -rf .next
+npm run dev
+```
+
+oder:
+
+```bash
+npm run dev:clean
+```

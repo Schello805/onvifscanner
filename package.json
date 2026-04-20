@@ -6,6 +6,8 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "Your Name <you@example.com>",
   "scripts": {
+    "clean": "rm -rf .next",
+    "dev:clean": "npm run clean && next dev",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
