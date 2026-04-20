@@ -1,6 +1,7 @@
 import type { OnvifResult, OnvifUri } from "@/lib/types";
 import { extractText } from "@/lib/util/xml";
 import { onvifSoapCall } from "@/lib/onvif/soap";
+import { sanitizeUrlString } from "@/lib/util/url";
 
 export async function probeOnvifFromXaddr(args: {
   ip: string;
@@ -232,15 +233,15 @@ function extractProfiles(xml: string): Array<{ token?: string; name?: string }> 
 
 function normalizeUriHost(uri: string, ip: string): string {
   try {
-    const u = new URL(uri);
+    const u = new URL(sanitizeUrlString(uri));
     const host = u.hostname;
     // Many devices return 0.0.0.0 / localhost / private placeholder.
     if (!host || host === "0.0.0.0" || host === "127.0.0.1" || host === "localhost") {
       u.hostname = ip;
       return u.toString();
     }
-    return uri;
+    return u.toString();
   } catch {
-    return uri;
+    return sanitizeUrlString(uri);
   }
 }

@@ -118,12 +118,16 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     await mapLimit(candidates, 4, async (r) => {
       const url = r.onvif?.snapshotUris?.[0]?.uri;
       if (!url || !r.onvif) return;
-      const dataUrl = await fetchThumbnailDataUrl({
-        url,
-        timeoutMs: Math.min(1500, req.timeoutMs),
-        credentials: req.credentials
-      });
-      if (dataUrl) r.onvif.thumbnailDataUrl = dataUrl;
+      try {
+        const dataUrl = await fetchThumbnailDataUrl({
+          url,
+          timeoutMs: Math.min(1500, req.timeoutMs),
+          credentials: req.credentials
+        });
+        if (dataUrl) r.onvif.thumbnailDataUrl = dataUrl;
+      } catch {
+        // Never fail the whole scan because a preview URL is malformed or blocked.
+      }
     });
   }
 

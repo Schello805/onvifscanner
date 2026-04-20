@@ -1,4 +1,5 @@
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
+import { sanitizeUrlString } from "@/lib/util/url";
 
 export async function fetchThumbnailDataUrl(args: {
   url: string;
@@ -8,16 +9,21 @@ export async function fetchThumbnailDataUrl(args: {
   // Avoid huge payloads in API responses.
   const maxBytes = 900_000;
 
-  const res = await fetchWithDigestAuth({
-    url: args.url,
-    method: "GET",
-    timeoutMs: args.timeoutMs,
-    credentials: args.credentials,
-    headers: {
-      accept: "image/*",
-      "user-agent": "ONVIFscanner/0.1"
-    }
-  });
+  let res: Response;
+  try {
+    res = await fetchWithDigestAuth({
+      url: sanitizeUrlString(args.url),
+      method: "GET",
+      timeoutMs: args.timeoutMs,
+      credentials: args.credentials,
+      headers: {
+        accept: "image/*",
+        "user-agent": "ONVIFscanner/0.1"
+      }
+    });
+  } catch {
+    return undefined;
+  }
   if (!res.ok) return undefined;
 
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
