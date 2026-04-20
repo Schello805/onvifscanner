@@ -39,4 +39,4 @@ oder:
 npm run dev:clean
 ```
 
-Ab v0.2.3 wird bei `npm run dev` automatisch vorab `.next` gelöscht (`predev`), damit dieser Fehler nicht dauernd wiederkommt.
+Ab v0.2.5 nutzt `npm run dev` einen **separaten** Build-Ordner (`.next-dev`), damit sich `next build` (Produktion) und `next dev` nicht gegenseitig kaputt machen.
