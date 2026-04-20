@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="${APP_DIR:-/opt/onvifscanner}"
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-3000}"
+
+cd "$APP_DIR"
+
+exec /usr/bin/node node_modules/next/dist/bin/next start -H "$HOST" -p "$PORT"
+
