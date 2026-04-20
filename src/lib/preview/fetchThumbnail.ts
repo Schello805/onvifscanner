@@ -6,7 +6,7 @@ export async function fetchThumbnailDataUrl(args: {
   credentials?: { username: string; password: string };
 }): Promise<string | undefined> {
   // Avoid huge payloads in API responses.
-  const maxBytes = 220_000;
+  const maxBytes = 900_000;
 
   const res = await fetchWithDigestAuth({
     url: args.url,
@@ -23,10 +23,14 @@ export async function fetchThumbnailDataUrl(args: {
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
   if (!contentType.startsWith("image/")) return undefined;
 
+  const contentLength = Number(res.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 0 && contentLength > maxBytes) {
+    return undefined;
+  }
+
   const ab = await res.arrayBuffer();
   if (ab.byteLength <= 0 || ab.byteLength > maxBytes) return undefined;
 
   const b64 = Buffer.from(ab).toString("base64");
   return `data:${contentType.split(";")[0]};base64,${b64}`;
 }
-

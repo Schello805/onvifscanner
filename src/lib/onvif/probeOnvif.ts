@@ -1,4 +1,4 @@
-import type { OnvifResult } from "@/lib/types";
+import type { OnvifResult, OnvifUri } from "@/lib/types";
 import { extractText } from "@/lib/util/xml";
 import { onvifSoapCall } from "@/lib/onvif/soap";
 
@@ -45,8 +45,8 @@ export async function probeOnvifFromXaddr(args: {
     });
 
     const mediaServiceUrl = caps.ok ? extractXAddrAttribute(caps.text, "Media") : undefined;
-    const rtspUris: string[] = [];
-    const snapshotUris: string[] = [];
+    const rtspUris: OnvifUri[] = [];
+    const snapshotUris: OnvifUri[] = [];
 
     if (mediaServiceUrl) {
       const profiles = await onvifSoapCall({
@@ -57,8 +57,12 @@ export async function probeOnvifFromXaddr(args: {
         body: `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
       });
 
-      const profileToken = profiles.ok ? extractFirstAttribute(profiles.text, "Profiles", "token") : undefined;
-      if (profileToken) {
+      const profileCandidates = profiles.ok ? extractProfiles(profiles.text) : [];
+      const profileList = profileCandidates.slice(0, 6);
+
+      for (const profile of profileList) {
+        if (!profile.token) continue;
+
         const stream = await onvifSoapCall({
           url: mediaServiceUrl,
           action: "http://www.onvif.org/ver10/media/wsdl/GetStreamUri",
@@ -71,11 +75,17 @@ export async function probeOnvifFromXaddr(args: {
       <tt:Protocol>RTSP</tt:Protocol>
     </tt:Transport>
   </trt:StreamSetup>
-  <trt:ProfileToken>${escapeXml(profileToken)}</trt:ProfileToken>
+  <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetStreamUri>`
         });
         const rtsp = stream.ok ? extractText(stream.text, "Uri") : undefined;
-        if (rtsp) rtspUris.push(rtsp);
+        if (rtsp) {
+          rtspUris.push({
+            profileToken: profile.token,
+            profileName: profile.name,
+            uri: rtsp
+          });
+        }
 
         const snap = await onvifSoapCall({
           url: mediaServiceUrl,
@@ -83,11 +93,17 @@ export async function probeOnvifFromXaddr(args: {
           timeoutMs: args.timeoutMs,
           credentials: args.credentials,
           body: `<trt:GetSnapshotUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
-  <trt:ProfileToken>${escapeXml(profileToken)}</trt:ProfileToken>
+  <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetSnapshotUri>`
         });
         const snapUri = snap.ok ? extractText(snap.text, "Uri") : undefined;
-        if (snapUri) snapshotUris.push(snapUri);
+        if (snapUri) {
+          snapshotUris.push({
+            profileToken: profile.token,
+            profileName: profile.name,
+            uri: snapUri
+          });
+        }
       }
     }
 
@@ -153,4 +169,26 @@ function escapeXml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function extractProfiles(xml: string): Array<{ token?: string; name?: string }> {
+  // Very small XML parser: we only need token + optional Name for <Profiles ... token="..."> ... <Name>..</Name>
+  const out: Array<{ token?: string; name?: string }> = [];
+  const re = /<(?:[A-Za-z0-9_]+:)?Profiles\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z0-9_]+:)?Profiles>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml))) {
+    const attrs = m[1] ?? "";
+    const inner = m[2] ?? "";
+    const token = /(?:\s|^)token="([^"]+)"/i.exec(attrs)?.[1]?.trim();
+    const name = extractText(inner, "Name");
+    out.push({ token, name });
+  }
+  // De-dup by token
+  const seen = new Set<string>();
+  return out.filter((p) => {
+    if (!p.token) return false;
+    if (seen.has(p.token)) return false;
+    seen.add(p.token);
+    return true;
+  });
 }

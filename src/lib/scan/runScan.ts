@@ -76,11 +76,11 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
   if (thumbnailsEnabled) {
     const maxThumbs = Number(process.env.THUMBNAILS_MAX ?? "12");
     const candidates = results
-      .filter((r) => r.onvif?.ok && r.onvif.snapshotUris?.[0])
+      .filter((r) => r.onvif?.ok && r.onvif.snapshotUris?.[0]?.uri)
       .slice(0, Math.max(0, maxThumbs));
 
     await mapLimit(candidates, 4, async (r) => {
-      const url = r.onvif?.snapshotUris?.[0];
+      const url = r.onvif?.snapshotUris?.[0]?.uri;
       if (!url || !r.onvif) return;
       const dataUrl = await fetchThumbnailDataUrl({
         url,

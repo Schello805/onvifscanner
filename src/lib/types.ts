@@ -5,6 +5,12 @@ export type Credentials = {
   password: string;
 };
 
+export type OnvifUri = {
+  profileToken?: string;
+  profileName?: string;
+  uri: string;
+};
+
 export type ScanRequest = {
   preset: ScanTargetPreset;
   cidr?: string;
@@ -20,8 +26,8 @@ export type OnvifResult = {
   xaddrs?: string[];
   deviceServiceUrl?: string;
   mediaServiceUrl?: string;
-  rtspUris?: string[];
-  snapshotUris?: string[];
+  rtspUris?: OnvifUri[];
+  snapshotUris?: OnvifUri[];
   thumbnailDataUrl?: string;
   deviceInformation?: {
     manufacturer?: string;

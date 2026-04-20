@@ -71,6 +71,45 @@ export default function HomePage() {
     }
   }
 
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+  }
+
+  function UrlRow(props: { label: string; url: string }) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="w-28 shrink-0 text-xs text-slate-400">{props.label}</div>
+        <a
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-indigo-300 hover:text-indigo-200"
+          href={props.url}
+          target="_blank"
+          rel="noreferrer"
+          title={props.url}
+        >
+          {props.url}
+        </a>
+        <button
+          className="rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 hover:bg-slate-900"
+          onClick={() => copy(props.url)}
+          type="button"
+        >
+          Kopieren
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
@@ -247,7 +286,7 @@ export default function HomePage() {
               </thead>
               <tbody>
                 {data.results.map((r) => (
-                  <tr key={r.ip} className="border-b border-slate-800/60">
+                  <tr key={r.ip} className="border-b border-slate-800/60 align-top">
                     <td className="py-3 pr-4">
                       {r.onvif?.thumbnailDataUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -257,7 +296,9 @@ export default function HomePage() {
                           className="h-12 w-20 rounded-md border border-slate-800 object-cover"
                         />
                       ) : (
-                        <div className="h-12 w-20 rounded-md border border-slate-800/70 bg-slate-950/40" />
+                        <div className="flex h-12 w-20 items-center justify-center rounded-md border border-slate-800/70 bg-slate-950/40 text-[10px] text-slate-500">
+                          No preview
+                        </div>
                       )}
                     </td>
                     <td className="py-3 pr-4 font-mono text-xs">{r.ip}</td>
@@ -278,21 +319,39 @@ export default function HomePage() {
                                 .join(" · ")}
                             </span>
                           ) : null}
-                          {r.onvif.xaddrs?.[0] ? (
-                            <a
-                              className="text-xs text-indigo-300 hover:text-indigo-200"
-                              href={r.onvif.xaddrs[0]}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Endpoint öffnen
-                            </a>
-                          ) : null}
-                          {r.onvif.rtspUris?.[0] ? (
-                            <span className="font-mono text-[11px] text-slate-300">
-                              {r.onvif.rtspUris[0]}
-                            </span>
-                          ) : null}
+                          <details className="mt-1 rounded-lg border border-slate-800/70 bg-slate-950/30 p-3">
+                            <summary className="cursor-pointer select-none text-xs text-slate-200">
+                              Gefundene URLs anzeigen
+                            </summary>
+                            <div className="mt-3 flex flex-col gap-2">
+                              {r.onvif.deviceServiceUrl ? (
+                                <UrlRow
+                                  label="Device Service"
+                                  url={r.onvif.deviceServiceUrl}
+                                />
+                              ) : null}
+                              {r.onvif.mediaServiceUrl ? (
+                                <UrlRow label="Media Service" url={r.onvif.mediaServiceUrl} />
+                              ) : null}
+                              {r.onvif.xaddrs?.map((u, idx) => (
+                                <UrlRow key={u} label={`XAddr ${idx + 1}`} url={u} />
+                              ))}
+                              {r.onvif.rtspUris?.map((u, idx) => (
+                                <UrlRow
+                                  key={`${u.uri}-${idx}`}
+                                  label={u.profileName ? `RTSP (${u.profileName})` : `RTSP ${idx + 1}`}
+                                  url={u.uri}
+                                />
+                              ))}
+                              {r.onvif.snapshotUris?.map((u, idx) => (
+                                <UrlRow
+                                  key={`${u.uri}-${idx}`}
+                                  label={u.profileName ? `Snapshot (${u.profileName})` : `Snapshot ${idx + 1}`}
+                                  url={u.uri}
+                                />
+                              ))}
+                            </div>
+                          </details>
                         </div>
                       ) : r.onvif ? (
                         <span className="text-slate-400">
