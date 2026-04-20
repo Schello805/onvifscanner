@@ -26,6 +26,7 @@ export type OnvifResult = {
   xaddrs?: string[];
   deviceServiceUrl?: string;
   mediaServiceUrl?: string;
+  mediaServiceUrl2?: string;
   rtspUris?: OnvifUri[];
   snapshotUris?: OnvifUri[];
   thumbnailDataUrl?: string;
@@ -44,6 +45,7 @@ export type RtspResult = {
   port: number;
   uriTried?: string;
   uris?: string[];
+  candidates?: string[];
   authTried?: "none" | "basic" | "digest";
   statusLine?: string;
   error?: string;

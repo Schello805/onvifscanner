@@ -10,98 +10,19 @@ export async function probeRtsp(args: {
   uri?: string;
 }): Promise<RtspResult> {
   const uri = args.uri ?? `rtsp://${args.ip}:${args.port}/`;
-  const method = "OPTIONS";
+  const preferredMethod = "DESCRIBE";
 
   try {
-    const res1 = await rtspRequest({
+    const res1 = await rtspRequestWithFallback({
       ip: args.ip,
       port: args.port,
       timeoutMs: args.timeoutMs,
-      request: buildRtspRequest({
-        method,
-        uri,
-        headers: {}
-      })
+      uri,
+      method: preferredMethod,
+      credentials: args.credentials
     });
 
-    if (res1.statusCode && res1.statusCode >= 200 && res1.statusCode < 400) {
-      return {
-        ok: true,
-        port: args.port,
-        uriTried: uri,
-        authTried: "none",
-        statusLine: res1.statusLine
-      };
-    }
-
-    if (res1.statusCode === 401 && args.credentials) {
-      const www = res1.headers["www-authenticate"];
-      if (www) {
-        const digest = parseDigestChallenge(www);
-        if (digest) {
-          const authorization = buildDigestAuthorizationHeader({
-            challenge: digest,
-            method,
-            uri,
-            username: args.credentials.username,
-            password: args.credentials.password
-          });
-          const res2 = await rtspRequest({
-            ip: args.ip,
-            port: args.port,
-            timeoutMs: args.timeoutMs,
-            request: buildRtspRequest({
-              method,
-              uri,
-              headers: { authorization }
-            })
-          });
-          const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
-          return {
-            ok,
-            port: args.port,
-            uriTried: uri,
-            authTried: "digest",
-            statusLine: res2.statusLine,
-            error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
-          };
-        }
-
-        if (www.toLowerCase().includes("basic")) {
-          const basic = Buffer.from(
-            `${args.credentials.username}:${args.credentials.password}`,
-            "utf8"
-          ).toString("base64");
-          const res2 = await rtspRequest({
-            ip: args.ip,
-            port: args.port,
-            timeoutMs: args.timeoutMs,
-            request: buildRtspRequest({
-              method,
-              uri,
-              headers: { authorization: `Basic ${basic}` }
-            })
-          });
-          const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
-          return {
-            ok,
-            port: args.port,
-            uriTried: uri,
-            authTried: "basic",
-            statusLine: res2.statusLine,
-            error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
-          };
-        }
-      }
-    }
-
-    return {
-      ok: false,
-      port: args.port,
-      uriTried: uri,
-      statusLine: res1.statusLine,
-      error: res1.statusCode ? `RTSP ${res1.statusCode}` : "Keine Antwort"
-    };
+    return res1;
   } catch (e) {
     return {
       ok: false,
@@ -122,6 +43,9 @@ function buildRtspRequest(args: {
   lines.push(`${args.method} ${args.uri} RTSP/1.0`);
   lines.push(`CSeq: ${cseq}`);
   lines.push(`User-Agent: ONVIFscanner/0.1`);
+  if (args.method === "DESCRIBE") {
+    lines.push("Accept: application/sdp");
+  }
   for (const [k, v] of Object.entries(args.headers)) {
     lines.push(`${capitalizeHeader(k)}: ${v}`);
   }
@@ -150,6 +74,112 @@ async function rtspRequest(args: {
 }): Promise<RtspParsedResponse> {
   const raw = await rtspRoundTrip(args);
   return parseRtspResponse(raw);
+}
+
+async function rtspRequestWithFallback(args: {
+  ip: string;
+  port: number;
+  timeoutMs: number;
+  uri: string;
+  method: "DESCRIBE" | "OPTIONS";
+  credentials?: { username: string; password: string };
+}): Promise<RtspResult> {
+  const method = args.method;
+
+  const res1 = await rtspRequest({
+    ip: args.ip,
+    port: args.port,
+    timeoutMs: args.timeoutMs,
+    request: buildRtspRequest({
+      method,
+      uri: args.uri,
+      headers: {}
+    })
+  });
+
+  // Some servers don't support DESCRIBE on root; try OPTIONS as a fallback signal.
+  if ((res1.statusCode === 405 || res1.statusCode === 404) && method === "DESCRIBE") {
+    return rtspRequestWithFallback({ ...args, method: "OPTIONS" });
+  }
+
+  if (res1.statusCode && res1.statusCode >= 200 && res1.statusCode < 400) {
+    return {
+      ok: true,
+      port: args.port,
+      uriTried: args.uri,
+      authTried: "none",
+      statusLine: res1.statusLine
+    };
+  }
+
+  if (res1.statusCode === 401 && args.credentials) {
+    const www = res1.headers["www-authenticate"];
+    if (www) {
+      const digest = parseDigestChallenge(www);
+      if (digest) {
+        const authorization = buildDigestAuthorizationHeader({
+          challenge: digest,
+          method,
+          uri: args.uri,
+          username: args.credentials.username,
+          password: args.credentials.password
+        });
+        const res2 = await rtspRequest({
+          ip: args.ip,
+          port: args.port,
+          timeoutMs: args.timeoutMs,
+          request: buildRtspRequest({
+            method,
+            uri: args.uri,
+            headers: { authorization }
+          })
+        });
+        const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
+        return {
+          ok,
+          port: args.port,
+          uriTried: args.uri,
+          authTried: "digest",
+          statusLine: res2.statusLine,
+          error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
+        };
+      }
+
+      if (www.toLowerCase().includes("basic")) {
+        const basic = Buffer.from(
+          `${args.credentials.username}:${args.credentials.password}`,
+          "utf8"
+        ).toString("base64");
+        const res2 = await rtspRequest({
+          ip: args.ip,
+          port: args.port,
+          timeoutMs: args.timeoutMs,
+          request: buildRtspRequest({
+            method,
+            uri: args.uri,
+            headers: { authorization: `Basic ${basic}` }
+          })
+        });
+        const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
+        return {
+          ok,
+          port: args.port,
+          uriTried: args.uri,
+          authTried: "basic",
+          statusLine: res2.statusLine,
+          error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
+        };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    port: args.port,
+    uriTried: args.uri,
+    statusLine: res1.statusLine,
+    error: res1.statusCode ? `RTSP ${res1.statusCode}` : "Keine Antwort"
+  };
 }
 
 function rtspRoundTrip(args: {

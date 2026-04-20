@@ -333,6 +333,9 @@ export default function HomePage() {
                               {r.onvif.mediaServiceUrl ? (
                                 <UrlRow label="Media Service" url={r.onvif.mediaServiceUrl} />
                               ) : null}
+                              {r.onvif.mediaServiceUrl2 ? (
+                                <UrlRow label="Media2 Service" url={r.onvif.mediaServiceUrl2} />
+                              ) : null}
                               {r.onvif.xaddrs?.map((u, idx) => (
                                 <UrlRow key={u} label={`XAddr ${idx + 1}`} url={u} />
                               ))}
@@ -384,7 +387,19 @@ export default function HomePage() {
                                 {r.rtsp.uris.map((u, idx) => (
                                   <UrlRow
                                     key={`${u}-${idx}`}
-                                    label={idx === 0 ? "RTSP" : `RTSP ${idx + 1}`}
+                                    label={idx === 0 ? "RTSP (ONVIF)" : `RTSP (ONVIF) ${idx + 1}`}
+                                    url={u}
+                                  />
+                                ))}
+                                {r.rtsp.candidates?.length ? (
+                                  <div className="mt-2 text-[11px] text-slate-400">
+                                    Vermutete Pfade (nicht garantiert):
+                                  </div>
+                                ) : null}
+                                {r.rtsp.candidates?.map((u, idx) => (
+                                  <UrlRow
+                                    key={`${u}-c-${idx}`}
+                                    label={idx === 0 ? "Kandidat" : `Kandidat ${idx + 1}`}
                                     url={u}
                                   />
                                 ))}
@@ -409,7 +424,19 @@ export default function HomePage() {
                                 {r.rtsp.uris.map((u, idx) => (
                                   <UrlRow
                                     key={`${u}-${idx}`}
-                                    label={idx === 0 ? "RTSP" : `RTSP ${idx + 1}`}
+                                    label={idx === 0 ? "RTSP (ONVIF)" : `RTSP (ONVIF) ${idx + 1}`}
+                                    url={u}
+                                  />
+                                ))}
+                                {r.rtsp.candidates?.length ? (
+                                  <div className="mt-2 text-[11px] text-slate-400">
+                                    Vermutete Pfade (nicht garantiert):
+                                  </div>
+                                ) : null}
+                                {r.rtsp.candidates?.map((u, idx) => (
+                                  <UrlRow
+                                    key={`${u}-c-${idx}`}
+                                    label={idx === 0 ? "Kandidat" : `Kandidat ${idx + 1}`}
                                     url={u}
                                   />
                                 ))}

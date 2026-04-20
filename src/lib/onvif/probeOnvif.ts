@@ -45,16 +45,25 @@ export async function probeOnvifFromXaddr(args: {
     });
 
     const mediaServiceUrl = caps.ok ? extractXAddrAttribute(caps.text, "Media") : undefined;
+    const media2ServiceUrl = caps.ok ? extractXAddrAttribute(caps.text, "Media2") : undefined;
     const rtspUris: OnvifUri[] = [];
     const snapshotUris: OnvifUri[] = [];
 
-    if (mediaServiceUrl) {
+    // Prefer Media2 if available (newer devices), fallback to Media (ver10).
+    const mediaUrlToUse = media2ServiceUrl ?? mediaServiceUrl;
+    const isMedia2 = mediaUrlToUse === media2ServiceUrl;
+
+    if (mediaUrlToUse) {
       const profiles = await onvifSoapCall({
-        url: mediaServiceUrl,
-        action: "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
+        url: mediaUrlToUse,
+        action: isMedia2
+          ? "http://www.onvif.org/ver20/media/wsdl/GetProfiles"
+          : "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
         timeoutMs: args.timeoutMs,
         credentials: args.credentials,
-        body: `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
+        body: isMedia2
+          ? `<tr2:GetProfiles xmlns:tr2="http://www.onvif.org/ver20/media/wsdl" />`
+          : `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
       });
 
       const profileCandidates = profiles.ok ? extractProfiles(profiles.text) : [];
@@ -64,11 +73,18 @@ export async function probeOnvifFromXaddr(args: {
         if (!profile.token) continue;
 
         const stream = await onvifSoapCall({
-          url: mediaServiceUrl,
-          action: "http://www.onvif.org/ver10/media/wsdl/GetStreamUri",
+          url: mediaUrlToUse,
+          action: isMedia2
+            ? "http://www.onvif.org/ver20/media/wsdl/GetStreamUri"
+            : "http://www.onvif.org/ver10/media/wsdl/GetStreamUri",
           timeoutMs: args.timeoutMs,
           credentials: args.credentials,
-          body: `<trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+          body: isMedia2
+            ? `<tr2:GetStreamUri xmlns:tr2="http://www.onvif.org/ver20/media/wsdl">
+  <tr2:Protocol>RTSP</tr2:Protocol>
+  <tr2:ProfileToken>${escapeXml(profile.token)}</tr2:ProfileToken>
+</tr2:GetStreamUri>`
+            : `<trt:GetStreamUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
   <trt:StreamSetup>
     <tt:Stream xmlns:tt="http://www.onvif.org/ver10/schema">RTP-Unicast</tt:Stream>
     <tt:Transport xmlns:tt="http://www.onvif.org/ver10/schema">
@@ -83,16 +99,22 @@ export async function probeOnvifFromXaddr(args: {
           rtspUris.push({
             profileToken: profile.token,
             profileName: profile.name,
-            uri: rtsp
+            uri: normalizeUriHost(rtsp, args.ip)
           });
         }
 
         const snap = await onvifSoapCall({
-          url: mediaServiceUrl,
-          action: "http://www.onvif.org/ver10/media/wsdl/GetSnapshotUri",
+          url: mediaUrlToUse,
+          action: isMedia2
+            ? "http://www.onvif.org/ver20/media/wsdl/GetSnapshotUri"
+            : "http://www.onvif.org/ver10/media/wsdl/GetSnapshotUri",
           timeoutMs: args.timeoutMs,
           credentials: args.credentials,
-          body: `<trt:GetSnapshotUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+          body: isMedia2
+            ? `<tr2:GetSnapshotUri xmlns:tr2="http://www.onvif.org/ver20/media/wsdl">
+  <tr2:ProfileToken>${escapeXml(profile.token)}</tr2:ProfileToken>
+</tr2:GetSnapshotUri>`
+            : `<trt:GetSnapshotUri xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
   <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetSnapshotUri>`
         });
@@ -101,7 +123,7 @@ export async function probeOnvifFromXaddr(args: {
           snapshotUris.push({
             profileToken: profile.token,
             profileName: profile.name,
-            uri: snapUri
+            uri: normalizeUriHost(snapUri, args.ip)
           });
         }
       }
@@ -111,7 +133,8 @@ export async function probeOnvifFromXaddr(args: {
       ok: true,
       xaddrs: args.xaddrs,
       deviceServiceUrl,
-      mediaServiceUrl,
+      mediaServiceUrl: mediaServiceUrl ?? undefined,
+      mediaServiceUrl2: media2ServiceUrl ?? undefined,
       rtspUris: rtspUris.length ? rtspUris : undefined,
       snapshotUris: snapshotUris.length ? snapshotUris : undefined,
       deviceInformation: {
@@ -191,4 +214,19 @@ function extractProfiles(xml: string): Array<{ token?: string; name?: string }> 
     seen.add(p.token);
     return true;
   });
+}
+
+function normalizeUriHost(uri: string, ip: string): string {
+  try {
+    const u = new URL(uri);
+    const host = u.hostname;
+    // Many devices return 0.0.0.0 / localhost / private placeholder.
+    if (!host || host === "0.0.0.0" || host === "127.0.0.1" || host === "localhost") {
+      u.hostname = ip;
+      return u.toString();
+    }
+    return uri;
+  } catch {
+    return uri;
+  }
 }

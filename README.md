@@ -14,6 +14,16 @@ Local-first Web-App zum Finden von ONVIF- und RTSP-Kameras im eigenen Netzwerk (
 - **Preview (optional)**: ONVIF Snapshot-URI wird abgefragt und als Thumbnail angezeigt (wenn Kamera das unterstützt).
 - **Sicherheits-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 
+## Woher kommen die Streaming-URLs?
+
+Zuverlässige RTSP-Streaming-URLs kommen **nicht** aus dem ONVIF Device-Service-Endpunkt (`/onvif/device_service`), sondern aus dem ONVIF **Media** bzw. **Media2** Service:
+
+- `GetProfiles` → liefert Profile (oft Main/Sub)
+- `GetStreamUri` → liefert die RTSP-URL pro Profil
+- `GetSnapshotUri` → liefert Snapshot-URL pro Profil
+
+In der UI sind RTSP-URLs deshalb als **RTSP (ONVIF)** markiert. Zusätzlich zeigt die App (optional) **Kandidaten** (typische Vendor-Pfade) als “Vermutung”, weil manche Geräte proprietäre Pfade nutzen.
+
 ## Quickstart
 
 Voraussetzungen: Node.js 20+

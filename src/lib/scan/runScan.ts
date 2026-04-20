@@ -40,9 +40,8 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
           credentials: req.credentials,
           uri: rtspUri
         });
-        rtsp.uris = Array.from(
-          new Set([...(rtsp.uris ?? []), rtspUri, ...buildRtspCandidates({ ip: r.ip, port })])
-        );
+        rtsp.uris = Array.from(new Set([...(rtsp.uris ?? []), rtspUri]));
+        rtsp.candidates = buildRtspCandidates({ ip: r.ip, port });
         r.rtsp = rtsp;
       } catch {
         // ignore invalid URL parsing
@@ -70,7 +69,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
           timeoutMs: req.timeoutMs,
           credentials: req.credentials
         });
-        rtsp.uris = buildRtspCandidates({ ip, port: rtspPort });
+        rtsp.candidates = buildRtspCandidates({ ip, port: rtspPort });
         result.rtsp = rtsp;
       }
 
