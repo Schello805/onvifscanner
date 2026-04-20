@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import pkg from "../../package.json";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
@@ -14,7 +15,9 @@ function Footer() {
     <footer className="border-t border-slate-800/70 py-10 text-sm text-slate-300">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
-          <div className="font-medium text-slate-200">ONVIFscanner</div>
+          <div className="font-medium text-slate-200">
+            ONVIFscanner <span className="text-slate-400">v{pkg.version}</span>
+          </div>
           <div className="text-slate-400">
             Local-first Scan von ONVIF/RTSP im autorisierten Netzwerk.
           </div>
