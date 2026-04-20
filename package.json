@@ -8,6 +8,7 @@
   "scripts": {
     "clean": "rm -rf .next",
     "dev:clean": "npm run clean && next dev",
+    "predev": "npm run clean",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

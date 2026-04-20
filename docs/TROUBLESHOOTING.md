@@ -38,3 +38,5 @@ oder:
 ```bash
 npm run dev:clean
 ```
+
+Ab v0.2.3 wird bei `npm run dev` automatisch vorab `.next` gelöscht (`predev`), damit dieser Fehler nicht dauernd wiederkommt.
