@@ -44,8 +44,8 @@ export async function probeOnvifFromXaddr(args: {
       body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
     });
 
-    const mediaServiceUrl = caps.ok ? extractXAddrAttribute(caps.text, "Media") : undefined;
-    const media2ServiceUrl = caps.ok ? extractXAddrAttribute(caps.text, "Media2") : undefined;
+    const mediaServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media") : undefined;
+    const media2ServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media2") : undefined;
     const rtspUris: OnvifUri[] = [];
     const snapshotUris: OnvifUri[] = [];
 
@@ -155,14 +155,28 @@ export async function probeOnvifFromXaddr(args: {
   }
 }
 
-function extractXAddrAttribute(xml: string, serviceName: string): string | undefined {
-  const re = new RegExp(
+function extractCapabilityXAddr(xml: string, serviceName: string): string | undefined {
+  // In ONVIF GetCapabilities responses, endpoints are usually nested like:
+  // <tt:Media> ... <tt:XAddr>http://ip/onvif/media_service</tt:XAddr> ... </tt:Media>
+  const blockRe = new RegExp(
+    `<(?:[A-Za-z0-9_]+:)?${escapeRegExp(serviceName)}\\b[^>]*>([\\s\\S]*?)</(?:[A-Za-z0-9_]+:)?${escapeRegExp(
+      serviceName
+    )}>`,
+    "i"
+  );
+  const block = blockRe.exec(xml)?.[1];
+  if (block) {
+    const xaddr = extractText(block, "XAddr");
+    if (xaddr) return xaddr.trim();
+  }
+
+  // Fallback: some vendors may return as attribute.
+  const attrRe = new RegExp(
     `<(?:[A-Za-z0-9_]+:)?${escapeRegExp(serviceName)}\\b[^>]*\\bXAddr="([^"]+)"`,
     "i"
   );
-  const m = re.exec(xml);
-  const value = m?.[1]?.trim();
-  return value || undefined;
+  const attr = attrRe.exec(xml)?.[1]?.trim();
+  return attr || undefined;
 }
 
 function extractFirstAttribute(

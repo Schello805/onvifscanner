@@ -25,6 +25,7 @@ export default function HomePage() {
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [copyWithCreds, setCopyWithCreds] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(false);
@@ -71,6 +72,22 @@ export default function HomePage() {
     }
   }
 
+  function addCredsIfWanted(url: string): string {
+    if (!copyWithCreds) return url;
+    if (!username.trim()) return url;
+    if (!password) return url;
+    try {
+      const u = new URL(url);
+      if (u.username || u.password) return url;
+      u.username = username.trim();
+      u.password = password;
+      return u.toString();
+    } catch {
+      // non-standard URLs (some RTSP variants) are left untouched
+      return url;
+    }
+  }
+
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -87,6 +104,7 @@ export default function HomePage() {
   }
 
   function UrlRow(props: { label: string; url: string }) {
+    const effective = addCredsIfWanted(props.url);
     return (
       <div className="flex items-center gap-2">
         <div className="w-28 shrink-0 text-xs text-slate-400">{props.label}</div>
@@ -101,7 +119,7 @@ export default function HomePage() {
         </a>
         <button
           className="rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 hover:bg-slate-900"
-          onClick={() => copy(props.url)}
+          onClick={() => copy(effective)}
           type="button"
         >
           Kopieren
@@ -214,6 +232,21 @@ export default function HomePage() {
                 />
               </label>
             </div>
+            <label className="mt-3 flex items-start gap-3 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-slate-700 bg-slate-950"
+                checked={copyWithCreds}
+                onChange={(e) => setCopyWithCreds(e.target.checked)}
+              />
+              <span>
+                Beim Kopieren Credentials in die URL einsetzen (z. B.{" "}
+                <span className="font-mono text-xs">
+                  http://user:pass@host/…
+                </span>
+                ). Vorsicht: landet in der Zwischenablage.
+              </span>
+            </label>
             <p className="mt-2 text-xs text-slate-400">
               Credentials werden nicht gespeichert, nur für diesen Scan genutzt.
             </p>
