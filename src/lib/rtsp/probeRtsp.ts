@@ -7,8 +7,9 @@ export async function probeRtsp(args: {
   port: number;
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  uri?: string;
 }): Promise<RtspResult> {
-  const uri = `rtsp://${args.ip}:${args.port}/`;
+  const uri = args.uri ?? `rtsp://${args.ip}:${args.port}/`;
   const method = "OPTIONS";
 
   try {
@@ -24,7 +25,13 @@ export async function probeRtsp(args: {
     });
 
     if (res1.statusCode && res1.statusCode >= 200 && res1.statusCode < 400) {
-      return { ok: true, port: args.port, authTried: "none", statusLine: res1.statusLine };
+      return {
+        ok: true,
+        port: args.port,
+        uriTried: uri,
+        authTried: "none",
+        statusLine: res1.statusLine
+      };
     }
 
     if (res1.statusCode === 401 && args.credentials) {
@@ -53,6 +60,7 @@ export async function probeRtsp(args: {
           return {
             ok,
             port: args.port,
+            uriTried: uri,
             authTried: "digest",
             statusLine: res2.statusLine,
             error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
@@ -78,6 +86,7 @@ export async function probeRtsp(args: {
           return {
             ok,
             port: args.port,
+            uriTried: uri,
             authTried: "basic",
             statusLine: res2.statusLine,
             error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
@@ -89,6 +98,7 @@ export async function probeRtsp(args: {
     return {
       ok: false,
       port: args.port,
+      uriTried: uri,
       statusLine: res1.statusLine,
       error: res1.statusCode ? `RTSP ${res1.statusCode}` : "Keine Antwort"
     };
@@ -96,6 +106,7 @@ export async function probeRtsp(args: {
     return {
       ok: false,
       port: args.port,
+      uriTried: uri,
       error: e instanceof Error ? e.message : String(e)
     };
   }
@@ -198,4 +209,3 @@ function parseRtspResponse(raw: string): RtspParsedResponse {
     headers
   };
 }
-

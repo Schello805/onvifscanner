@@ -7,6 +7,7 @@ import { scanTcpPorts } from "@/lib/scan/tcpScan";
 import { probeRtsp } from "@/lib/rtsp/probeRtsp";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 import { fetchThumbnailDataUrl } from "@/lib/preview/fetchThumbnail";
+import { buildRtspCandidates } from "@/lib/rtsp/candidates";
 
 export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
   const startedAt = new Date();
@@ -23,6 +24,30 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
       credentials: req.credentials
     });
     results.push(...found);
+
+    // Optional RTSP check based on ONVIF-provided RTSP URIs.
+    await mapLimit(results, 16, async (r) => {
+      const rtspUri = r.onvif?.rtspUris?.[0]?.uri;
+      if (!rtspUri) return;
+      try {
+        const u = new URL(rtspUri);
+        const port = Number(u.port || "554");
+        if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
+        const rtsp = await probeRtsp({
+          ip: r.ip,
+          port,
+          timeoutMs: req.timeoutMs,
+          credentials: req.credentials,
+          uri: rtspUri
+        });
+        rtsp.uris = Array.from(
+          new Set([...(rtsp.uris ?? []), rtspUri, ...buildRtspCandidates({ ip: r.ip, port })])
+        );
+        r.rtsp = rtsp;
+      } catch {
+        // ignore invalid URL parsing
+      }
+    });
   } else {
     const ips = expandCidr(req.cidr!);
     if (ips.length === 0) {
@@ -39,12 +64,14 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
         [554, 8554, 10554, 8555].includes(p)
       );
       if (rtspPort) {
-        result.rtsp = await probeRtsp({
+        const rtsp = await probeRtsp({
           ip,
           port: rtspPort,
           timeoutMs: req.timeoutMs,
           credentials: req.credentials
         });
+        rtsp.uris = buildRtspCandidates({ ip, port: rtspPort });
+        result.rtsp = rtsp;
       }
 
       // If HTTP is open, try common ONVIF device_service path as a hint.
@@ -61,6 +88,16 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
           timeoutMs: req.timeoutMs,
           credentials: req.credentials
         });
+
+        const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
+        if (onvifRtsp.length) {
+          if (!result.rtsp) {
+            // No RTSP port probe happened, but we can still present URLs.
+            result.rtsp = { ok: false, port: 554, uris: onvifRtsp };
+          } else {
+            result.rtsp.uris = Array.from(new Set([...(result.rtsp.uris ?? []), ...onvifRtsp]));
+          }
+        }
       }
 
       return result;

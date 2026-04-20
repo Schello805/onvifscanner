@@ -42,6 +42,8 @@ export type OnvifResult = {
 export type RtspResult = {
   ok: boolean;
   port: number;
+  uriTried?: string;
+  uris?: string[];
   authTried?: "none" | "basic" | "digest";
   statusLine?: string;
   error?: string;

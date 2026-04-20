@@ -372,11 +372,51 @@ export default function HomePage() {
                               {r.rtsp.statusLine}
                             </span>
                           ) : null}
+                          {r.rtsp.uris?.length ? (
+                            <details className="mt-1 rounded-lg border border-slate-800/70 bg-slate-950/30 p-3">
+                              <summary className="cursor-pointer select-none text-xs text-slate-200">
+                                RTSP URLs anzeigen
+                              </summary>
+                              <div className="mt-3 flex flex-col gap-2">
+                                {r.rtsp.uriTried ? (
+                                  <UrlRow label="Getestet" url={r.rtsp.uriTried} />
+                                ) : null}
+                                {r.rtsp.uris.map((u, idx) => (
+                                  <UrlRow
+                                    key={`${u}-${idx}`}
+                                    label={idx === 0 ? "RTSP" : `RTSP ${idx + 1}`}
+                                    url={u}
+                                  />
+                                ))}
+                              </div>
+                            </details>
+                          ) : null}
                         </div>
                       ) : r.rtsp ? (
-                        <span className="text-slate-400">
-                          Nein{r.rtsp.error ? ` (${r.rtsp.error})` : ""}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-slate-400">
+                            Nein{r.rtsp.error ? ` (${r.rtsp.error})` : ""}
+                          </span>
+                          {r.rtsp.uris?.length ? (
+                            <details className="mt-1 rounded-lg border border-slate-800/70 bg-slate-950/30 p-3">
+                              <summary className="cursor-pointer select-none text-xs text-slate-200">
+                                RTSP URLs anzeigen
+                              </summary>
+                              <div className="mt-3 flex flex-col gap-2">
+                                {r.rtsp.uriTried ? (
+                                  <UrlRow label="Getestet" url={r.rtsp.uriTried} />
+                                ) : null}
+                                {r.rtsp.uris.map((u, idx) => (
+                                  <UrlRow
+                                    key={`${u}-${idx}`}
+                                    label={idx === 0 ? "RTSP" : `RTSP ${idx + 1}`}
+                                    url={u}
+                                  />
+                                ))}
+                              </div>
+                            </details>
+                          ) : null}
+                        </div>
                       ) : (
                         "—"
                       )}
