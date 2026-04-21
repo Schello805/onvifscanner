@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import "./globals.css";
 import pkg from "../../package.json";
 
@@ -54,8 +55,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="border-b border-slate-800/70">
             <div className="mx-auto flex w-[90%] max-w-none items-center justify-between px-5 py-4">
               <div className="flex items-center gap-3">
-                <div className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-white">
-                  <span className="text-base font-semibold">O</span>
+                <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+                  <Image
+                    src="/logo.png"
+                    alt="ONVIFscanner"
+                    fill
+                    className="object-cover"
+                    sizes="36px"
+                    priority
+                  />
                 </div>
                 <div>
                   <div className="text-base font-semibold leading-tight">
