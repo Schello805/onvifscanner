@@ -429,6 +429,18 @@ export default function HomePage() {
                                 </div>
                               )}
 
+                              <div className="mt-2 text-[11px] text-slate-400">
+                                Vendor-Kandidaten (z. B. Hikvision ISAPI):
+                              </div>
+                              <UrlRow
+                                label="ISAPI Bild (Main)"
+                                url={`http://${r.ip}/ISAPI/Streaming/channels/101/picture`}
+                              />
+                              <UrlRow
+                                label="ISAPI Bild (Sub)"
+                                url={`http://${r.ip}/ISAPI/Streaming/channels/102/picture`}
+                              />
+
                               {r.rtsp?.uriTried ? (
                                 <UrlRow label="RTSP getestet" url={r.rtsp.uriTried} />
                               ) : null}

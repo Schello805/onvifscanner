@@ -25,26 +25,38 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     });
     results.push(...found);
 
-    // Optional RTSP check based on ONVIF-provided RTSP URIs.
-    await mapLimit(results, 16, async (r) => {
-      const rtspUri = r.onvif?.rtspUris?.[0]?.uri;
-      if (!rtspUri) return;
-      try {
-        const u = new URL(rtspUri);
-        const port = Number(u.port || "554");
-        if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
-        const rtsp = await probeRtsp({
+    // RTSP: always attach candidates so each camera shows something useful,
+    // and attempt a lightweight probe on common ports.
+    await mapLimit(results, 32, async (r) => {
+      const commonPorts = [554, 8554];
+      const open = await scanTcpPorts(r.ip, commonPorts, Math.min(req.timeoutMs, 900));
+      const port = open[0] ?? 554;
+
+      const onvifUris = r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? [];
+      const candidates = buildRtspCandidates({ ip: r.ip, port });
+      const uris = Array.from(new Set([...onvifUris]));
+
+      // Try ONVIF-provided first, then candidates.
+      const probeList = [...uris, ...candidates].slice(0, 4);
+      for (const uri of probeList) {
+        const res = await probeRtsp({
           ip: r.ip,
           port,
-          timeoutMs: req.timeoutMs,
+          timeoutMs: Math.min(req.timeoutMs, 1200),
           credentials: req.credentials,
-          uri: rtspUri
+          uri
         });
-        rtsp.uris = Array.from(new Set([...(rtsp.uris ?? []), rtspUri]));
-        rtsp.candidates = buildRtspCandidates({ ip: r.ip, port });
-        r.rtsp = rtsp;
-      } catch {
-        // ignore invalid URL parsing
+        r.rtsp = {
+          ...res,
+          port,
+          uris: uris.length ? uris : undefined,
+          candidates
+        };
+        if (res.ok) break;
+      }
+
+      if (!r.rtsp) {
+        r.rtsp = { ok: false, port, candidates, uris: uris.length ? uris : undefined };
       }
     });
   } else {

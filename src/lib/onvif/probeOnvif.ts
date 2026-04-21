@@ -32,7 +32,7 @@ export async function probeOnvifFromXaddr(args: {
       credentials: args.credentials,
       body: `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
     });
-    log.push(`GetDeviceInformation: HTTP ${devInfo.status}`);
+    log.push(`GetDeviceInformation: HTTP ${devInfo.status} (SOAP ${devInfo.soap})`);
     if (!devInfo.ok) {
       return {
         ok: false,
@@ -56,7 +56,7 @@ export async function probeOnvifFromXaddr(args: {
       credentials: args.credentials,
       body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
     });
-    log.push(`GetCapabilities: HTTP ${caps.status}`);
+    log.push(`GetCapabilities: HTTP ${caps.status} (SOAP ${caps.soap})`);
 
     const mediaServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media") : undefined;
     const media2ServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media2") : undefined;
@@ -87,7 +87,7 @@ export async function probeOnvifFromXaddr(args: {
           ? `<tr2:GetProfiles xmlns:tr2="http://www.onvif.org/ver20/media/wsdl" />`
           : `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
       });
-      log.push(`GetProfiles: HTTP ${profiles.status}`);
+      log.push(`GetProfiles: HTTP ${profiles.status} (SOAP ${profiles.soap})`);
 
       const profileCandidates = profiles.ok ? extractProfiles(profiles.text) : [];
       const profileList = profileCandidates.slice(0, 6);
@@ -121,7 +121,9 @@ export async function probeOnvifFromXaddr(args: {
   <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetStreamUri>`
         });
-        log.push(`GetStreamUri(${profile.token}): HTTP ${stream.status}`);
+        log.push(
+          `GetStreamUri(${profile.token}): HTTP ${stream.status} (SOAP ${stream.soap})`
+        );
         const rtsp = stream.ok ? extractText(stream.text, "Uri") : undefined;
         if (rtsp) {
           rtspUris.push({
@@ -148,7 +150,9 @@ export async function probeOnvifFromXaddr(args: {
   <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetSnapshotUri>`
         });
-        log.push(`GetSnapshotUri(${profile.token}): HTTP ${snap.status}`);
+        log.push(
+          `GetSnapshotUri(${profile.token}): HTTP ${snap.status} (SOAP ${snap.soap})`
+        );
         const snapUri = snap.ok ? extractText(snap.text, "Uri") : undefined;
         if (snapUri) {
           snapshotUris.push({
