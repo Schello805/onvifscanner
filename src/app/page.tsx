@@ -133,27 +133,19 @@ export default function HomePage() {
           })
           .filter(Boolean) as ThumbJob[];
 
-        const thumbConcurrency = 3;
-        const maxThumbs = 24;
+        const thumbConcurrency = 2;
+        const maxThumbs = 12;
         void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
           try {
-            // First try direct browser load (works for devices that rely on browser session cookies).
-            for (const candidate of urls) {
-              if (runNonceRef.current !== runNonce) return null;
-              const ok = await tryLoadImageDirect(candidate, 4500);
-              if (!ok) continue;
-              setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
-              setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
-              return null;
-            }
-
+            // Prefer server-side thumbnail proxy (fast and consistent). Only fallback to direct browser
+            // load when the proxy cannot access the resource (e.g. camera relies on browser session cookies).
             const thumbRes = await fetch("/api/thumbnail", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                   urls,
                   size: 200,
-                  timeoutMs: 4000,
+                  timeoutMs: 2500,
                   credentials:
                     username.trim() && password
                       ? { username: username.trim(), password }
@@ -166,6 +158,17 @@ export default function HomePage() {
                 setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 500) }));
               } catch {
                 // ignore
+              }
+
+              // Fallback: try direct browser load for ISAPI-like endpoints.
+              for (const candidate of urls) {
+                if (runNonceRef.current !== runNonce) return null;
+                if (!candidate.includes("/ISAPI/")) continue;
+                const ok = await tryLoadImageDirect(candidate, 2500);
+                if (!ok) continue;
+                setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
+                setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
+                return null;
               }
               return null;
             }
