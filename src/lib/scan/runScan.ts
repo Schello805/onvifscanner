@@ -120,7 +120,8 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     );
   }
 
-  const thumbnailsEnabled = (process.env.ENABLE_THUMBNAILS ?? "true") !== "false";
+  const thumbnailsEnabled =
+    req.includeThumbnails && (process.env.ENABLE_THUMBNAILS ?? "true") !== "false";
   if (thumbnailsEnabled) {
     const maxThumbs = Number(process.env.THUMBNAILS_MAX ?? "12");
     const candidates = results

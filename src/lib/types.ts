@@ -18,6 +18,7 @@ export type ScanRequest = {
   credentials?: Credentials;
   timeoutMs?: number;
   concurrency?: number;
+  includeThumbnails?: boolean;
   acknowledgeAuthorizedNetwork: boolean;
 };
 

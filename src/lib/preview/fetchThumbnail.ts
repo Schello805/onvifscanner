@@ -7,7 +7,7 @@ export async function fetchThumbnailDataUrl(args: {
   credentials?: { username: string; password: string };
 }): Promise<string | undefined> {
   // Avoid huge payloads in API responses.
-  const maxBytes = 1_500_000;
+  const maxBytes = 450_000;
   const requestUrlStr = sanitizeUrlString(args.url);
 
   let res: Response;

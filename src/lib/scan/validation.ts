@@ -15,6 +15,7 @@ export type ParsedScanRequest = Required<
   credentials?: ScanRequest["credentials"];
   timeoutMs: number;
   concurrency: number;
+  includeThumbnails: boolean;
 };
 
 export function parseScanRequest(input: unknown): ParsedScanRequest {
@@ -38,12 +39,14 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     1,
     1024
   );
+  const includeThumbnails = Boolean(body.includeThumbnails);
 
   if (preset === "ws-discovery") {
     return {
       preset,
       timeoutMs,
       concurrency,
+      includeThumbnails,
       acknowledgeAuthorizedNetwork: true,
       credentials: sanitizeCredentials(body.credentials)
     };
@@ -84,6 +87,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     ports: cleanPorts,
     timeoutMs,
     concurrency,
+    includeThumbnails,
     acknowledgeAuthorizedNetwork: true,
     credentials: sanitizeCredentials(body.credentials)
   };

@@ -53,6 +53,8 @@ Siehe: `docs/DEPLOY_DEBIAN_LXC.md`
 - `ENABLE_THUMBNAILS` (default `true`): Thumbnails via ONVIF Snapshot-URI laden.
 - `THUMBNAILS_MAX` (default `12`): Max. Anzahl Thumbnails pro Scan-Response.
 
+Hinweis: Thumbnails werden **nur** geladen, wenn du sie im UI aktivierst (sonst bleibt die Scan-Response klein und schnell).
+
 ## Rechtliches
 
 Die Rechtsdokumente findest du in der App unter:

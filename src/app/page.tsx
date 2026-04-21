@@ -26,6 +26,7 @@ export default function HomePage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [copyWithCreds, setCopyWithCreds] = useState(false);
+  const [includeThumbnails, setIncludeThumbnails] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(false);
@@ -45,9 +46,10 @@ export default function HomePage() {
           : undefined,
       timeoutMs,
       concurrency,
+      includeThumbnails,
       acknowledgeAuthorizedNetwork: ack
     }),
-    [ack, cidr, concurrency, password, ports, preset, timeoutMs, username]
+    [ack, cidr, concurrency, includeThumbnails, password, ports, preset, timeoutMs, username]
   );
 
   async function runScan() {
@@ -260,12 +262,20 @@ export default function HomePage() {
              </div>
              
              <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
-              <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
                   </div>
                   <span className="text-[11px] text-slate-300">Credentials beim Kopieren anhängen</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {includeThumbnails && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={includeThumbnails} onChange={(e) => setIncludeThumbnails(e.target.checked)} />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Vorschau-Bilder laden (langsamer)</span>
                 </label>
                 
                 <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
