@@ -6,7 +6,6 @@ import { mapLimit } from "@/lib/util/mapLimit";
 import { scanTcpPorts } from "@/lib/scan/tcpScan";
 import { probeRtsp } from "@/lib/rtsp/probeRtsp";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
-import { fetchThumbnailDataUrl } from "@/lib/preview/fetchThumbnail";
 import { buildRtspCandidates } from "@/lib/rtsp/candidates";
 
 export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
@@ -120,29 +119,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     );
   }
 
-  const thumbnailsEnabled =
-    req.includeThumbnails && (process.env.ENABLE_THUMBNAILS ?? "true") !== "false";
-  if (thumbnailsEnabled) {
-    const maxThumbs = Number(process.env.THUMBNAILS_MAX ?? "12");
-    const candidates = results
-      .filter((r) => r.onvif?.ok && r.onvif.snapshotUris?.[0]?.uri)
-      .slice(0, Math.max(0, maxThumbs));
-
-    await mapLimit(candidates, 4, async (r) => {
-      const url = r.onvif?.snapshotUris?.[0]?.uri;
-      if (!url || !r.onvif) return;
-      try {
-        const dataUrl = await fetchThumbnailDataUrl({
-          url,
-          timeoutMs: 5000,
-          credentials: req.credentials
-        });
-        if (dataUrl) r.onvif.thumbnailDataUrl = dataUrl;
-      } catch {
-        // Never fail the whole scan because a preview URL is malformed or blocked.
-      }
-    });
-  }
+  // Thumbnails are loaded separately via `/api/thumbnail` to keep the scan response small.
 
   const durationMs = Date.now() - startedAt.getTime();
   return {

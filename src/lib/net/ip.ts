@@ -74,3 +74,17 @@ export function isPrivateOnly(cidr: string): boolean {
   );
 }
 
+export function isPrivateIpv4(ip: string): boolean {
+  try {
+    const ipInt = ipv4ToInt(ip);
+    return (
+      isInRange(ipInt, "10.0.0.0/8") ||
+      isInRange(ipInt, "172.16.0.0/12") ||
+      isInRange(ipInt, "192.168.0.0/16") ||
+      isInRange(ipInt, "169.254.0.0/16") ||
+      isInRange(ipInt, "127.0.0.0/8")
+    );
+  } catch {
+    return false;
+  }
+}

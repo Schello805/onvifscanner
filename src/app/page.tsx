@@ -34,6 +34,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScanResponse | null>(null);
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
 
   const request: ScanRequest = useMemo(
     () => ({
@@ -67,6 +68,42 @@ export default function HomePage() {
         throw new Error(json.error ?? "Scan fehlgeschlagen.");
       }
       setData(json);
+      setThumbnails({});
+
+      if (includeThumbnails) {
+        const jobs = json.results
+          .map((r) => {
+            const url = r.onvif?.snapshotUris?.[0]?.uri;
+            return url ? { ip: r.ip, url } : null;
+          })
+          .filter(Boolean) as Array<{ ip: string; url: string }>;
+
+        jobs.slice(0, 12).forEach(({ ip, url }) => {
+          void (async () => {
+            try {
+              const thumbRes = await fetch("/api/thumbnail", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  url,
+                  size: 200,
+                  timeoutMs: 2000,
+                  credentials:
+                    username.trim() || password
+                      ? { username: username.trim(), password }
+                      : undefined
+                })
+              });
+              if (!thumbRes.ok) return;
+              const blob = await thumbRes.blob();
+              const objectUrl = URL.createObjectURL(blob);
+              setThumbnails((prev) => ({ ...prev, [ip]: objectUrl }));
+            } catch {
+              // ignore
+            }
+          })();
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -334,10 +371,10 @@ export default function HomePage() {
                   {data.results.map((r, i) => (
                     <tr key={r.ip} className={`align-top transition-colors hover:bg-white/[0.03] ${i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-transparent'}`}>
                       <td className="p-4 align-middle">
-                        {r.onvif?.thumbnailDataUrl ? (
+                        {thumbnails[r.ip] ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={r.onvif.thumbnailDataUrl}
+                            src={thumbnails[r.ip]}
                             alt={`Preview ${r.ip}`}
                             className="h-14 w-24 rounded-lg border border-white/10 object-cover shadow-lg"
                           />

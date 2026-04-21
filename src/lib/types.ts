@@ -30,7 +30,6 @@ export type OnvifResult = {
   mediaServiceUrl2?: string;
   rtspUris?: OnvifUri[];
   snapshotUris?: OnvifUri[];
-  thumbnailDataUrl?: string;
   log?: string[];
   deviceInformation?: {
     manufacturer?: string;
