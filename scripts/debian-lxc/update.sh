@@ -50,5 +50,5 @@ runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DI
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
 
-systemctl restart onvifscanner.service
-systemctl --no-pager --full status onvifscanner.service || true
+systemctl restart --no-block onvifscanner.service
+systemctl --no-pager --full --no-ask-password status onvifscanner.service || true

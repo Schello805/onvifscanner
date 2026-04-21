@@ -126,7 +126,9 @@ install_service() {
   install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
   install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
   systemctl daemon-reload
-  systemctl enable --now onvifscanner.service
+  systemctl enable onvifscanner.service
+  # Start in background so the installer returns control to the shell immediately.
+  systemctl start --no-block onvifscanner.service
 }
 
 setup_nginx() {
@@ -142,7 +144,7 @@ setup_nginx() {
 print_summary() {
   echo
   echo "ONVIFscanner installed/updated."
-  echo "- Service: systemctl status onvifscanner"
+  echo "- Service (starting in background): systemctl status onvifscanner"
   echo "- Logs:    journalctl -u onvifscanner -f"
   echo "- Config:  ${ENV_FILE}"
   echo
@@ -172,4 +174,3 @@ main() {
 }
 
 main "$@"
-

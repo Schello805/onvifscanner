@@ -100,7 +100,8 @@ install_service() {
   install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
   install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
   systemctl daemon-reload
-  systemctl enable --now onvifscanner.service
+  systemctl enable onvifscanner.service
+  systemctl start --no-block onvifscanner.service
 }
 
 print_next_steps() {
