@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 APP_USER="${APP_USER:-onvifscanner}"
 REPO_URL="${REPO_URL:-https://github.com/Schello805/onvifscanner.git}"
+RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Please run as root (sudo)." >&2
@@ -55,9 +56,13 @@ if systemctl is-active --quiet onvifscanner.service; then
   systemctl stop onvifscanner.service || true
 fi
 
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm ci"
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
+if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
+  echo "Running runtime dependency audit (omit=dev)..."
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm audit --omit=dev || true"
+fi
 
 systemctl restart --no-block onvifscanner.service
 systemctl --no-pager --full --no-ask-password status onvifscanner.service || true

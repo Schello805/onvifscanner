@@ -42,6 +42,14 @@ curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/script
 
 Danach läuft der Service standardmäßig auf `127.0.0.1:3000`.
 
+### Optional: Runtime `npm audit`
+
+Das Script läuft standardmäßig ohne `npm audit` (schneller/ruhiger). Wenn du einen Audit der **Runtime-Dependencies** (ohne Dev-Dependencies) möchtest:
+
+```bash
+RUN_NPM_AUDIT=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+```
+
 ### Was macht das Install-Script?
 
 - installiert Node.js 20 (via NodeSource)

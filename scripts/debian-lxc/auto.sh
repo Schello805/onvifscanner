@@ -19,6 +19,7 @@ APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 APP_USER="${APP_USER:-onvifscanner}"
 ENV_FILE="${ENV_FILE:-/etc/onvifscanner/onvifscanner.env}"
 INSTALL_NGINX="${INSTALL_NGINX:-false}"
+RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -124,9 +125,13 @@ EOF
 }
 
 build_app() {
-  as_app_user "cd '$APP_DIR' && npm ci"
+  as_app_user "cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
   as_app_user "cd '$APP_DIR' && npm run build"
   as_app_user "cd '$APP_DIR' && npm prune --omit=dev"
+  if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
+    echo "Running runtime dependency audit (omit=dev)..."
+    as_app_user "cd '$APP_DIR' && npm audit --omit=dev || true"
+  fi
 }
 
 stop_service_if_running() {
