@@ -55,7 +55,7 @@ install_node20() {
 
   mkdir -p /usr/share/keyrings
   curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-    | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+    | gpg --dearmor --yes --output /usr/share/keyrings/nodesource.gpg
   echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
     > /etc/apt/sources.list.d/nodesource.list
   apt-get update -y
@@ -78,13 +78,15 @@ as_app_user() {
 
 checkout_repo() {
   if [[ -d "${APP_DIR}/.git" ]]; then
-    git -C "$APP_DIR" fetch --all --prune
-    git -C "$APP_DIR" checkout -f main
-    git -C "$APP_DIR" pull --ff-only
+    # Git refuses to operate on repos owned by other users when run as root ("dubious ownership").
+    as_app_user "git -C '$APP_DIR' fetch --all --prune"
+    as_app_user "git -C '$APP_DIR' checkout -f main"
+    as_app_user "git -C '$APP_DIR' pull --ff-only"
   else
     rm -rf "$APP_DIR"
-    git clone "$REPO_URL" "$APP_DIR"
-    git -C "$APP_DIR" checkout -f main
+    install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
+    as_app_user "git clone '$REPO_URL' '$APP_DIR'"
+    as_app_user "git -C '$APP_DIR' checkout -f main"
   fi
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
