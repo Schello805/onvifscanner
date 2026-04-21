@@ -129,6 +129,15 @@ build_app() {
   as_app_user "cd '$APP_DIR' && npm prune --omit=dev"
 }
 
+stop_service_if_running() {
+  if systemctl list-unit-files --type=service 2>/dev/null | awk '{print $1}' | grep -qx "onvifscanner.service"; then
+    if systemctl is-active --quiet onvifscanner.service; then
+      echo "Stopping onvifscanner.service for rebuild..."
+      systemctl stop onvifscanner.service || true
+    fi
+  fi
+}
+
 install_service() {
   install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
   install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
@@ -173,6 +182,7 @@ main() {
   ensure_user
   checkout_repo
   ensure_env_file
+  stop_service_if_running
   build_app
   install_service
   if [[ "$INSTALL_NGINX" == "true" ]]; then

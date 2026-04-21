@@ -50,6 +50,11 @@ fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
+if systemctl is-active --quiet onvifscanner.service; then
+  echo "Stopping onvifscanner.service for rebuild..."
+  systemctl stop onvifscanner.service || true
+fi
+
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm ci"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
