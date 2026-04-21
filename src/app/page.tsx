@@ -157,13 +157,14 @@ export default function HomePage() {
         type ThumbJob = { ip: string; urls: string[] };
         const jobs = json.results
           .map((r) => {
-            const urls = [
+            const urls = Array.from(new Set([
               ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
               // Hikvision ISAPI picture endpoints (often work even if ONVIF fails).
               `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
               `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
-            ].filter(Boolean);
-            return urls.length ? ({ ip: r.ip, urls } satisfies ThumbJob) : null;
+            ].filter(Boolean)));
+            const limited = urls.slice(0, 4);
+            return limited.length ? ({ ip: r.ip, urls: limited } satisfies ThumbJob) : null;
           })
           .filter(Boolean) as ThumbJob[];
 
@@ -177,7 +178,8 @@ export default function HomePage() {
               body: JSON.stringify({
                 urls,
                 size: 200,
-                timeoutMs: 2500,
+                timeoutMs: 1500,
+                fastAuth: true,
                 credentials:
                   username.trim() && password
                     ? { username: username.trim(), password }
@@ -482,7 +484,10 @@ export default function HomePage() {
              </div>
              
 	             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
-	                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+	                <label
+                    className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
+                    title="Wenn aktiv, werden beim Kopieren Benutzername+Passwort in die URL eingebettet (z. B. http://user:pass@ip/...). Vorsicht: sensibel."
+                  >
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
@@ -490,7 +495,10 @@ export default function HomePage() {
                   <span className="text-[11px] text-slate-300">Credentials beim Kopieren anhängen</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                <label
+                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
+                  title="Lädt Snapshot/ISAPI-Bilder als 200×200 Vorschau. Kann je nach Kamera Digest/Basic Auth erfordern und ist langsamer."
+                >
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {includeThumbnails && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={includeThumbnails} onChange={(e) => setIncludeThumbnails(e.target.checked)} />
@@ -498,7 +506,10 @@ export default function HomePage() {
                   <span className="text-[11px] text-slate-300">Vorschau-Bilder laden (langsamer)</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                <label
+                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
+                  title="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Das kann deutlich länger dauern."
+                >
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {deepProbe && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={deepProbe} onChange={(e) => setDeepProbe(e.target.checked)} />
@@ -506,7 +517,10 @@ export default function HomePage() {
                   <span className="text-[11px] text-slate-300">Erweiterte Analyse (ONVIF/RTSP prüfen)</span>
                 </label>
                 
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                <label
+                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
+                  title="Nur im eigenen/autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden."
+                >
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {ack && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={ack} onChange={(e) => setAck(e.target.checked)} />

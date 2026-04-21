@@ -10,6 +10,7 @@ type Body = {
   urls?: string[];
   size?: number;
   timeoutMs?: number;
+  fastAuth?: boolean;
   credentials?: { username: string; password: string };
 };
 
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
   }
   const candidates = Array.from(
     new Set(rawUrls.map((u) => sanitizeUrlString(u)).filter(Boolean))
-  ).slice(0, 8);
+  ).slice(0, 4);
 
   if (!candidates.length) {
     return NextResponse.json({ error: "Missing url." }, { status: 400 });
@@ -116,6 +117,7 @@ export async function POST(req: Request) {
 
   const size = clampInt(body.size ?? 200, 64, 512);
   const timeoutMs = clampInt(body.timeoutMs ?? 1500, 300, 8000);
+  const fastAuth = body.fastAuth !== false;
 
   let acquired = false;
   try {
@@ -153,6 +155,7 @@ export async function POST(req: Request) {
         timeoutMs,
         credentials: body.credentials,
         signal: req.signal,
+        fastMode: fastAuth,
         headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
         debugLog
       });

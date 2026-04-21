@@ -8,9 +8,11 @@ export async function fetchWithDigestAuth(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
   signal?: AbortSignal;
+  fastMode?: boolean;
   debugLog?: string[];
 }): Promise<Response> {
   const method = args.method.toUpperCase();
+  const fastMode = Boolean(args.fastMode);
 
   // Preemptive Basic: many devices (e.g. vendor snapshot endpoints) accept Basic even when they
   // don't advertise it correctly. This also avoids an extra roundtrip in the common case.
@@ -60,7 +62,46 @@ export async function fetchWithDigestAuth(args: {
         return res0d;
       }
     }
-    // Fall through: some devices require Digest and will respond with WWW-Authenticate on an unauth request.
+
+    // Fast mode: avoid extra round-trips unless we can quickly fetch a Digest challenge.
+    if (fastMode) {
+      const shortTimeout = Math.min(700, args.timeoutMs);
+      args.debugLog?.push(`Auth: fastMode -> try unauth (timeout=${shortTimeout}ms)`);
+      const resFast = await fetchWithTimeout({
+        url: args.url,
+        method,
+        headers: args.headers,
+        body: args.body,
+        timeoutMs: shortTimeout,
+        signal: args.signal
+      });
+      args.debugLog?.push(`Auth: unauth(fast) -> HTTP ${resFast.status}`);
+      const wwwFast = resFast.headers.get("www-authenticate");
+      if (!wwwFast) return res0;
+      const digestHeaderFast = pickDigestHeader(wwwFast);
+      const challengeFast = digestHeaderFast ? parseDigestChallenge(digestHeaderFast) : null;
+      if (!challengeFast) return res0;
+      const uri = new URL(args.url).pathname + new URL(args.url).search;
+      const authorization = buildDigestAuthorizationHeader({
+        challenge: challengeFast,
+        method,
+        uri,
+        username: args.credentials.username,
+        password: args.credentials.password
+      });
+      args.debugLog?.push(`Auth: trying Digest (uri="${uri}")`);
+      const resFastD = await fetchWithTimeout({
+        url: args.url,
+        method,
+        headers: { ...(args.headers ?? {}), authorization },
+        body: args.body,
+        timeoutMs: args.timeoutMs,
+        signal: args.signal
+      });
+      args.debugLog?.push(`Auth: Digest -> HTTP ${resFastD.status}`);
+      return resFastD;
+    }
+    // Fall through (non-fast): some devices require Digest and will respond with WWW-Authenticate on an unauth request.
   }
 
   args.debugLog?.push("Auth: requesting without Authorization");
