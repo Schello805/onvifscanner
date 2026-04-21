@@ -234,14 +234,12 @@ function extractProfiles(xml: string): Array<{ token?: string; name?: string }> 
 function normalizeUriHost(uri: string, ip: string): string {
   try {
     const u = new URL(sanitizeUrlString(uri));
-    const host = u.hostname;
-    // Many devices return 0.0.0.0 / localhost / private placeholder.
-    if (!host || host === "0.0.0.0" || host === "127.0.0.1" || host === "localhost") {
-      u.hostname = ip;
-      return u.toString();
-    }
+    // Cameras often report incorrect IPs (e.g. static IP from another network, 0.0.0.0, etc.).
+    // We already know the correct IP because we just successfully queried it.
+    u.hostname = ip;
     return u.toString();
   } catch {
     return sanitizeUrlString(uri);
   }
 }
+

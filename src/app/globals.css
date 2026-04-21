@@ -8,6 +8,9 @@ body {
 }
 
 body {
-  @apply bg-slate-950 text-slate-100;
+  @apply bg-[#0B0F19] text-slate-100;
+  background-image: radial-gradient(circle at top right, #1e1b4b, transparent 40%),
+                    radial-gradient(circle at bottom left, #0f172a, transparent 40%);
+  background-attachment: fixed;
 }
 

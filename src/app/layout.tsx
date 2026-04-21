@@ -13,7 +13,7 @@ const repoUrl = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/";
 function Footer() {
   return (
     <footer className="border-t border-slate-800/70 py-10 text-sm text-slate-300">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex w-[90%] max-w-none flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
           <div className="font-medium text-slate-200">
             ONVIFscanner <span className="text-slate-400">v{pkg.version}</span>
@@ -48,11 +48,11 @@ function Footer() {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de">
+    <html lang="de" data-theme="dracula">
       <body>
         <div className="min-h-screen">
           <header className="border-b border-slate-800/70">
-            <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-5 py-4">
+            <div className="mx-auto flex w-[90%] max-w-none items-center justify-between px-5 py-4">
               <div className="flex items-center gap-3">
                 <div className="grid h-9 w-9 place-items-center rounded-lg bg-slate-800 text-white">
                   <span className="text-base font-semibold">O</span>
@@ -76,7 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
             </div>
           </header>
-          <main className="mx-auto w-full max-w-5xl px-5 py-10">
+          <main className="mx-auto w-[90%] max-w-none px-5 py-10">
             {children}
           </main>
           <Footer />

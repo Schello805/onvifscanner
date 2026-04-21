@@ -6,6 +6,9 @@ Local-first Web-App zum Finden von ONVIF- und RTSP-Kameras im eigenen Netzwerk (
 
 ## Features
 
+- **Premium UI mit DaisyUI**: Hochwertiges, responsives und modernes Dark-Mode-Dashboard (Dracula Theme) mit sauberen Tabellen, Badges und Animationen.
+- **Auto-Korrektur von Kamera-IPs**: Behebt das Problem falscher lokaler IPs, die von Kameras in RTSP-Links gemeldet werden.
+- **Verlängerte Snapshot-Timeouts**: Vorschaubilder (Thumbnails) laden nun zuverlässiger, auch bei längeren Antwortzeiten der Kameras (Content-Type Toleranz).
 - **WS-Discovery (ONVIF)**: Findet ONVIF-Devices per UDP Probe (ohne “/24 bruteforce”).
 - **IP/CIDR Scan** (optional): Prüft typische Ports (z. B. 80/443/554/8554/8000/8080).
 - **Credential-Test** (optional):

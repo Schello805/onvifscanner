@@ -26,8 +26,13 @@ export async function fetchThumbnailDataUrl(args: {
   }
   if (!res.ok) return undefined;
 
-  const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-  if (!contentType.startsWith("image/")) return undefined;
+  const rawContentType = res.headers.get("content-type") ?? "";
+  let contentType = rawContentType.toLowerCase().trim();
+  if (contentType === "" || contentType.includes("application/octet-stream")) {
+    contentType = "image/jpeg";
+  } else if (!contentType.startsWith("image/")) {
+    return undefined; // Real failure
+  }
 
   const contentLength = Number(res.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > 0 && contentLength > maxBytes) {

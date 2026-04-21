@@ -6,5 +6,8 @@ export default {
   theme: {
     extend: {}
   },
-  plugins: [typography]
+  plugins: [typography, require("daisyui")],
+  daisyui: {
+    themes: ["dracula", "dark", "synthwave"], // Modern dark themes
+  }
 } satisfies Config;
