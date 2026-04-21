@@ -38,6 +38,9 @@ export default function HomePage() {
   const [data, setData] = useState<ScanResponse | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [thumbnailLog, setThumbnailLog] = useState<Record<string, string>>({});
+  const [thumbnailState, setThumbnailState] = useState<
+    Record<string, "idle" | "loading" | "ok" | "fail">
+  >({});
   const [scanPhases, setScanPhases] = useState<
     Partial<
       Record<
@@ -150,6 +153,7 @@ export default function HomePage() {
           return {};
         });
         setThumbnailLog({});
+        setThumbnailState({});
       };
 
       const loadThumbsIfNeeded = (json: ScanResponse) => {
@@ -171,7 +175,10 @@ export default function HomePage() {
         const thumbConcurrency = 2;
         const maxThumbs = 12;
         void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
+          setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
           try {
+            const ac = new AbortController();
+            const t = window.setTimeout(() => ac.abort(), 3500);
             const thumbRes = await fetch("/api/thumbnail", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -184,15 +191,17 @@ export default function HomePage() {
                   username.trim() && password
                     ? { username: username.trim(), password }
                     : undefined
-              })
-            });
+              }),
+              signal: ac.signal
+            }).finally(() => window.clearTimeout(t));
             if (!thumbRes.ok) {
               try {
                 const txt = await thumbRes.text();
-                setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 500) }));
+                setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
               } catch {
                 // ignore
               }
+              setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
 
               // Fallback: try direct browser load for ISAPI-like endpoints.
               for (const candidate of urls) {
@@ -202,6 +211,7 @@ export default function HomePage() {
                 if (!ok) continue;
                 setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
                 setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
+                setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
                 return null;
               }
               return null;
@@ -232,8 +242,10 @@ export default function HomePage() {
             });
             const src = thumbRes.headers.get("x-thumbnail-source");
             if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
+            setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
             return null;
           } catch {
+            setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
             return null;
           }
         });
@@ -641,6 +653,13 @@ export default function HomePage() {
               <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 {data.results.length} Gerät(e) • {data.meta.durationMs}ms
+                {includeThumbnails ? (
+                  <span className="text-slate-300/80">
+                    • Preview{" "}
+                    {Object.values(thumbnailState).filter((s) => s === "ok").length}/
+                    {Math.min(12, data.results.length)}
+                  </span>
+                ) : null}
               </div>
             ) : (
               <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Warte auf Eingabe</div>
@@ -682,6 +701,7 @@ export default function HomePage() {
                             {(() => {
                               const log = thumbnailLog[r.ip] ?? "";
                               const lower = log.toLowerCase();
+                              if (thumbnailState[r.ip] === "loading") return "Lädt…";
                               if (lower.includes("digest") && lower.includes("401")) return "Digest nötig";
                               if (lower.includes("401")) return "Auth nötig";
                               return "Kein Bild";
