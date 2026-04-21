@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
 import { sanitizeUrlString } from "@/lib/util/url";
 import { isPrivateIpv4 } from "@/lib/net/ip";
@@ -12,6 +11,53 @@ type Body = {
   timeoutMs?: number;
   credentials?: { username: string; password: string };
 };
+
+type SharpModule = typeof import("sharp");
+
+let sharpInstance: any | null = null;
+let sharpConfigured = false;
+
+async function getSharp(): Promise<any> {
+  if (sharpInstance) return sharpInstance;
+  const mod = (await import("sharp")) as unknown as SharpModule & { default?: any };
+  sharpInstance = (mod as any).default ?? mod;
+  return sharpInstance;
+}
+
+function configureSharpOnce(sharp: any) {
+  if (sharpConfigured) return;
+  sharpConfigured = true;
+  const concurrency = clampInt(process.env.THUMBNAIL_SHARP_CONCURRENCY ?? 2, 1, 8);
+  try {
+    sharp.cache(false);
+    sharp.concurrency(concurrency);
+  } catch {
+    // ignore
+  }
+}
+
+// Simple in-process concurrency guard to avoid overwhelming libvips / Node.
+let inFlight = 0;
+const waiters: Array<() => void> = [];
+
+async function acquireSlot(max: number): Promise<void> {
+  if (inFlight < max) {
+    inFlight += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => waiters.push(resolve));
+  inFlight += 1;
+}
+
+function releaseSlot() {
+  inFlight = Math.max(0, inFlight - 1);
+  const next = waiters.shift();
+  if (next) next();
+}
+
+type CacheEntry = { ts: number; bytes: Buffer; contentType: string };
+const cache = new Map<string, CacheEntry>();
+const CACHE_MAX_ENTRIES = clampInt(process.env.THUMBNAIL_CACHE_MAX_ENTRIES ?? 256, 0, 2048);
 
 export async function POST(req: Request) {
   let body: Body;
@@ -49,7 +95,22 @@ export async function POST(req: Request) {
   const size = clampInt(body.size ?? 200, 64, 512);
   const timeoutMs = clampInt(body.timeoutMs ?? 1500, 300, 8000);
 
+  let acquired = false;
   try {
+    const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 2, 1, 8);
+    const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 30_000, 0, 300_000);
+    const cacheKey = `${url.toString()}|s=${size}|u=${body.credentials?.username ?? ""}`;
+
+    const cached = cache.get(cacheKey);
+    if (cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
+      return new NextResponse(cached.bytes as unknown as BodyInit, {
+        status: 200,
+        headers: { "content-type": cached.contentType, "cache-control": "no-store" }
+      });
+    }
+
+    await acquireSlot(maxConcurrency);
+    acquired = true;
     const res = await fetchWithDigestAuth({
       url: url.toString(),
       method: "GET",
@@ -82,11 +143,21 @@ export async function POST(req: Request) {
     }
 
     const input = Buffer.from(ab);
-    const output = await sharp(input)
+    const sharp = await getSharp();
+    configureSharpOnce(sharp);
+
+    const output = await sharp(input, { limitInputPixels: 32_000_000 })
       .rotate()
       .resize(size, size, { fit: "cover" })
       .jpeg({ quality: 65, mozjpeg: true })
       .toBuffer();
+
+    cache.set(cacheKey, { ts: Date.now(), bytes: output, contentType: "image/jpeg" });
+    if (CACHE_MAX_ENTRIES > 0 && cache.size > CACHE_MAX_ENTRIES) {
+      // Drop the oldest entry (in insertion order) to keep memory bounded.
+      const firstKey = cache.keys().next().value as string | undefined;
+      if (firstKey) cache.delete(firstKey);
+    }
 
     return new NextResponse(output as unknown as BodyInit, {
       status: 200,
@@ -100,6 +171,8 @@ export async function POST(req: Request) {
       { error: e instanceof Error ? e.message : "Thumbnail error" },
       { status: 500 }
     );
+  } finally {
+    if (acquired) releaseSlot();
   }
 }
 

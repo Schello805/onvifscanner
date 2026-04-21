@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "private": true,
   "description": "Local-first web app to discover ONVIF/RTSP cameras in your network.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -8,7 +8,8 @@
   "scripts": {
     "clean": "rm -rf .next .next-dev",
     "dev:clean": "rm -rf .next-dev && NEXT_DIST_DIR=.next-dev next dev",
-    "dev": "NEXT_DIST_DIR=.next-dev next dev",
+    "dev:fast": "NEXT_DIST_DIR=.next-dev next dev",
+    "dev": "npm run dev:clean",
     "prebuild": "rm -rf .next",
     "build": "next build",
     "start": "next start",

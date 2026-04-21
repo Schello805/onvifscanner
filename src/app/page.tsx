@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type {
   ScanRequest,
   ScanResponse,
   ScanTargetPreset
 } from "@/lib/types";
+import { mapLimit } from "@/lib/util/mapLimit";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScanResponse | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const runNonceRef = useRef(0);
 
   const request: ScanRequest = useMemo(
     () => ({
@@ -54,6 +56,8 @@ export default function HomePage() {
   );
 
   async function runScan() {
+    runNonceRef.current += 1;
+    const runNonce = runNonceRef.current;
     setError(null);
     setLoading(true);
     setData(null);
@@ -68,7 +72,16 @@ export default function HomePage() {
         throw new Error(json.error ?? "Scan fehlgeschlagen.");
       }
       setData(json);
-      setThumbnails({});
+      setThumbnails((prev) => {
+        for (const v of Object.values(prev)) {
+          try {
+            URL.revokeObjectURL(v);
+          } catch {
+            // ignore
+          }
+        }
+        return {};
+      });
 
       if (includeThumbnails) {
         const jobs = json.results
@@ -78,30 +91,53 @@ export default function HomePage() {
           })
           .filter(Boolean) as Array<{ ip: string; url: string }>;
 
-        jobs.slice(0, 12).forEach(({ ip, url }) => {
-          void (async () => {
-            try {
-              const thumbRes = await fetch("/api/thumbnail", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                  url,
-                  size: 200,
-                  timeoutMs: 2000,
-                  credentials:
-                    username.trim() || password
-                      ? { username: username.trim(), password }
-                      : undefined
-                })
-              });
-              if (!thumbRes.ok) return;
-              const blob = await thumbRes.blob();
-              const objectUrl = URL.createObjectURL(blob);
-              setThumbnails((prev) => ({ ...prev, [ip]: objectUrl }));
-            } catch {
-              // ignore
+        const thumbConcurrency = 3;
+        const maxThumbs = 24;
+        void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, url }) => {
+          try {
+            const thumbRes = await fetch("/api/thumbnail", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                url,
+                size: 200,
+                timeoutMs: 4000,
+                credentials:
+                  username.trim() || password
+                    ? { username: username.trim(), password }
+                    : undefined
+              })
+            });
+            if (!thumbRes.ok) return null;
+            const blob = await thumbRes.blob();
+            if (!blob.size) return null;
+            const objectUrl = URL.createObjectURL(blob);
+
+            // Ignore outdated scan runs.
+            if (runNonceRef.current !== runNonce) {
+              try {
+                URL.revokeObjectURL(objectUrl);
+              } catch {
+                // ignore
+              }
+              return null;
             }
-          })();
+
+            setThumbnails((prev) => {
+              const existing = prev[ip];
+              if (existing) {
+                try {
+                  URL.revokeObjectURL(existing);
+                } catch {
+                  // ignore
+                }
+              }
+              return { ...prev, [ip]: objectUrl };
+            });
+            return null;
+          } catch {
+            return null;
+          }
         });
       }
     } catch (e) {
