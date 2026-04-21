@@ -100,7 +100,7 @@ ensure_env_file() {
   if [[ ! -f "$ENV_FILE" ]]; then
     cat >"$ENV_FILE" <<'EOF'
 # Bind address for Next.js
-HOST=127.0.0.1
+HOST=0.0.0.0
 PORT=3000
 APP_DIR=/opt/onvifscanner
 

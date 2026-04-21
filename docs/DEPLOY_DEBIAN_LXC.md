@@ -71,12 +71,12 @@ systemctl restart onvifscanner
 
 ## Zugriff von außen (LXC / LAN)
 
-Standard ist `HOST=127.0.0.1` (nur im Container erreichbar). Wenn du im LAN zugreifen willst:
+Standard ist `HOST=0.0.0.0` (im LAN erreichbar). Wenn du es nur im Container erreichbar haben willst:
 
 1) in `/etc/onvifscanner/onvifscanner.env` setzen:
 
 ```bash
-HOST=0.0.0.0
+HOST=127.0.0.1
 PORT=3000
 ```
 
@@ -86,7 +86,7 @@ PORT=3000
 systemctl restart onvifscanner
 ```
 
-3) Dann aufrufen: `http://<LXC-IP>:3000`
+3) Dann im Container aufrufen: `http://127.0.0.1:3000`
 
 Empfehlung: Für „schön“ und TLS nutze nginx als Reverse Proxy (siehe unten).
 
