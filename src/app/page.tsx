@@ -139,150 +139,145 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="card bg-base-200/60 backdrop-blur-md shadow-2xl border border-base-content/5">
-        <div className="card-body p-6 md:p-8">
-        <h1 className="card-title text-2xl font-bold">Kameras im Netzwerk finden</h1>
-        <p className="mt-1 text-sm text-base-content/70">
-          WS-Discovery ist der schnellste und sauberste Weg für ONVIF. Falls du
-          zusätzlich RTSP/HTTP Ports testen willst, nutze den CIDR-Scan.
-        </p>
-
-        <div className="mt-8 grid gap-6 md:grid-cols-2">
-          <label className="form-control w-full">
-            <div className="label"><span className="label-text font-medium">Scan-Modus</span></div>
-            <select
-              className="select select-bordered w-full bg-base-100"
-              value={preset}
-              onChange={(e) => setPreset(e.target.value as ScanTargetPreset)}
-            >
-              <option value="ws-discovery">WS-Discovery (ONVIF)</option>
-              <option value="cidr">CIDR/Port-Scan (optional)</option>
-            </select>
-          </label>
-
-          <label className="form-control w-full">
-            <div className="label"><span className="label-text font-medium">Timeout pro Probe (ms)</span></div>
-            <input
-              className="input input-bordered w-full bg-base-100"
-              type="number"
-              min={200}
-              max={10000}
-              value={timeoutMs}
-              onChange={(e) => setTimeoutMs(Number(e.target.value))}
-            />
-          </label>
-
-          {preset === "cidr" ? (
-            <>
-              <label className="form-control w-full">
-                <div className="label"><span className="label-text font-medium">CIDR</span></div>
-                <input
-                  className="input input-bordered w-full bg-base-100"
-                  value={cidr}
-                  onChange={(e) => setCidr(e.target.value)}
-                  placeholder="z. B. 192.168.1.0/24"
-                />
-                <div className="label"><span className="label-text-alt text-base-content/60">Standardmäßig nur private Ranges (RFC1918).</span></div>
-              </label>
-
-              <label className="form-control w-full">
-                <div className="label"><span className="label-text font-medium">Ports (CSV)</span></div>
-                <input
-                  className="input input-bordered w-full bg-base-100"
-                  value={ports}
-                  onChange={(e) => setPorts(e.target.value)}
-                  placeholder={defaultPorts}
-                />
-              </label>
-
-              <label className="form-control w-full">
-                <div className="label"><span className="label-text font-medium">Concurrency</span></div>
-                <input
-                  className="input input-bordered w-full bg-base-100"
-                  type="number"
-                  min={1}
-                  max={1024}
-                  value={concurrency}
-                  onChange={(e) => setConcurrency(Number(e.target.value))}
-                />
-              </label>
-            </>
-          ) : (
-            <div className="alert alert-info shadow-sm bg-base-300 text-base-content/80 md:col-span-2 text-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <span>WS-Discovery benötigt keinen IP-Range. Es funktioniert am besten, wenn der Server im gleichen LAN/VLAN läuft.</span>
-            </div>
-          )}
-
-          <div className="md:col-span-2">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="form-control w-full">
-                <div className="label"><span className="label-text font-medium">Benutzername (optional)</span></div>
-                <input
-                  className="input input-bordered w-full bg-base-100"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                />
-              </label>
-              <label className="form-control w-full">
-                <div className="label"><span className="label-text font-medium">Passwort (optional)</span></div>
-                <input
-                  className="input input-bordered w-full bg-base-100"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-              </label>
-            </div>
-            <label className="cursor-pointer label mt-3 justify-start gap-3">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-primary"
-                checked={copyWithCreds}
-                onChange={(e) => setCopyWithCreds(e.target.checked)}
-              />
-              <span>
-                Beim Kopieren Credentials in die URL einsetzen (z. B.{" "}
-                <span className="font-mono text-xs">
-                  http://user:pass@host/…
-                </span>
-                ). Vorsicht: landet in der Zwischenablage.
-              </span>
-            </label>
-            <p className="mt-2 text-xs text-slate-400">
-              Credentials werden nicht gespeichert, nur für diesen Scan genutzt.
+      <section className="glass-panel overflow-hidden relative rounded-2xl p-5 md:p-6">
+        {/* Decorative background glow */}
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
+        
+        <div className="relative z-10 flex flex-col md:flex-row md:items-start md:justify-between border-b border-white/5 pb-4 mb-4 gap-4">
+          <div>
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
+            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
+              WS-Discovery ist am zuverlässigsten für ONVIF. Falls du RTSP/HTTP außerhalb des eigenen Subnetzes testen willst, wechsle auf den CIDR-Scan.
             </p>
           </div>
-        </div>
-
-        <div className="mt-6 flex flex-col gap-3">
-          <label className="cursor-pointer label justify-start gap-4 p-0">
-            <input
-              type="checkbox"
-              className="checkbox checkbox-primary checkbox-sm md:checkbox-md"
-              checked={ack}
-              onChange={(e) => setAck(e.target.checked)}
-            />
-            <span className="label-text text-base-content/80">
-              Ich bestätige, dass ich nur in einem eigenen oder ausdrücklich autorisierten Netzwerk scanne.
-            </span>
-          </label>
-
-          <div className="flex items-center gap-4 mt-2">
+          
+          <div className="flex-shrink-0 flex items-center gap-3 w-full md:w-auto">
             <button
-              className="btn btn-primary min-w-[200px]"
+              className="w-full md:w-auto group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
               onClick={runScan}
               disabled={loading || !ack}
             >
-              {loading ? <span className="loading loading-spinner"></span> : null}
-              {loading ? "Scan läuft…" : "Scan starten"}
+              <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
+                <div className="relative h-full w-8 bg-white/20" />
+              </div>
+              <span className="relative flex items-center gap-2 text-sm">
+                {loading ? (
+                  <svg className="animate-spin -ml-1 mr-2 h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                ) : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>}
+                {loading ? "Sucht…" : "Scan Starten"}
+              </span>
             </button>
-            <div className="text-xs text-base-content/60">
-              Ergebnis wird lokal im Browser angezeigt.
-            </div>
           </div>
+        </div>
+
+        <div className="relative z-10 grid gap-6 md:grid-cols-12">
+          
+          <div className="md:col-span-5 flex flex-col gap-3">
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
+            <div className="grid gap-3 grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Modus</span>
+                <select
+                  className="glass-input rounded-lg px-3 py-1.5 text-sm select-none"
+                  value={preset}
+                  onChange={(e) => setPreset(e.target.value as ScanTargetPreset)}
+                >
+                  <option value="ws-discovery" className="bg-slate-900 text-white">WS-Discovery</option>
+                  <option value="cidr" className="bg-slate-900 text-white">CIDR Scan</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Timeout (ms)</span>
+                <input
+                  className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                  type="number"
+                  min={200}
+                  max={10000}
+                  step={100}
+                  value={timeoutMs}
+                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
+                />
+              </label>
+            </div>
+
+            {preset === "cidr" && (
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 mt-1">
+                <label className="flex flex-col gap-1.5 md:col-span-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">CIDR</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={cidr}
+                    onChange={(e) => setCidr(e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 md:col-span-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Ports</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={ports}
+                    onChange={(e) => setPorts(e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 md:col-span-1">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Concurrency</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    type="number"
+                    min={1}
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(Number(e.target.value))}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div className="md:col-span-7 flex flex-col gap-3">
+             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Authentifizierung</h3>
+             <div className="grid gap-3 grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Benutzername</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="admin"
+                    autoComplete="username"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Passwort</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                </label>
+             </div>
+             
+             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
+              <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Credentials beim Kopieren anhängen</span>
+                </label>
+                
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {ack && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Netzwerk-Berechtigung bestätigt</span>
+                </label>
+             </div>
+          </div>
+          
         </div>
 
         {error ? (
@@ -292,164 +287,217 @@ export default function HomePage() {
         ) : null}
       </section>
 
-      <section className="card bg-base-200/60 backdrop-blur-md shadow-2xl border border-base-content/5 mt-4">
-        <div className="card-body p-6 md:p-8">
-        <div className="flex items-center justify-between">
-          <h2 className="card-title text-xl font-bold">Ergebnisse</h2>
-          {data?.meta ? (
-            <div className="badge badge-neutral shadow-sm">
-              {data.meta.mode} · {data.meta.durationMs}ms ·{" "}
-              {data.results.length} Device(s)
+      <section className="glass-panel overflow-hidden relative rounded-3xl p-8 mt-4">
+        <div className="relative z-10">
+          <div className="flex items-end justify-between border-b border-white/10 pb-4">
+            <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">Ergebnisse</h2>
+            {data?.meta ? (
+              <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                {data.results.length} Gerät(e) • {data.meta.durationMs}ms
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Warte auf Eingabe</div>
+            )}
+          </div>
+
+          {!data ? (
+            <div className="mt-12 mb-8 flex flex-col items-center justify-center text-center opacity-60">
+              <div className="w-20 h-20 mb-4 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-3xl shadow-xl">
+                🔎
+              </div>
+              <div className="text-slate-300 font-medium">Noch kein Scan ausgeführt</div>
+              <div className="text-sm text-slate-500 mt-1">Starte oben den Suchlauf, um Geräte zu finden.</div>
             </div>
           ) : (
-            <div className="text-xs text-base-content/50">Noch kein Scan</div>
-          )}
-        </div>
-
-        {!data ? (
-          <div className="mt-8 text-center text-sm text-base-content/60 py-10 opacity-70">
-            <div className="mb-2">🕵️‍♂️</div>
-            Starte oben einen Scan, um Geräte im Netzwerk zu finden.
-          </div>
-        ) : (
-          <div className="mt-6 overflow-x-auto rounded-box border border-base-content/10">
-            <table className="table table-zebra table-pin-rows w-full text-sm">
-              <thead className="bg-base-300 text-base-content uppercase">
-                <tr className="border-b border-slate-800">
-                  <th className="py-3 pr-4">Preview</th>
+            <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md shadow-2xl">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr className="bg-white/5 border-b border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400">
+                    <th className="py-3 pr-4 pl-4">Preview</th>
                   <th className="py-3 pr-4">Gerät (IP & Ports)</th>
                   <th className="py-3 pr-4">Hersteller & Modell</th>
                   <th className="py-3 pr-4 w-1/2">URLs & Details</th>
                 </tr>
               </thead>
-              <tbody>
-                {data.results.map((r) => (
-                  <tr key={r.ip} className="border-b border-slate-800/60 align-top">
-                    <td className="py-3 pr-4">
-                      {r.onvif?.thumbnailDataUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={r.onvif.thumbnailDataUrl}
-                          alt={`Preview ${r.ip}`}
-                          className="h-12 w-20 rounded-md border border-slate-800 object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-20 items-center justify-center rounded-md border border-slate-800/70 bg-slate-950/40 text-[10px] text-slate-500">
-                          No preview
-                        </div>
-                      )}
-                    </td>
-                    
-                    <td className="py-3 pr-4">
-                      <div className="font-mono text-xs">{r.ip}</div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {r.openTcpPorts?.length ? r.openTcpPorts.join(", ") : "—"}
-                      </div>
-                    </td>
-
-                    <td className="py-3 pr-4">
-                      <div className="flex flex-col gap-1">
-                        {r.onvif?.ok && (r.onvif.deviceInformation?.manufacturer || r.onvif.deviceInformation?.model) ? (
-                          <span className="text-sm font-medium text-slate-200">
-                            {[r.onvif.deviceInformation.manufacturer, r.onvif.deviceInformation.model]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
+              <tbody className="divide-y divide-white/5">
+                  {data.results.map((r, i) => (
+                    <tr key={r.ip} className={`align-top transition-colors hover:bg-white/[0.03] ${i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-transparent'}`}>
+                      <td className="p-4 align-middle">
+                        {r.onvif?.thumbnailDataUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={r.onvif.thumbnailDataUrl}
+                            alt={`Preview ${r.ip}`}
+                            className="h-14 w-24 rounded-lg border border-white/10 object-cover shadow-lg"
+                          />
                         ) : (
-                          <span className="text-sm text-slate-500">Unbekannt</span>
+                          <div className="flex h-14 w-24 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-[10px] font-medium uppercase tracking-wider text-slate-600">
+                            Kein Bild
+                          </div>
                         )}
-                        <div className="flex items-center gap-2 mt-1">
-                          {r.onvif?.ok ? (
-                            <span className="rounded bg-emerald-950/50 px-1.5 py-0.5 text-[10px] text-emerald-400 border border-emerald-900/50">ONVIF OK</span>
-                          ) : r.onvif ? (
-                            <span title={r.onvif.error} className="rounded bg-red-950/50 px-1.5 py-0.5 text-[10px] text-red-400 border border-red-900/50">ONVIF Fail</span>
-                          ) : null}
-                          
-                          {r.rtsp?.ok ? (
-                            <span className="rounded bg-emerald-950/50 px-1.5 py-0.5 text-[10px] text-emerald-400 border border-emerald-900/50">RTSP OK</span>
-                          ) : r.rtsp ? (
-                            <span title={r.rtsp.error} className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-400 border border-slate-800">RTSP Fail</span>
-                          ) : null}
+                      </td>
+                      
+                      <td className="p-4 align-middle">
+                        <div className="font-mono text-sm text-slate-200">{r.ip}</div>
+                        <div className="mt-1 text-xs text-slate-500 font-medium">
+                          {r.openTcpPorts?.length ? `Ports: ${r.openTcpPorts.join(", ")}` : "—"}
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="py-3 pr-4">
-                      {((r.onvif?.ok && 
-                         (r.onvif.rtspUris?.length || r.onvif.snapshotUris?.length || r.onvif.deviceServiceUrl || r.onvif.xaddrs?.length)) || 
-                        r.rtsp?.uris?.length || 
-                        r.rtsp?.candidates?.length) ? (
-                        <details className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-3 backdrop-blur-sm shadow-sm transition-all">
-                          <summary className="cursor-pointer select-none text-xs font-medium text-slate-200 hover:text-white transition">
-                            Gefundene URLs anzeigen
-                          </summary>
-                          
-                          <div className="mt-3 flex flex-col gap-4">
+                      <td className="p-4 align-middle">
+                        <div className="flex flex-col gap-1.5">
+                          {r.onvif?.ok && (r.onvif.deviceInformation?.manufacturer || r.onvif.deviceInformation?.model) ? (
+                            <span className="text-sm font-bold text-white tracking-wide">
+                              {[r.onvif.deviceInformation.manufacturer, r.onvif.deviceInformation.model]
+                                .filter(Boolean)
+                                .join(" ")}
+                            </span>
+                          ) : (
+                            <span className="text-sm font-medium text-slate-500">Unbekannt</span>
+                          )}
+                          <div className="flex items-center gap-2">
+                            {r.onvif?.ok ? (
+                              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">ONVIF</span>
+                            ) : r.onvif ? (
+                              <span title={r.onvif.error} className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/30">Kein ONVIF</span>
+                            ) : null}
                             
-                            {/* ALL RTSP / Media Uris Merged */}
-                            {Boolean(r.onvif?.rtspUris?.length || r.onvif?.snapshotUris?.length || r.rtsp?.uris?.length || r.rtsp?.candidates?.length) && (
-                              <div className="flex flex-col gap-2 relative">
-                                <div className="text-xs font-semibold text-slate-300 border-b border-slate-800/80 pb-1">▶️ Media & Streams (ONVIF & RTSP)</div>
-                                
-                                {r.rtsp?.uriTried && (
-                                  <UrlRow label="Standard RTSP" url={r.rtsp.uriTried} />
-                                )}
+                            {r.rtsp?.ok ? (
+                              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">RTSP</span>
+                            ) : r.rtsp ? (
+                              <span title={r.rtsp.error} className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border border-white/10">RTSP Fehler</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
 
-                                {r.rtsp?.uris?.map((u, idx) => (
-                                  <UrlRow key={`rtsp-ok-${idx}`} label={idx === 0 ? "RTSP (Scanner)" : `RTSP (Scanner) ${idx + 1}`} url={u} />
-                                ))}
+                      <td className="p-4">
+                        <details className="group rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm shadow-xl transition-all open:bg-black/40">
+                          <summary className="cursor-pointer select-none text-sm font-semibold text-slate-300 hover:text-white transition flex items-center justify-between">
+                            URLs & Log einblenden
+                            <span className="text-indigo-400 transition-transform group-open:rotate-180">▼</span>
+                          </summary>
 
-                                {r.onvif?.rtspUris?.map((u, idx) => (
+                          <div className="mt-5 flex flex-col gap-5 border-t border-white/5 pt-4">
+                            {/* Status */}
+                            <div className="flex flex-col gap-2.5">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-slate-300 pb-1">Status</div>
+                              <div className="text-xs text-slate-400">
+                                {r.onvif
+                                  ? r.onvif.ok
+                                    ? "ONVIF: OK"
+                                    : `ONVIF: Fehler${r.onvif.error ? ` (${r.onvif.error})` : ""}`
+                                  : "ONVIF: —"}
+                                {" • "}
+                                {r.rtsp
+                                  ? r.rtsp.ok
+                                    ? "RTSP: OK"
+                                    : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
+                                  : "RTSP: —"}
+                              </div>
+                            </div>
+
+                            {/* Media / Streams */}
+                            <div className="flex flex-col gap-2.5">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400 pb-1">Media & Streams</div>
+                              {r.onvif?.rtspUris?.length ? (
+                                r.onvif.rtspUris.map((u, idx) => (
                                   <UrlRow
                                     key={`${u.uri}-onvif-${idx}`}
                                     label={u.profileName ? `RTSP (${u.profileName})` : `RTSP ${idx + 1}`}
                                     url={u.uri}
                                   />
-                                ))}
+                                ))
+                              ) : (
+                                <div className="text-xs text-slate-500">
+                                  Keine RTSP-URLs via ONVIF erkannt.
+                                </div>
+                              )}
 
-                                {r.rtsp?.candidates?.map((u, idx) => (
-                                  <UrlRow key={`rtsp-cand-${idx}`} label={idx === 0 ? "Kandidat" : `Kandidat ${idx + 1}`} url={u} />
-                                ))}
-
-                                {r.onvif?.snapshotUris?.map((u, idx) => (
+                              {r.onvif?.snapshotUris?.length ? (
+                                r.onvif.snapshotUris.map((u, idx) => (
                                   <UrlRow
                                     key={`${u.uri}-snap-${idx}`}
                                     label={u.profileName ? `Snapshot (${u.profileName})` : `Snapshot ${idx + 1}`}
                                     url={u.uri}
                                   />
-                                ))}
-                              </div>
-                            )}
+                                ))
+                              ) : (
+                                <div className="text-xs text-slate-500">
+                                  Keine Snapshot-URLs via ONVIF erkannt.
+                                </div>
+                              )}
 
-                            {/* API URIs */}
-                            {Boolean(r.onvif?.deviceServiceUrl || r.onvif?.mediaServiceUrl || r.onvif?.mediaServiceUrl2 || r.onvif?.xaddrs?.length) && (
-                              <div className="flex flex-col gap-2">
-                                <div className="text-xs font-semibold text-slate-500 border-b border-slate-800/80 pb-1">⚙️ ONVIF API Endpoints (Keine Web-UI)</div>
-                                {r.onvif?.deviceServiceUrl && <UrlRow label="Device Service" url={r.onvif.deviceServiceUrl} isApi />}
-                                {r.onvif?.mediaServiceUrl && <UrlRow label="Media Service" url={r.onvif.mediaServiceUrl} isApi />}
-                                {r.onvif?.mediaServiceUrl2 && <UrlRow label="Media2 Service" url={r.onvif.mediaServiceUrl2} isApi />}
-                                {r.onvif?.xaddrs?.map((u, idx) => (
-                                  <UrlRow key={`xaddr-${idx}`} label={`XAddr ${idx + 1}`} url={u} isApi />
-                                ))}
-                              </div>
-                            )}
-
-                            {/* UI */}
-                            <div className="flex flex-col gap-2">
-                              <div className="text-xs font-semibold text-indigo-300 border-b border-slate-800/80 pb-1">🌐 Web Interface</div>
-                              <UrlRow label="HTTP (Standard)" url={`http://${r.ip}`} />
-                              <UrlRow label="HTTPS (Standard)" url={`https://${r.ip}`} />
+                              {r.rtsp?.uriTried ? (
+                                <UrlRow label="RTSP getestet" url={r.rtsp.uriTried} />
+                              ) : null}
+                              {r.rtsp?.uris?.length
+                                ? r.rtsp.uris.map((u, idx) => (
+                                    <UrlRow
+                                      key={`rtsp-ok-${idx}`}
+                                      label={idx === 0 ? "RTSP (ONVIF)" : `RTSP (ONVIF) ${idx + 1}`}
+                                      url={u}
+                                    />
+                                  ))
+                                : null}
+                              {r.rtsp?.candidates?.length ? (
+                                <>
+                                  <div className="mt-1 text-[11px] text-slate-400">
+                                    Vermutete RTSP-Pfade (nicht garantiert):
+                                  </div>
+                                  {r.rtsp.candidates.map((u, idx) => (
+                                    <UrlRow
+                                      key={`rtsp-cand-${idx}`}
+                                      label={idx === 0 ? "Kandidat" : `Kandidat ${idx + 1}`}
+                                      url={u}
+                                    />
+                                  ))}
+                                </>
+                              ) : null}
                             </div>
 
+                            {/* ONVIF API */}
+                            <div className="flex flex-col gap-2.5">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 pb-1">ONVIF API Endpoints</div>
+                              {r.onvif?.deviceServiceUrl ? (
+                                <UrlRow label="Device Service" url={r.onvif.deviceServiceUrl} isApi />
+                              ) : (
+                                <div className="text-xs text-slate-500">Kein Device Service erkannt.</div>
+                              )}
+                              {r.onvif?.mediaServiceUrl && <UrlRow label="Media Service" url={r.onvif.mediaServiceUrl} isApi />}
+                              {r.onvif?.mediaServiceUrl2 && <UrlRow label="Media2 Service" url={r.onvif.mediaServiceUrl2} isApi />}
+                              {r.onvif?.xaddrs?.length
+                                ? r.onvif.xaddrs.map((u, idx) => (
+                                    <UrlRow key={`xaddr-${idx}`} label={`XAddr ${idx + 1}`} url={u} isApi />
+                                  ))
+                                : null}
+                            </div>
+
+                            {/* Web */}
+                            <div className="flex flex-col gap-2.5">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-400 pb-1">Web Interface</div>
+                              <UrlRow label="HTTP" url={`http://${r.ip}`} />
+                              <UrlRow label="HTTPS" url={`https://${r.ip}`} />
+                            </div>
+
+                            {/* Log */}
+                            <div className="flex flex-col gap-2.5">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 pb-1">Log</div>
+                              {Boolean((r.onvif?.log?.length ?? 0) + (r.rtsp?.log?.length ?? 0)) ? (
+                                <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
+{[...(r.onvif?.log ?? []), ...(r.rtsp?.log ?? [])].join("\n")}
+                                </pre>
+                              ) : (
+                                <div className="text-xs text-slate-500">Kein Log verfügbar.</div>
+                              )}
+                            </div>
                           </div>
                         </details>
-                      ) : (
-                        <span className="text-xs text-slate-500">Keine URLs gefunden</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
             </table>
             {data.warnings?.length ? (
               <div className="mt-4 rounded-lg border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200">
@@ -463,6 +511,7 @@ export default function HomePage() {
             ) : null}
           </div>
         )}
+        </div>
       </section>
     </div>
   );

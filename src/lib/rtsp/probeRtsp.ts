@@ -11,23 +11,28 @@ export async function probeRtsp(args: {
 }): Promise<RtspResult> {
   const uri = args.uri ?? `rtsp://${args.ip}:${args.port}/`;
   const preferredMethod = "DESCRIBE";
+  const log: string[] = [];
 
   try {
+    log.push(`Probe: ${uri}`);
     const res1 = await rtspRequestWithFallback({
       ip: args.ip,
       port: args.port,
       timeoutMs: args.timeoutMs,
       uri,
       method: preferredMethod,
-      credentials: args.credentials
+      credentials: args.credentials,
+      log
     });
 
-    return res1;
+    return { ...res1, log: limitLog(res1.log ?? log) };
   } catch (e) {
+    log.push(`Exception: ${e instanceof Error ? e.message : String(e)}`);
     return {
       ok: false,
       port: args.port,
       uriTried: uri,
+      log: limitLog(log),
       error: e instanceof Error ? e.message : String(e)
     };
   }
@@ -83,9 +88,11 @@ async function rtspRequestWithFallback(args: {
   uri: string;
   method: "DESCRIBE" | "OPTIONS";
   credentials?: { username: string; password: string };
+  log: string[];
 }): Promise<RtspResult> {
   const method = args.method;
 
+  args.log.push(`Request: ${method} ${args.uri}`);
   const res1 = await rtspRequest({
     ip: args.ip,
     port: args.port,
@@ -96,9 +103,11 @@ async function rtspRequestWithFallback(args: {
       headers: {}
     })
   });
+  args.log.push(`Response: ${res1.statusLine ?? "no status line"}`);
 
   // Some servers don't support DESCRIBE on root; try OPTIONS as a fallback signal.
   if ((res1.statusCode === 405 || res1.statusCode === 404) && method === "DESCRIBE") {
+    args.log.push("Fallback: DESCRIBE not supported, trying OPTIONS");
     return rtspRequestWithFallback({ ...args, method: "OPTIONS" });
   }
 
@@ -108,6 +117,7 @@ async function rtspRequestWithFallback(args: {
       port: args.port,
       uriTried: args.uri,
       authTried: "none",
+      log: args.log.slice(),
       statusLine: res1.statusLine
     };
   }
@@ -115,8 +125,10 @@ async function rtspRequestWithFallback(args: {
   if (res1.statusCode === 401 && args.credentials) {
     const www = res1.headers["www-authenticate"];
     if (www) {
+      args.log.push(`Auth challenge: ${www}`);
       const digest = parseDigestChallenge(www);
       if (digest) {
+        args.log.push("Auth: trying Digest");
         const authorization = buildDigestAuthorizationHeader({
           challenge: digest,
           method,
@@ -134,18 +146,21 @@ async function rtspRequestWithFallback(args: {
             headers: { authorization }
           })
         });
+        args.log.push(`Auth response: ${res2.statusLine ?? "no status line"}`);
         const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
         return {
           ok,
           port: args.port,
           uriTried: args.uri,
           authTried: "digest",
+          log: args.log.slice(),
           statusLine: res2.statusLine,
           error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
         };
       }
 
       if (www.toLowerCase().includes("basic")) {
+        args.log.push("Auth: trying Basic");
         const basic = Buffer.from(
           `${args.credentials.username}:${args.credentials.password}`,
           "utf8"
@@ -160,12 +175,14 @@ async function rtspRequestWithFallback(args: {
             headers: { authorization: `Basic ${basic}` }
           })
         });
+        args.log.push(`Auth response: ${res2.statusLine ?? "no status line"}`);
         const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
         return {
           ok,
           port: args.port,
           uriTried: args.uri,
           authTried: "basic",
+          log: args.log.slice(),
           statusLine: res2.statusLine,
           error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
         };
@@ -177,9 +194,16 @@ async function rtspRequestWithFallback(args: {
     ok: false,
     port: args.port,
     uriTried: args.uri,
+    log: args.log.slice(),
     statusLine: res1.statusLine,
     error: res1.statusCode ? `RTSP ${res1.statusCode}` : "Keine Antwort"
   };
+}
+
+function limitLog(lines: string[]): string[] {
+  const max = 80;
+  if (lines.length <= max) return lines;
+  return [...lines.slice(0, 20), `... (${lines.length - 40} more) ...`, ...lines.slice(-19)];
 }
 
 function rtspRoundTrip(args: {

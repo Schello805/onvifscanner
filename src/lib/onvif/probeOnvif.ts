@@ -9,12 +9,22 @@ export async function probeOnvifFromXaddr(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
 }): Promise<OnvifResult> {
-  const deviceServiceUrl = args.xaddrs[0];
+  const log: string[] = [];
+  const rawDeviceServiceUrl = args.xaddrs[0];
+  const deviceServiceUrl = rawDeviceServiceUrl
+    ? normalizeUriHost(rawDeviceServiceUrl, args.ip, log, "DeviceService")
+    : undefined;
   if (!deviceServiceUrl) {
-    return { ok: false, xaddrs: args.xaddrs, error: "Kein XAddr vorhanden." };
+    return {
+      ok: false,
+      xaddrs: args.xaddrs,
+      log: limitLog(log),
+      error: "Kein XAddr vorhanden."
+    };
   }
 
   try {
+    log.push(`DeviceService: ${deviceServiceUrl}`);
     const devInfo = await onvifSoapCall({
       url: deviceServiceUrl,
       action: "http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation",
@@ -22,11 +32,13 @@ export async function probeOnvifFromXaddr(args: {
       credentials: args.credentials,
       body: `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
     });
+    log.push(`GetDeviceInformation: HTTP ${devInfo.status}`);
     if (!devInfo.ok) {
       return {
         ok: false,
         xaddrs: args.xaddrs,
         deviceServiceUrl,
+        log: limitLog(log),
         error: `HTTP ${devInfo.status}`
       };
     }
@@ -44,9 +56,17 @@ export async function probeOnvifFromXaddr(args: {
       credentials: args.credentials,
       body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
     });
+    log.push(`GetCapabilities: HTTP ${caps.status}`);
 
     const mediaServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media") : undefined;
     const media2ServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media2") : undefined;
+    if (caps.ok) {
+      log.push(
+        `Capabilities: Media=${mediaServiceUrl ? "yes" : "no"}, Media2=${media2ServiceUrl ? "yes" : "no"}`
+      );
+    } else {
+      log.push("Capabilities call failed; cannot discover Media/Media2.");
+    }
     const rtspUris: OnvifUri[] = [];
     const snapshotUris: OnvifUri[] = [];
 
@@ -55,6 +75,7 @@ export async function probeOnvifFromXaddr(args: {
     const isMedia2 = mediaUrlToUse === media2ServiceUrl;
 
     if (mediaUrlToUse) {
+      log.push(`Using media service: ${isMedia2 ? "Media2" : "Media"} (${mediaUrlToUse})`);
       const profiles = await onvifSoapCall({
         url: mediaUrlToUse,
         action: isMedia2
@@ -66,12 +87,17 @@ export async function probeOnvifFromXaddr(args: {
           ? `<tr2:GetProfiles xmlns:tr2="http://www.onvif.org/ver20/media/wsdl" />`
           : `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
       });
+      log.push(`GetProfiles: HTTP ${profiles.status}`);
 
       const profileCandidates = profiles.ok ? extractProfiles(profiles.text) : [];
       const profileList = profileCandidates.slice(0, 6);
+      log.push(`Profiles parsed: ${profileCandidates.length} (using ${profileList.length})`);
 
       for (const profile of profileList) {
         if (!profile.token) continue;
+        log.push(
+          `Profile: token=${profile.token}${profile.name ? ` name="${profile.name}"` : ""}`
+        );
 
         const stream = await onvifSoapCall({
           url: mediaUrlToUse,
@@ -95,13 +121,16 @@ export async function probeOnvifFromXaddr(args: {
   <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetStreamUri>`
         });
+        log.push(`GetStreamUri(${profile.token}): HTTP ${stream.status}`);
         const rtsp = stream.ok ? extractText(stream.text, "Uri") : undefined;
         if (rtsp) {
           rtspUris.push({
             profileToken: profile.token,
             profileName: profile.name,
-            uri: normalizeUriHost(rtsp, args.ip)
+            uri: normalizeUriHost(rtsp, args.ip, log, "RTSP")
           });
+        } else {
+          log.push(`GetStreamUri(${profile.token}): no Uri in response`);
         }
 
         const snap = await onvifSoapCall({
@@ -119,25 +148,31 @@ export async function probeOnvifFromXaddr(args: {
   <trt:ProfileToken>${escapeXml(profile.token)}</trt:ProfileToken>
 </trt:GetSnapshotUri>`
         });
+        log.push(`GetSnapshotUri(${profile.token}): HTTP ${snap.status}`);
         const snapUri = snap.ok ? extractText(snap.text, "Uri") : undefined;
         if (snapUri) {
           snapshotUris.push({
             profileToken: profile.token,
             profileName: profile.name,
-            uri: normalizeUriHost(snapUri, args.ip)
+            uri: normalizeUriHost(snapUri, args.ip, log, "Snapshot")
           });
+        } else {
+          log.push(`GetSnapshotUri(${profile.token}): no Uri in response`);
         }
       }
+    } else {
+      log.push("No Media/Media2 XAddr found; no Stream/Snapshot URIs available.");
     }
 
     return {
       ok: true,
-      xaddrs: args.xaddrs,
+      xaddrs: args.xaddrs.map((x) => normalizeUriHost(x, args.ip, log, "XAddr")),
       deviceServiceUrl,
       mediaServiceUrl: mediaServiceUrl ?? undefined,
       mediaServiceUrl2: media2ServiceUrl ?? undefined,
       rtspUris: rtspUris.length ? rtspUris : undefined,
       snapshotUris: snapshotUris.length ? snapshotUris : undefined,
+      log: limitLog(log),
       deviceInformation: {
         manufacturer,
         model,
@@ -147,10 +182,12 @@ export async function probeOnvifFromXaddr(args: {
       }
     };
   } catch (e) {
+    log.push(`Exception: ${e instanceof Error ? e.message : String(e)}`);
     return {
       ok: false,
       xaddrs: args.xaddrs,
       deviceServiceUrl,
+      log: limitLog(log),
       error: e instanceof Error ? e.message : String(e)
     };
   }
@@ -231,15 +268,26 @@ function extractProfiles(xml: string): Array<{ token?: string; name?: string }> 
   });
 }
 
-function normalizeUriHost(uri: string, ip: string): string {
+function normalizeUriHost(uri: string, ip: string, log: string[], label: string): string {
   try {
-    const u = new URL(sanitizeUrlString(uri));
+    const before = uri;
+    const sanitized = sanitizeUrlString(uri);
+    const u = new URL(sanitized);
     // Cameras often report incorrect IPs (e.g. static IP from another network, 0.0.0.0, etc.).
     // We already know the correct IP because we just successfully queried it.
     u.hostname = ip;
-    return u.toString();
+    const out = u.toString();
+    if (out !== before) log.push(`${label}: "${before}" -> "${out}"`);
+    return out;
   } catch {
-    return sanitizeUrlString(uri);
+    const out = sanitizeUrlString(uri);
+    if (out !== uri) log.push(`${label}: "${uri}" -> "${out}"`);
+    return out;
   }
 }
 
+function limitLog(lines: string[]): string[] {
+  const max = 80;
+  if (lines.length <= max) return lines;
+  return [...lines.slice(0, 20), `... (${lines.length - 40} more) ...`, ...lines.slice(-19)];
+}

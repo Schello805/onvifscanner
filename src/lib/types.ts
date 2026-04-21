@@ -30,6 +30,7 @@ export type OnvifResult = {
   rtspUris?: OnvifUri[];
   snapshotUris?: OnvifUri[];
   thumbnailDataUrl?: string;
+  log?: string[];
   deviceInformation?: {
     manufacturer?: string;
     model?: string;
@@ -46,6 +47,7 @@ export type RtspResult = {
   uriTried?: string;
   uris?: string[];
   candidates?: string[];
+  log?: string[];
   authTried?: "none" | "basic" | "digest";
   statusLine?: string;
   error?: string;

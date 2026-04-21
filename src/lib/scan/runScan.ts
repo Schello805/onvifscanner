@@ -121,7 +121,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
       try {
         const dataUrl = await fetchThumbnailDataUrl({
           url,
-          timeoutMs: Math.min(3500, req.timeoutMs),
+          timeoutMs: 5000,
           credentials: req.credentials
         });
         if (dataUrl) r.onvif.thumbnailDataUrl = dataUrl;
