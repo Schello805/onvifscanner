@@ -128,13 +128,15 @@ async function rtspRequestWithFallback(args: {
       args.log.push(`Auth challenge: ${www}`);
       const digest = parseDigestChallenge(www);
       if (digest) {
-        const variants = buildDigestUriVariants(args.uri);
-        for (const variant of variants) {
-          args.log.push(`Auth: trying Digest (uri="${variant}")`);
+        const attempts = buildDigestAttempts(args.uri);
+        for (const attempt of attempts) {
+          args.log.push(
+            `Auth: trying Digest (requestUri="${attempt.requestUri}" uri="${attempt.digestUri}")`
+          );
           const authorization = buildDigestAuthorizationHeader({
             challenge: digest,
             method,
-            uri: variant,
+            uri: attempt.digestUri,
             username: args.credentials.username,
             password: args.credentials.password
           });
@@ -144,7 +146,7 @@ async function rtspRequestWithFallback(args: {
             timeoutMs: args.timeoutMs,
             request: buildRtspRequest({
               method,
-              uri: args.uri,
+              uri: attempt.requestUri,
               headers: { authorization }
             })
           });
@@ -154,7 +156,7 @@ async function rtspRequestWithFallback(args: {
             return {
               ok: true,
               port: args.port,
-              uriTried: args.uri,
+              uriTried: attempt.requestUri,
               authTried: "digest",
               log: args.log.slice(),
               statusLine: res2.statusLine
@@ -234,6 +236,49 @@ function buildDigestUriVariants(fullUri: string): string[] {
     // ignore
   }
   return Array.from(new Set(out));
+}
+
+function buildDigestAttempts(fullUri: string): Array<{ requestUri: string; digestUri: string }> {
+  const variants = buildDigestUriVariants(fullUri);
+  const out: Array<{ requestUri: string; digestUri: string }> = [];
+
+  // Some servers require the request line URI and digest-uri to match.
+  for (const v of variants) out.push({ requestUri: v, digestUri: v });
+
+  // Others accept absolute in request line but expect path in digest (or vice versa).
+  if (variants.length >= 2) {
+    const [a, b] = variants;
+    out.push({ requestUri: a!, digestUri: b! });
+    out.push({ requestUri: b!, digestUri: a! });
+  }
+
+  // Extra broken variants:
+  // - absolute without explicit port (rtsp://host/path)
+  // - path without leading slash (h265)
+  try {
+    const u = new URL(fullUri);
+    const absNoPort = `rtsp://${u.hostname}${u.pathname}${u.search}`;
+    const path = `${u.pathname}${u.search}`;
+    const pathNoSlash = path.startsWith("/") ? path.slice(1) : path;
+
+    out.push({ requestUri: absNoPort, digestUri: absNoPort });
+    out.push({ requestUri: absNoPort, digestUri: path });
+    if (pathNoSlash) {
+      out.push({ requestUri: pathNoSlash, digestUri: pathNoSlash });
+      out.push({ requestUri: pathNoSlash, digestUri: path });
+    }
+  } catch {
+    // ignore
+  }
+
+  // De-dupe while keeping order.
+  const seen = new Set<string>();
+  return out.filter((a) => {
+    const key = `${a.requestUri}||${a.digestUri}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function rtspRoundTrip(args: {
