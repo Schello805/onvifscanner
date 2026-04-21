@@ -283,32 +283,14 @@ export default function HomePage() {
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
         
-        <div className="relative z-10 flex flex-col md:flex-row md:items-start md:justify-between border-b border-white/5 pb-4 mb-4 gap-4">
-          <div>
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
-            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
-              WS-Discovery ist am zuverlässigsten für ONVIF. Falls du RTSP/HTTP außerhalb des eigenen Subnetzes testen willst, wechsle auf den CIDR-Scan.
-            </p>
-          </div>
-          
-          <div className="flex-shrink-0 flex items-center gap-3 w-full md:w-auto">
-            <button
-              className="w-full md:w-auto group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
-              onClick={runScan}
-              disabled={loading || !ack}
-            >
-              <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
-                <div className="relative h-full w-8 bg-white/20" />
-              </div>
-              <span className="relative flex items-center gap-2 text-sm">
-                {loading ? (
-                  <svg className="animate-spin -ml-1 mr-2 h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                ) : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>}
-                {loading ? "Sucht…" : "Scan Starten"}
-              </span>
-            </button>
-          </div>
-        </div>
+	        <div className="relative z-10 flex flex-col border-b border-white/5 pb-4 mb-4 gap-4">
+	          <div>
+	            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
+	            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
+	              WS-Discovery ist am zuverlässigsten für ONVIF. Falls du RTSP/HTTP außerhalb des eigenen Subnetzes testen willst, wechsle auf den CIDR-Scan.
+	            </p>
+	          </div>
+	        </div>
 
         <div className="relative z-10 grid gap-6 md:grid-cols-12">
           
@@ -399,8 +381,8 @@ export default function HomePage() {
                 </label>
              </div>
              
-             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+	             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
+	                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
@@ -421,12 +403,47 @@ export default function HomePage() {
                     {ack && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={ack} onChange={(e) => setAck(e.target.checked)} />
                   </div>
-                  <span className="text-[11px] text-slate-300">Netzwerk-Berechtigung bestätigt</span>
-                </label>
-             </div>
-          </div>
-          
-        </div>
+	                  <span className="text-[11px] text-slate-300">Netzwerk-Berechtigung bestätigt</span>
+	                </label>
+	             </div>
+
+               <div className="mt-5">
+                 <button
+                   className="w-full group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+                   onClick={runScan}
+                   disabled={loading || !ack}
+                   title={!ack ? "Bitte zuerst die Netzwerk-Berechtigung bestätigen." : undefined}
+                 >
+                   <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
+                     <div className="relative h-full w-8 bg-white/20" />
+                   </div>
+                   <span className="relative flex items-center gap-2 text-sm">
+                     {loading ? (
+                       <svg
+                         className="animate-spin -ml-1 mr-2 h-3.5 w-3.5 text-white"
+                         xmlns="http://www.w3.org/2000/svg"
+                         fill="none"
+                         viewBox="0 0 24 24"
+                       >
+                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                         <path
+                           className="opacity-75"
+                           fill="currentColor"
+                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                         ></path>
+                       </svg>
+                     ) : (
+                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                       </svg>
+                     )}
+                     {loading ? "Sucht…" : "Scan Starten"}
+                   </span>
+                 </button>
+               </div>
+	          </div>
+	          
+	        </div>
 
         {error ? (
           <div className="mt-5 rounded-lg border border-red-900/50 bg-red-950/40 p-4 text-sm text-red-200">
