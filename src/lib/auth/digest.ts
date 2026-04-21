@@ -57,18 +57,37 @@ export function buildDigestAuthorizationHeader(args: {
   password: string;
   nc?: string;
   cnonce?: string;
+  entityBody?: string;
 }): string {
-  const algorithm = (args.challenge.algorithm ?? "MD5").toUpperCase();
-  if (algorithm !== "MD5") {
-    throw new Error(`Digest algorithm not supported: ${algorithm}`);
+  const algorithmRaw = args.challenge.algorithm ?? "MD5";
+  const algorithm = algorithmRaw.toUpperCase();
+  if (algorithm !== "MD5" && algorithm !== "MD5-SESS") {
+    throw new Error(`Digest algorithm not supported: ${algorithmRaw}`);
   }
 
-  const qop = args.challenge.qop?.split(",").map((s) => s.trim()).find((s) => s === "auth");
+  const qopOptions = args.challenge.qop
+    ?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const qop = qopOptions?.includes("auth")
+    ? "auth"
+    : qopOptions?.includes("auth-int")
+      ? "auth-int"
+      : undefined;
   const nc = args.nc ?? "00000001";
   const cnonce = args.cnonce ?? crypto.randomBytes(8).toString("hex");
 
-  const ha1 = md5(`${args.username}:${args.challenge.realm}:${args.password}`);
-  const ha2 = md5(`${args.method}:${args.uri}`);
+  const ha1Base = md5(`${args.username}:${args.challenge.realm}:${args.password}`);
+  const ha1 =
+    algorithm === "MD5-SESS"
+      ? md5(`${ha1Base}:${args.challenge.nonce}:${cnonce}`)
+      : ha1Base;
+
+  const ha2 =
+    qop === "auth-int"
+      ? md5(`${args.method}:${args.uri}:${md5(args.entityBody ?? "")}`)
+      : md5(`${args.method}:${args.uri}`);
+
   const response = qop
     ? md5(`${ha1}:${args.challenge.nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
     : md5(`${ha1}:${args.challenge.nonce}:${ha2}`);
@@ -80,7 +99,7 @@ export function buildDigestAuthorizationHeader(args: {
   kv.push(`uri="${escapeQuotes(args.uri)}"`);
   kv.push(`response="${response}"`);
   // Some implementations are picky; only include algorithm if server provided it.
-  if (args.challenge.algorithm) kv.push(`algorithm=MD5`);
+  if (args.challenge.algorithm) kv.push(`algorithm=${algorithmRaw}`);
   if (args.challenge.opaque) kv.push(`opaque="${escapeQuotes(args.challenge.opaque)}"`);
   if (qop) {
     kv.push(`qop=${qop}`);
