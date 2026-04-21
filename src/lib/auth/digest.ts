@@ -79,7 +79,8 @@ export function buildDigestAuthorizationHeader(args: {
   kv.push(`nonce="${escapeQuotes(args.challenge.nonce)}"`);
   kv.push(`uri="${escapeQuotes(args.uri)}"`);
   kv.push(`response="${response}"`);
-  kv.push(`algorithm=MD5`);
+  // Some implementations are picky; only include algorithm if server provided it.
+  if (args.challenge.algorithm) kv.push(`algorithm=MD5`);
   if (args.challenge.opaque) kv.push(`opaque="${escapeQuotes(args.challenge.opaque)}"`);
   if (qop) {
     kv.push(`qop=${qop}`);
@@ -96,4 +97,3 @@ function md5(input: string): string {
 function escapeQuotes(input: string): string {
   return input.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
-

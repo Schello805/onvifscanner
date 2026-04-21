@@ -128,34 +128,49 @@ async function rtspRequestWithFallback(args: {
       args.log.push(`Auth challenge: ${www}`);
       const digest = parseDigestChallenge(www);
       if (digest) {
-        args.log.push("Auth: trying Digest");
-        const authorization = buildDigestAuthorizationHeader({
-          challenge: digest,
-          method,
-          uri: args.uri,
-          username: args.credentials.username,
-          password: args.credentials.password
-        });
-        const res2 = await rtspRequest({
-          ip: args.ip,
-          port: args.port,
-          timeoutMs: args.timeoutMs,
-          request: buildRtspRequest({
+        const variants = buildDigestUriVariants(args.uri);
+        for (const variant of variants) {
+          args.log.push(`Auth: trying Digest (uri="${variant}")`);
+          const authorization = buildDigestAuthorizationHeader({
+            challenge: digest,
             method,
-            uri: args.uri,
-            headers: { authorization }
-          })
-        });
-        args.log.push(`Auth response: ${res2.statusLine ?? "no status line"}`);
-        const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
+            uri: variant,
+            username: args.credentials.username,
+            password: args.credentials.password
+          });
+          const res2 = await rtspRequest({
+            ip: args.ip,
+            port: args.port,
+            timeoutMs: args.timeoutMs,
+            request: buildRtspRequest({
+              method,
+              uri: args.uri,
+              headers: { authorization }
+            })
+          });
+          args.log.push(`Auth response: ${res2.statusLine ?? "no status line"}`);
+          const ok = !!res2.statusCode && res2.statusCode >= 200 && res2.statusCode < 400;
+          if (ok) {
+            return {
+              ok: true,
+              port: args.port,
+              uriTried: args.uri,
+              authTried: "digest",
+              log: args.log.slice(),
+              statusLine: res2.statusLine
+            };
+          }
+        }
+
+        // Fallthrough: digest failed.
         return {
-          ok,
+          ok: false,
           port: args.port,
           uriTried: args.uri,
           authTried: "digest",
           log: args.log.slice(),
-          statusLine: res2.statusLine,
-          error: ok ? undefined : `RTSP ${res2.statusCode ?? "?"}`
+          statusLine: res1.statusLine,
+          error: "Digest auth failed"
         };
       }
 
@@ -204,6 +219,21 @@ function limitLog(lines: string[]): string[] {
   const max = 80;
   if (lines.length <= max) return lines;
   return [...lines.slice(0, 20), `... (${lines.length - 40} more) ...`, ...lines.slice(-19)];
+}
+
+function buildDigestUriVariants(fullUri: string): string[] {
+  // Some RTSP servers expect the Digest "uri" directive to be only path+query,
+  // others accept the absolute RTSP URI. Try both.
+  const out: string[] = [];
+  out.push(fullUri);
+  try {
+    const u = new URL(fullUri);
+    const path = `${u.pathname}${u.search}`;
+    if (path && path !== fullUri) out.push(path);
+  } catch {
+    // ignore
+  }
+  return Array.from(new Set(out));
 }
 
 function rtspRoundTrip(args: {

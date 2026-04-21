@@ -1,5 +1,6 @@
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
 import { buildWsseSecurityHeader } from "@/lib/onvif/wsse";
+import crypto from "node:crypto";
 
 export async function onvifSoapCall(args: {
   url: string;
@@ -15,12 +16,14 @@ export async function onvifSoapCall(args: {
           password: args.credentials.password
         })
       : undefined;
+  const wsa = buildWsAddressingHeader({ action: args.action, to: args.url });
 
   // Try SOAP 1.2 first.
   const env12 = buildSoapEnvelope({
     soapNs: "http://www.w3.org/2003/05/soap-envelope",
     body: args.body,
-    wsse
+    wsse,
+    wsa
   });
   const res12 = await fetchWithDigestAuth({
     url: args.url,
@@ -44,7 +47,8 @@ export async function onvifSoapCall(args: {
   const env11 = buildSoapEnvelope({
     soapNs: "http://schemas.xmlsoap.org/soap/envelope/",
     body: args.body,
-    wsse
+    wsse,
+    wsa
   });
   const res11 = await fetchWithDigestAuth({
     url: args.url,
@@ -62,8 +66,14 @@ export async function onvifSoapCall(args: {
   return { ok: res11.ok, status: res11.status, text: text11, soap: "1.1" };
 }
 
-function buildSoapEnvelope(args: { soapNs: string; body: string; wsse?: string }): string {
-  const header = args.wsse ? `<s:Header>${args.wsse}</s:Header>` : "";
+function buildSoapEnvelope(args: {
+  soapNs: string;
+  body: string;
+  wsse?: string;
+  wsa?: string;
+}): string {
+  const headerInner = `${args.wsa ?? ""}${args.wsse ?? ""}`.trim();
+  const header = headerInner ? `<s:Header>${headerInner}</s:Header>` : "";
   return `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="${args.soapNs}">
   ${header}
@@ -71,4 +81,25 @@ function buildSoapEnvelope(args: { soapNs: string; body: string; wsse?: string }
     ${args.body}
   </s:Body>
 </s:Envelope>`;
+}
+
+function buildWsAddressingHeader(args: { action: string; to: string }): string {
+  const messageId =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : crypto.randomBytes(16).toString("hex");
+  const action = escapeXml(args.action);
+  const to = escapeXml(args.to);
+  return `<wsa:Action xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">${action}</wsa:Action>
+<wsa:To xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">${to}</wsa:To>
+<wsa:MessageID xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing">uuid:${messageId}</wsa:MessageID>`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
