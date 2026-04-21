@@ -40,6 +40,8 @@ Dann im Browser: http://localhost:3000
 
 ## Deployment (Debian LXC)
 
+Schritt-für-Schritt inkl. Requirements (Node 20+, Build-Tools, `libvips` für `sharp`), systemd Service, Reverse Proxy und Updates:
+
 Siehe: `docs/DEPLOY_DEBIAN_LXC.md`
 
 ## Konfiguration (Environment)
