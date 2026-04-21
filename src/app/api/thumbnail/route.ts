@@ -141,15 +141,23 @@ export async function POST(req: Request) {
       }
 
       attemptLog.push(`Try: ${url.toString()}`);
+      if (body.credentials?.username) {
+        attemptLog.push(`Creds: username=${body.credentials.username}`);
+      } else {
+        attemptLog.push("Creds: none");
+      }
+      const debugLog: string[] = [];
       const res = await fetchWithDigestAuth({
         url: url.toString(),
         method: "GET",
         timeoutMs,
         credentials: body.credentials,
-        headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" }
+        headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
+        debugLog
       });
 
       attemptLog.push(`Status: ${res.status}`);
+      for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
       if (!res.ok) continue;
 
       const contentType = (res.headers.get("content-type") ?? "").toLowerCase();

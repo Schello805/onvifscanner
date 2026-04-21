@@ -155,9 +155,9 @@ export default function HomePage() {
                   size: 200,
                   timeoutMs: 4000,
                   credentials:
-                    username.trim() || password
+                    username.trim() && password
                       ? { username: username.trim(), password }
-                    : undefined
+                      : undefined
               })
             });
             if (!thumbRes.ok) {

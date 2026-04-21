@@ -7,6 +7,7 @@ export async function fetchWithDigestAuth(args: {
   body?: string;
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  debugLog?: string[];
 }): Promise<Response> {
   // Preemptive Basic: many devices (e.g. vendor snapshot endpoints) accept Basic even when they
   // don't advertise it correctly. This also avoids an extra roundtrip in the common case.
@@ -15,6 +16,7 @@ export async function fetchWithDigestAuth(args: {
       `${args.credentials.username}:${args.credentials.password}`,
       "utf8"
     ).toString("base64");
+    args.debugLog?.push("Auth: trying Basic (preemptive)");
     const res0 = await fetchWithTimeout({
       url: args.url,
       method: args.method,
@@ -22,10 +24,12 @@ export async function fetchWithDigestAuth(args: {
       body: args.body,
       timeoutMs: args.timeoutMs
     });
+    args.debugLog?.push(`Auth: Basic(preemptive) -> HTTP ${res0.status}`);
     if (res0.status !== 401) return res0;
     // Fall through: some devices require Digest and will respond with WWW-Authenticate.
   }
 
+  args.debugLog?.push("Auth: requesting without Authorization");
   const res1 = await fetchWithTimeout({
     url: args.url,
     method: args.method,
@@ -33,10 +37,12 @@ export async function fetchWithDigestAuth(args: {
     body: args.body,
     timeoutMs: args.timeoutMs
   });
+  args.debugLog?.push(`Auth: unauth -> HTTP ${res1.status}`);
   if (res1.status !== 401 || !args.credentials) return res1;
 
   const www = res1.headers.get("www-authenticate");
   if (!www) return res1;
+  args.debugLog?.push(`WWW-Authenticate: ${www}`);
 
   if (/basic/i.test(www)) {
     const basic = Buffer.from(
@@ -71,13 +77,16 @@ export async function fetchWithDigestAuth(args: {
     password: args.credentials.password
   });
 
-  return fetchWithTimeout({
+  args.debugLog?.push(`Auth: trying Digest (uri="${uri}")`);
+  const res2 = await fetchWithTimeout({
     url: args.url,
     method: args.method,
     headers: { ...(args.headers ?? {}), authorization },
     body: args.body,
     timeoutMs: args.timeoutMs
   });
+  args.debugLog?.push(`Auth: Digest -> HTTP ${res2.status}`);
+  return res2;
 }
 
 async function fetchWithTimeout(args: {
