@@ -20,44 +20,68 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     );
     const found = await wsDiscoveryProbe({
       timeoutMs: Math.min(req.timeoutMs, discoveryTimeoutMs),
+      deepProbe: req.deepProbe,
       credentials: req.credentials
     });
     results.push(...found);
 
-    // RTSP: always attach candidates so each camera shows something useful,
-    // and attempt a lightweight probe on common ports.
-    await mapLimit(results, 32, async (r) => {
-      const commonPorts = [554, 8554];
-      const open = await scanTcpPorts(r.ip, commonPorts, Math.min(req.timeoutMs, 900));
-      const port = open[0] ?? 554;
+    if (req.deepProbe) {
+      // RTSP: attach candidates and attempt a lightweight probe on common ports.
+      await mapLimit(results, 32, async (r) => {
+        const commonPorts = [554, 8554];
+        const open = await scanTcpPorts(
+          r.ip,
+          commonPorts,
+          Math.min(req.timeoutMs, 900)
+        );
+        const port = open[0] ?? 554;
 
-      const onvifUris = r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? [];
-      const candidates = buildRtspCandidates({ ip: r.ip, port });
-      const uris = Array.from(new Set([...onvifUris]));
+        const onvifUris =
+          r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? [];
+        const candidates = buildRtspCandidates({ ip: r.ip, port });
+        const uris = Array.from(new Set([...onvifUris]));
 
-      // Try ONVIF-provided first, then candidates.
-      const probeList = [...uris, ...candidates].slice(0, 4);
-      for (const uri of probeList) {
-        const res = await probeRtsp({
-          ip: r.ip,
-          port,
-          timeoutMs: Math.min(req.timeoutMs, 1200),
-          credentials: req.credentials,
-          uri
-        });
+        // Try ONVIF-provided first, then candidates.
+        const probeList = [...uris, ...candidates].slice(0, 4);
+        for (const uri of probeList) {
+          const res = await probeRtsp({
+            ip: r.ip,
+            port,
+            timeoutMs: Math.min(req.timeoutMs, 1200),
+            credentials: req.credentials,
+            uri
+          });
+          r.rtsp = {
+            ...res,
+            port,
+            uris: uris.length ? uris : undefined,
+            candidates
+          };
+          if (res.ok) break;
+        }
+
+        if (!r.rtsp) {
+          r.rtsp = {
+            ok: false,
+            port,
+            candidates,
+            uris: uris.length ? uris : undefined
+          };
+        }
+      });
+    } else {
+      // Fast scan: show RTSP candidates without actively probing (keeps scans snappy).
+      for (const r of results) {
+        const port = 554;
         r.rtsp = {
-          ...res,
+          ok: false,
+          discoveryOnly: true,
           port,
-          uris: uris.length ? uris : undefined,
-          candidates
+          candidates: buildRtspCandidates({ ip: r.ip, port }),
+          log: ["RTSP Probe: übersprungen (Fast Scan)."]
         };
-        if (res.ok) break;
       }
-
-      if (!r.rtsp) {
-        r.rtsp = { ok: false, port, candidates, uris: uris.length ? uris : undefined };
-      }
-    });
+    }
   } else {
     const ips = expandCidr(req.cidr!);
     if (ips.length === 0) {
@@ -74,14 +98,24 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
         [554, 8554, 10554, 8555].includes(p)
       );
       if (rtspPort) {
-        const rtsp = await probeRtsp({
-          ip,
-          port: rtspPort,
-          timeoutMs: req.timeoutMs,
-          credentials: req.credentials
-        });
-        rtsp.candidates = buildRtspCandidates({ ip, port: rtspPort });
-        result.rtsp = rtsp;
+        if (req.deepProbe) {
+          const rtsp = await probeRtsp({
+            ip,
+            port: rtspPort,
+            timeoutMs: req.timeoutMs,
+            credentials: req.credentials
+          });
+          rtsp.candidates = buildRtspCandidates({ ip, port: rtspPort });
+          result.rtsp = rtsp;
+        } else {
+          result.rtsp = {
+            ok: false,
+            discoveryOnly: true,
+            port: rtspPort,
+            candidates: buildRtspCandidates({ ip, port: rtspPort }),
+            log: ["RTSP Probe: übersprungen (Deep Probe deaktiviert)."]
+          };
+        }
       }
 
       // If HTTP is open, try common ONVIF device_service path as a hint.
@@ -92,21 +126,33 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
       if (httpsPort) xaddrs.push(`https://${ip}:${httpsPort}/onvif/device_service`);
 
       if (xaddrs.length) {
-        result.onvif = await probeOnvifFromXaddr({
-          ip,
-          xaddrs,
-          timeoutMs: req.timeoutMs,
-          credentials: req.credentials
-        });
+        if (req.deepProbe) {
+          result.onvif = await probeOnvifFromXaddr({
+            ip,
+            xaddrs,
+            timeoutMs: req.timeoutMs,
+            credentials: req.credentials
+          });
 
-        const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
-        if (onvifRtsp.length) {
-          if (!result.rtsp) {
-            // No RTSP port probe happened, but we can still present URLs.
-            result.rtsp = { ok: false, port: 554, uris: onvifRtsp };
-          } else {
-            result.rtsp.uris = Array.from(new Set([...(result.rtsp.uris ?? []), ...onvifRtsp]));
+          const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
+          if (onvifRtsp.length) {
+            if (!result.rtsp) {
+              // No RTSP port probe happened, but we can still present URLs.
+              result.rtsp = { ok: false, port: 554, uris: onvifRtsp };
+            } else {
+              result.rtsp.uris = Array.from(
+                new Set([...(result.rtsp.uris ?? []), ...onvifRtsp])
+              );
+            }
           }
+        } else {
+          result.onvif = {
+            ok: false,
+            discoveryOnly: true,
+            deviceServiceUrl: xaddrs[0],
+            xaddrs,
+            log: ["ONVIF SOAP Probe: übersprungen (Deep Probe deaktiviert)."]
+          };
         }
       }
 

@@ -9,6 +9,7 @@ const WS_DISCOVERY_PORT = 3702;
 
 export async function wsDiscoveryProbe(args: {
   timeoutMs: number;
+  deepProbe: boolean;
   credentials?: { username: string; password: string };
 }): Promise<ScanResult[]> {
   const discovered = await wsDiscoveryRaw(args.timeoutMs);
@@ -26,6 +27,22 @@ export async function wsDiscoveryProbe(args: {
   }
 
   const items = Array.from(byIp.values());
+  if (!args.deepProbe) {
+    return items.map((item) => ({
+      ip: item.ip,
+      onvif: {
+        ok: false,
+        discoveryOnly: true,
+        deviceServiceUrl: item.xaddrs[0],
+        xaddrs: item.xaddrs,
+        log: [
+          `WS-Discovery: ${item.xaddrs.length} XAddr(s) gefunden.`,
+          "ONVIF SOAP Probe: übersprungen (Fast Scan)."
+        ]
+      }
+    }));
+  }
+
   const probed = await mapLimit(items, Math.min(32, items.length || 1), async (item) => {
     const onvif = await probeOnvifFromXaddr({
       ip: item.ip,

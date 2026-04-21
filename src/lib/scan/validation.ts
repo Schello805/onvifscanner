@@ -15,6 +15,7 @@ export type ParsedScanRequest = Required<
   credentials?: ScanRequest["credentials"];
   timeoutMs: number;
   concurrency: number;
+  deepProbe: boolean;
   includeThumbnails: boolean;
 };
 
@@ -39,6 +40,8 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     1,
     1024
   );
+  const deepProbe =
+    typeof body.deepProbe === "boolean" ? body.deepProbe : preset === "cidr";
   const includeThumbnails = Boolean(body.includeThumbnails);
 
   if (preset === "ws-discovery") {
@@ -46,6 +49,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
       preset,
       timeoutMs,
       concurrency,
+      deepProbe,
       includeThumbnails,
       acknowledgeAuthorizedNetwork: true,
       credentials: sanitizeCredentials(body.credentials)
@@ -87,6 +91,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     ports: cleanPorts,
     timeoutMs,
     concurrency,
+    deepProbe,
     includeThumbnails,
     acknowledgeAuthorizedNetwork: true,
     credentials: sanitizeCredentials(body.credentials)

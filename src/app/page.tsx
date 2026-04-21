@@ -28,6 +28,7 @@ export default function HomePage() {
   const [password, setPassword] = useState("");
   const [copyWithCreds, setCopyWithCreds] = useState(false);
   const [includeThumbnails, setIncludeThumbnails] = useState(false);
+  const [deepProbe, setDeepProbe] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(false);
@@ -84,10 +85,22 @@ export default function HomePage() {
           : undefined,
       timeoutMs,
       concurrency,
+      deepProbe,
       includeThumbnails,
       acknowledgeAuthorizedNetwork: ack
     }),
-    [ack, cidr, concurrency, includeThumbnails, password, ports, preset, timeoutMs, username]
+    [
+      ack,
+      cidr,
+      concurrency,
+      deepProbe,
+      includeThumbnails,
+      password,
+      ports,
+      preset,
+      timeoutMs,
+      username
+    ]
   );
 
   async function runScan() {
@@ -302,7 +315,11 @@ export default function HomePage() {
                 <select
                   className="glass-input rounded-lg px-3 py-1.5 text-sm select-none"
                   value={preset}
-                  onChange={(e) => setPreset(e.target.value as ScanTargetPreset)}
+                  onChange={(e) => {
+                    const next = e.target.value as ScanTargetPreset;
+                    setPreset(next);
+                    setDeepProbe(next === "cidr");
+                  }}
                 >
                   <option value="ws-discovery" className="bg-slate-900 text-white">WS-Discovery</option>
                   <option value="cidr" className="bg-slate-900 text-white">CIDR Scan</option>
@@ -396,6 +413,14 @@ export default function HomePage() {
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={includeThumbnails} onChange={(e) => setIncludeThumbnails(e.target.checked)} />
                   </div>
                   <span className="text-[11px] text-slate-300">Vorschau-Bilder laden (langsamer)</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {deepProbe && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={deepProbe} onChange={(e) => setDeepProbe(e.target.checked)} />
+                  </div>
+                  <span className="text-[11px] text-slate-300">Erweiterte Analyse (ONVIF/RTSP prüfen)</span>
                 </label>
                 
                 <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
@@ -524,12 +549,16 @@ export default function HomePage() {
                           <div className="flex items-center gap-2">
                             {r.onvif?.ok ? (
                               <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">ONVIF</span>
+                            ) : r.onvif?.discoveryOnly ? (
+                              <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10">ONVIF?</span>
                             ) : r.onvif ? (
                               <span title={r.onvif.error} className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/30">Kein ONVIF</span>
                             ) : null}
                             
                             {r.rtsp?.ok ? (
                               <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">RTSP</span>
+                            ) : r.rtsp?.discoveryOnly ? (
+                              <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10">RTSP?</span>
                             ) : r.rtsp ? (
                               <span title={r.rtsp.error} className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border border-white/10">RTSP Fehler</span>
                             ) : null}
@@ -552,12 +581,16 @@ export default function HomePage() {
                                 {r.onvif
                                   ? r.onvif.ok
                                     ? "ONVIF: OK"
+                                    : r.onvif.discoveryOnly
+                                      ? "ONVIF: gefunden (ungetestet)"
                                     : `ONVIF: Fehler${r.onvif.error ? ` (${r.onvif.error})` : ""}`
                                   : "ONVIF: —"}
                                 {" • "}
                                 {r.rtsp
                                   ? r.rtsp.ok
                                     ? "RTSP: OK"
+                                    : r.rtsp.discoveryOnly
+                                      ? "RTSP: Kandidaten (ungetestet)"
                                     : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
                                   : "RTSP: —"}
                               </div>

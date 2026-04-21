@@ -18,12 +18,14 @@ export type ScanRequest = {
   credentials?: Credentials;
   timeoutMs?: number;
   concurrency?: number;
+  deepProbe?: boolean;
   includeThumbnails?: boolean;
   acknowledgeAuthorizedNetwork: boolean;
 };
 
 export type OnvifResult = {
   ok: boolean;
+  discoveryOnly?: boolean;
   xaddrs?: string[];
   deviceServiceUrl?: string;
   mediaServiceUrl?: string;
@@ -43,6 +45,7 @@ export type OnvifResult = {
 
 export type RtspResult = {
   ok: boolean;
+  discoveryOnly?: boolean;
   port: number;
   uriTried?: string;
   uris?: string[];
