@@ -86,7 +86,10 @@ export default function HomePage() {
       if (includeThumbnails) {
         const jobs = json.results
           .map((r) => {
-            const url = r.onvif?.snapshotUris?.[0]?.uri;
+            const url =
+              r.onvif?.snapshotUris?.[0]?.uri ??
+              // Vendor fallbacks (Hikvision ISAPI picture endpoints).
+              `http://${r.ip}/ISAPI/Streaming/channels/101/picture`;
             return url ? { ip: r.ip, url } : null;
           })
           .filter(Boolean) as Array<{ ip: string; url: string }>;

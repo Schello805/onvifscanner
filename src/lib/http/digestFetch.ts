@@ -8,6 +8,24 @@ export async function fetchWithDigestAuth(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
 }): Promise<Response> {
+  // Preemptive Basic: many devices (e.g. vendor snapshot endpoints) accept Basic even when they
+  // don't advertise it correctly. This also avoids an extra roundtrip in the common case.
+  if (args.credentials) {
+    const basic = Buffer.from(
+      `${args.credentials.username}:${args.credentials.password}`,
+      "utf8"
+    ).toString("base64");
+    const res0 = await fetchWithTimeout({
+      url: args.url,
+      method: args.method,
+      headers: { ...(args.headers ?? {}), authorization: `Basic ${basic}` },
+      body: args.body,
+      timeoutMs: args.timeoutMs
+    });
+    if (res0.status !== 401) return res0;
+    // Fall through: some devices require Digest and will respond with WWW-Authenticate.
+  }
+
   const res1 = await fetchWithTimeout({
     url: args.url,
     method: args.method,

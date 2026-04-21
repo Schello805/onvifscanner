@@ -170,7 +170,36 @@ async function rtspRequestWithFallback(args: {
           }
         }
 
-        // Fallthrough: digest failed.
+        // Fallthrough: digest failed. Some devices still accept Basic even when they advertise Digest.
+        args.log.push("Auth: Digest failed, trying Basic as fallback");
+        const basic = Buffer.from(
+          `${args.credentials.username}:${args.credentials.password}`,
+          "utf8"
+        ).toString("base64");
+        const resBasic = await rtspRequest({
+          ip: args.ip,
+          port: args.port,
+          timeoutMs: args.timeoutMs,
+          request: buildRtspRequest({
+            method,
+            uri: args.uri,
+            headers: { authorization: `Basic ${basic}` }
+          })
+        });
+        args.log.push(`Auth response: ${resBasic.statusLine ?? "no status line"}`);
+        const okBasic =
+          !!resBasic.statusCode && resBasic.statusCode >= 200 && resBasic.statusCode < 400;
+        if (okBasic) {
+          return {
+            ok: true,
+            port: args.port,
+            uriTried: args.uri,
+            authTried: "basic",
+            log: args.log.slice(),
+            statusLine: resBasic.statusLine
+          };
+        }
+
         return {
           ok: false,
           port: args.port,
