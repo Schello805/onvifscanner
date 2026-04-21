@@ -1,4 +1,5 @@
 import net from "node:net";
+import crypto from "node:crypto";
 import type { RtspResult } from "@/lib/types";
 import { buildDigestAuthorizationHeader, parseDigestChallenge } from "@/lib/auth/digest";
 
@@ -129,7 +130,10 @@ async function rtspRequestWithFallback(args: {
       const digest = parseDigestChallenge(www);
       if (digest) {
         const attempts = buildDigestAttempts(args.uri);
-        for (const attempt of attempts) {
+        const cnonce = randomHex(8);
+        for (let i = 0; i < attempts.length; i += 1) {
+          const attempt = attempts[i]!;
+          const nc = formatNc(i + 1);
           args.log.push(
             `Auth: trying Digest (requestUri="${attempt.requestUri}" uri="${attempt.digestUri}")`
           );
@@ -138,7 +142,9 @@ async function rtspRequestWithFallback(args: {
             method,
             uri: attempt.digestUri,
             username: args.credentials.username,
-            password: args.credentials.password
+            password: args.credentials.password,
+            nc,
+            cnonce
           });
           const res2 = await rtspRequest({
             ip: args.ip,
@@ -279,6 +285,15 @@ function buildDigestAttempts(fullUri: string): Array<{ requestUri: string; diges
     seen.add(key);
     return true;
   });
+}
+
+function formatNc(n: number): string {
+  const hex = Math.max(1, Math.trunc(n)).toString(16);
+  return hex.padStart(8, "0");
+}
+
+function randomHex(bytes: number): string {
+  return crypto.randomBytes(bytes).toString("hex");
 }
 
 function rtspRoundTrip(args: {
