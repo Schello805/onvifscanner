@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Debian LXC "one script" installer/updater.
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+#
+# Optional env vars:
+#   REPO_URL=https://github.com/Schello805/onvifscanner.git
+#   APP_DIR=/opt/onvifscanner
+#   APP_USER=onvifscanner
+#   ENV_FILE=/etc/onvifscanner/onvifscanner.env
+#   INSTALL_NGINX=true
+#
+
 REPO_URL="${REPO_URL:-https://github.com/Schello805/onvifscanner.git}"
 APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 APP_USER="${APP_USER:-onvifscanner}"
@@ -10,6 +23,13 @@ INSTALL_NGINX="${INSTALL_NGINX:-false}"
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     echo "Please run as root (sudo)." >&2
+    exit 1
+  fi
+}
+
+require_systemd() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd/systemctl not found. This installer expects a Debian LXC with systemd." >&2
     exit 1
   fi
 }
@@ -39,7 +59,7 @@ install_node20() {
   echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
     > /etc/apt/sources.list.d/nodesource.list
   apt-get update -y
-  apt-get install -y nodejs
+  apt-get install -y --no-install-recommends nodejs
 }
 
 ensure_user() {
@@ -48,6 +68,12 @@ ensure_user() {
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
   install -d -o root -g root /etc/onvifscanner
+}
+
+as_app_user() {
+  local cmd="$1"
+  # runuser is provided by util-linux (present on Debian minimal).
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; ${cmd}"
 }
 
 checkout_repo() {
@@ -83,7 +109,7 @@ WS_DISCOVERY_TIMEOUT_MS=1800
 
 # Thumbnails
 ENABLE_THUMBNAILS=true
-THUMBNAILS_MAX=12
+THUMBNAILS_MAX=24
 EOF
     chmod 0640 "$ENV_FILE"
     chown root:"$APP_USER" "$ENV_FILE"
@@ -91,9 +117,9 @@ EOF
 }
 
 build_app() {
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm ci"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
+  as_app_user "cd '$APP_DIR' && npm ci"
+  as_app_user "cd '$APP_DIR' && npm run build"
+  as_app_user "cd '$APP_DIR' && npm prune --omit=dev"
 }
 
 install_service() {
@@ -103,19 +129,35 @@ install_service() {
   systemctl enable --now onvifscanner.service
 }
 
-print_next_steps() {
+setup_nginx() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get install -y --no-install-recommends nginx
+  cp "$APP_DIR/deploy/nginx-onvifscanner.conf" /etc/nginx/sites-available/onvifscanner
+  ln -sf /etc/nginx/sites-available/onvifscanner /etc/nginx/sites-enabled/onvifscanner
+  rm -f /etc/nginx/sites-enabled/default || true
+  nginx -t
+  systemctl reload nginx
+}
+
+print_summary() {
   echo
-  echo "Installed ONVIFscanner."
+  echo "ONVIFscanner installed/updated."
   echo "- Service: systemctl status onvifscanner"
   echo "- Logs:    journalctl -u onvifscanner -f"
+  echo "- Config:  ${ENV_FILE}"
   echo
-  echo "Optional nginx reverse proxy:"
-  echo "- INSTALL_NGINX=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash"
+  if [[ "$INSTALL_NGINX" == "true" ]]; then
+    echo "nginx is configured as reverse proxy."
+  else
+    echo "Optional nginx:"
+    echo "  INSTALL_NGINX=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash"
+  fi
   echo
 }
 
 main() {
   require_root
+  require_systemd
   ensure_packages
   install_node20
   ensure_user
@@ -124,15 +166,10 @@ main() {
   build_app
   install_service
   if [[ "$INSTALL_NGINX" == "true" ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get install -y --no-install-recommends nginx
-    cp "$APP_DIR/deploy/nginx-onvifscanner.conf" /etc/nginx/sites-available/onvifscanner
-    ln -sf /etc/nginx/sites-available/onvifscanner /etc/nginx/sites-enabled/onvifscanner
-    rm -f /etc/nginx/sites-enabled/default || true
-    nginx -t
-    systemctl reload nginx
+    setup_nginx
   fi
-  print_next_steps
+  print_summary
 }
 
 main "$@"
+

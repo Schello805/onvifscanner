@@ -37,7 +37,7 @@ Als root im Container:
 
 ```bash
 apt-get update -y && apt-get install -y ca-certificates curl
-curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
 ```
 
 Danach läuft der Service standardmäßig auf `127.0.0.1:3000`.
@@ -102,7 +102,7 @@ nginx -t && systemctl reload nginx
 ## Update
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/update.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
 ```
 
 ## Update (ohne Script, manuell)
