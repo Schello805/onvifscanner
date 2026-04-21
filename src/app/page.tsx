@@ -36,6 +36,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScanResponse | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const [thumbnailLog, setThumbnailLog] = useState<Record<string, string>>({});
   const runNonceRef = useRef(0);
 
   const request: ScanRequest = useMemo(
@@ -82,36 +83,48 @@ export default function HomePage() {
         }
         return {};
       });
+      setThumbnailLog({});
 
       if (includeThumbnails) {
+        type ThumbJob = { ip: string; urls: string[] };
         const jobs = json.results
           .map((r) => {
-            const url =
-              r.onvif?.snapshotUris?.[0]?.uri ??
-              // Vendor fallbacks (Hikvision ISAPI picture endpoints).
-              `http://${r.ip}/ISAPI/Streaming/channels/101/picture`;
-            return url ? { ip: r.ip, url } : null;
+            const urls = [
+              ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
+              // Hikvision ISAPI picture endpoints (often work even if ONVIF fails).
+              `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
+              `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
+            ].filter(Boolean);
+            return urls.length ? ({ ip: r.ip, urls } satisfies ThumbJob) : null;
           })
-          .filter(Boolean) as Array<{ ip: string; url: string }>;
+          .filter(Boolean) as ThumbJob[];
 
         const thumbConcurrency = 3;
         const maxThumbs = 24;
-        void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, url }) => {
+        void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
           try {
             const thumbRes = await fetch("/api/thumbnail", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
-                url,
-                size: 200,
-                timeoutMs: 4000,
-                credentials:
-                  username.trim() || password
-                    ? { username: username.trim(), password }
+                  urls,
+                  size: 200,
+                  timeoutMs: 4000,
+                  credentials:
+                    username.trim() || password
+                      ? { username: username.trim(), password }
                     : undefined
               })
             });
-            if (!thumbRes.ok) return null;
+            if (!thumbRes.ok) {
+              try {
+                const txt = await thumbRes.text();
+                setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 500) }));
+              } catch {
+                // ignore
+              }
+              return null;
+            }
             const blob = await thumbRes.blob();
             if (!blob.size) return null;
             const objectUrl = URL.createObjectURL(blob);
@@ -137,6 +150,8 @@ export default function HomePage() {
               }
               return { ...prev, [ip]: objectUrl };
             });
+            const src = thumbRes.headers.get("x-thumbnail-source");
+            if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
             return null;
           } catch {
             return null;
@@ -582,9 +597,17 @@ export default function HomePage() {
                             {/* Log */}
                             <div className="flex flex-col gap-2.5">
                               <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 pb-1">Log</div>
-                              {Boolean((r.onvif?.log?.length ?? 0) + (r.rtsp?.log?.length ?? 0)) ? (
+                              {Boolean(
+                                (r.onvif?.log?.length ?? 0) +
+                                  (r.rtsp?.log?.length ?? 0) +
+                                  (thumbnailLog[r.ip] ? 1 : 0)
+                              ) ? (
                                 <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
-{[...(r.onvif?.log ?? []), ...(r.rtsp?.log ?? [])].join("\n")}
+{[
+  ...(r.onvif?.log ?? []),
+  ...(r.rtsp?.log ?? []),
+  ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
+].join("\n")}
                                 </pre>
                               ) : (
                                 <div className="text-xs text-slate-500">Kein Log verfügbar.</div>

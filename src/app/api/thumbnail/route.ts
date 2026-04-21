@@ -6,7 +6,8 @@ import { isPrivateIpv4 } from "@/lib/net/ip";
 export const runtime = "nodejs";
 
 type Body = {
-  url: string;
+  url?: string;
+  urls?: string[];
   size?: number;
   timeoutMs?: number;
   credentials?: { username: string; password: string };
@@ -67,28 +68,49 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
   }
 
-  const urlStr = typeof body.url === "string" ? sanitizeUrlString(body.url) : "";
-  if (!urlStr) return NextResponse.json({ error: "Missing url." }, { status: 400 });
+  const rawUrls: string[] = [];
+  if (typeof body.url === "string") rawUrls.push(body.url);
+  if (Array.isArray(body.urls)) {
+    for (const u of body.urls) {
+      if (typeof u === "string") rawUrls.push(u);
+    }
+  }
+  const candidates = Array.from(
+    new Set(rawUrls.map((u) => sanitizeUrlString(u)).filter(Boolean))
+  ).slice(0, 8);
 
-  let url: URL;
-  try {
-    url = new URL(urlStr);
-  } catch {
+  if (!candidates.length) {
+    return NextResponse.json({ error: "Missing url." }, { status: 400 });
+  }
+
+  const parsedCandidates: URL[] = [];
+  for (const u of candidates) {
+    try {
+      parsedCandidates.push(new URL(u));
+    } catch {
+      // skip invalid
+    }
+  }
+  if (!parsedCandidates.length) {
     return NextResponse.json({ error: "Invalid url." }, { status: 400 });
   }
 
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return NextResponse.json({ error: "Only http/https allowed." }, { status: 400 });
+  for (const url of parsedCandidates) {
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return NextResponse.json({ error: "Only http/https allowed." }, { status: 400 });
+    }
   }
 
   // SSRF guard: thumbnails only for private IPv4 hosts unless explicitly allowed.
   const allowPublic = (process.env.ALLOW_PUBLIC_SCAN ?? "false") === "true";
   if (!allowPublic) {
-    if (!isPrivateIpv4(url.hostname)) {
-      return NextResponse.json(
-        { error: "Public hosts are not allowed for thumbnails." },
-        { status: 400 }
-      );
+    for (const url of parsedCandidates) {
+      if (!isPrivateIpv4(url.hostname)) {
+        return NextResponse.json(
+          { error: "Public hosts are not allowed for thumbnails." },
+          { status: 400 }
+        );
+      }
     }
   }
 
@@ -99,73 +121,87 @@ export async function POST(req: Request) {
   try {
     const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 2, 1, 8);
     const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 30_000, 0, 300_000);
-    const cacheKey = `${url.toString()}|s=${size}|u=${body.credentials?.username ?? ""}`;
-
-    const cached = cache.get(cacheKey);
-    if (cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
-      return new NextResponse(cached.bytes as unknown as BodyInit, {
-        status: 200,
-        headers: { "content-type": cached.contentType, "cache-control": "no-store" }
-      });
-    }
+    const attemptLog: string[] = [];
 
     await acquireSlot(maxConcurrency);
     acquired = true;
-    const res = await fetchWithDigestAuth({
-      url: url.toString(),
-      method: "GET",
-      timeoutMs,
-      credentials: body.credentials,
-      headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" }
-    });
 
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `Upstream status ${res.status}` },
-        { status: 502 }
-      );
-    }
-
-    const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-    if (!contentType.startsWith("image/")) {
-      return NextResponse.json({ error: "Upstream is not an image." }, { status: 502 });
-    }
-
-    const maxBytes = 6_000_000;
-    const contentLength = Number(res.headers.get("content-length") ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-      return NextResponse.json({ error: "Image too large." }, { status: 413 });
-    }
-
-    const ab = await res.arrayBuffer();
-    if (ab.byteLength <= 0 || ab.byteLength > maxBytes) {
-      return NextResponse.json({ error: "Image too large." }, { status: 413 });
-    }
-
-    const input = Buffer.from(ab);
-    const sharp = await getSharp();
-    configureSharpOnce(sharp);
-
-    const output = await sharp(input, { limitInputPixels: 32_000_000 })
-      .rotate()
-      .resize(size, size, { fit: "cover" })
-      .jpeg({ quality: 65, mozjpeg: true })
-      .toBuffer();
-
-    cache.set(cacheKey, { ts: Date.now(), bytes: output, contentType: "image/jpeg" });
-    if (CACHE_MAX_ENTRIES > 0 && cache.size > CACHE_MAX_ENTRIES) {
-      // Drop the oldest entry (in insertion order) to keep memory bounded.
-      const firstKey = cache.keys().next().value as string | undefined;
-      if (firstKey) cache.delete(firstKey);
-    }
-
-    return new NextResponse(output as unknown as BodyInit, {
-      status: 200,
-      headers: {
-        "content-type": "image/jpeg",
-        "cache-control": "no-store"
+    for (const url of parsedCandidates) {
+      const cacheKey = `${url.toString()}|s=${size}|u=${body.credentials?.username ?? ""}`;
+      const cached = cache.get(cacheKey);
+      if (cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
+        return new NextResponse(cached.bytes as unknown as BodyInit, {
+          status: 200,
+          headers: {
+            "content-type": cached.contentType,
+            "cache-control": "no-store",
+            "x-thumbnail-source": url.toString()
+          }
+        });
       }
-    });
+
+      attemptLog.push(`Try: ${url.toString()}`);
+      const res = await fetchWithDigestAuth({
+        url: url.toString(),
+        method: "GET",
+        timeoutMs,
+        credentials: body.credentials,
+        headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" }
+      });
+
+      attemptLog.push(`Status: ${res.status}`);
+      if (!res.ok) continue;
+
+      const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+      if (!contentType.startsWith("image/")) {
+        attemptLog.push("Not an image");
+        continue;
+      }
+
+      const maxBytes = 6_000_000;
+      const contentLength = Number(res.headers.get("content-length") ?? "0");
+      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        attemptLog.push("Too large (content-length)");
+        continue;
+      }
+
+      const ab = await res.arrayBuffer();
+      if (ab.byteLength <= 0 || ab.byteLength > maxBytes) {
+        attemptLog.push("Too large (body)");
+        continue;
+      }
+
+      const input = Buffer.from(ab);
+      const sharp = await getSharp();
+      configureSharpOnce(sharp);
+
+      const output = await sharp(input, { limitInputPixels: 32_000_000 })
+        .rotate()
+        .resize(size, size, { fit: "cover" })
+        .jpeg({ quality: 65, mozjpeg: true })
+        .toBuffer();
+
+      cache.set(cacheKey, { ts: Date.now(), bytes: output, contentType: "image/jpeg" });
+      if (CACHE_MAX_ENTRIES > 0 && cache.size > CACHE_MAX_ENTRIES) {
+        // Drop the oldest entry (in insertion order) to keep memory bounded.
+        const firstKey = cache.keys().next().value as string | undefined;
+        if (firstKey) cache.delete(firstKey);
+      }
+
+      return new NextResponse(output as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          "content-type": "image/jpeg",
+          "cache-control": "no-store",
+          "x-thumbnail-source": url.toString()
+        }
+      });
+    }
+
+    return NextResponse.json(
+      { error: "No usable image from candidates.", log: attemptLog },
+      { status: 502 }
+    );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Thumbnail error" },
