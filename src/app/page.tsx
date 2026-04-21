@@ -39,6 +39,40 @@ export default function HomePage() {
   const [thumbnailLog, setThumbnailLog] = useState<Record<string, string>>({});
   const runNonceRef = useRef(0);
 
+  async function tryLoadImageDirect(url: string, timeoutMs: number): Promise<boolean> {
+    return await new Promise<boolean>((resolve) => {
+      const img = new Image();
+      let done = false;
+      const t = window.setTimeout(() => {
+        if (done) return;
+        done = true;
+        try {
+          img.src = "";
+        } catch {
+          // ignore
+        }
+        resolve(false);
+      }, timeoutMs);
+
+      img.onload = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(true);
+      };
+      img.onerror = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(t);
+        resolve(false);
+      };
+
+      // Avoid leaking referrer into camera logs.
+      img.referrerPolicy = "no-referrer";
+      img.src = url;
+    });
+  }
+
   const request: ScanRequest = useMemo(
     () => ({
       preset,
@@ -76,7 +110,7 @@ export default function HomePage() {
       setThumbnails((prev) => {
         for (const v of Object.values(prev)) {
           try {
-            URL.revokeObjectURL(v);
+            if (v.startsWith("blob:")) URL.revokeObjectURL(v);
           } catch {
             // ignore
           }
@@ -103,6 +137,16 @@ export default function HomePage() {
         const maxThumbs = 24;
         void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
           try {
+            // First try direct browser load (works for devices that rely on browser session cookies).
+            for (const candidate of urls) {
+              if (runNonceRef.current !== runNonce) return null;
+              const ok = await tryLoadImageDirect(candidate, 4500);
+              if (!ok) continue;
+              setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
+              setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
+              return null;
+            }
+
             const thumbRes = await fetch("/api/thumbnail", {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -143,7 +187,7 @@ export default function HomePage() {
               const existing = prev[ip];
               if (existing) {
                 try {
-                  URL.revokeObjectURL(existing);
+                  if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
                 } catch {
                   // ignore
                 }
