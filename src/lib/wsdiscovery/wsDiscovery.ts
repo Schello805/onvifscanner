@@ -11,8 +11,18 @@ export async function wsDiscoveryProbe(args: {
   timeoutMs: number;
   deepProbe: boolean;
   credentials?: { username: string; password: string };
+  signal?: AbortSignal;
+  onProgress?: (done: number, total: number) => void;
+  onPhase?: (ev: { type: "phase"; phase: "discovery" | "onvif"; status: "start" | "done"; message?: string }) => void;
 }): Promise<ScanResult[]> {
-  const discovered = await wsDiscoveryRaw(args.timeoutMs);
+  args.onPhase?.({ type: "phase", phase: "discovery", status: "start" });
+  const discovered = await wsDiscoveryRaw(args.timeoutMs, args.signal);
+  args.onPhase?.({
+    type: "phase",
+    phase: "discovery",
+    status: "done",
+    message: `${discovered.length} Antwort(en)`
+  });
 
   // Unique by IP.
   const byIp = new Map<string, { ip: string; xaddrs: string[] }>();
@@ -43,21 +53,28 @@ export async function wsDiscoveryProbe(args: {
     }));
   }
 
+  args.onPhase?.({ type: "phase", phase: "onvif", status: "start" });
+  let done = 0;
   const probed = await mapLimit(items, Math.min(32, items.length || 1), async (item) => {
+    if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
     const onvif = await probeOnvifFromXaddr({
       ip: item.ip,
       xaddrs: item.xaddrs,
       timeoutMs: args.timeoutMs,
       credentials: args.credentials
     });
+    done += 1;
+    args.onProgress?.(done, items.length);
     return { ip: item.ip, onvif };
   });
+  args.onPhase?.({ type: "phase", phase: "onvif", status: "done" });
 
   return probed;
 }
 
 async function wsDiscoveryRaw(
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<Array<{ ip: string; xaddrs: string[] }>> {
   const probe = buildProbeMessage();
   const socket = dgram.createSocket("udp4");
@@ -67,6 +84,20 @@ async function wsDiscoveryRaw(
 
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => resolve(), timeoutMs);
+
+    const onAbort = () => {
+      clearTimeout(t);
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+      resolve();
+    };
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     socket.once("error", (e) => {
       clearTimeout(t);
@@ -98,6 +129,13 @@ async function wsDiscoveryRaw(
     });
   });
 
+  if (signal) {
+    try {
+      // removeEventListener requires the same fn; we used {once:true} so nothing to clean up.
+    } catch {
+      // ignore
+    }
+  }
   socket.close();
   return results;
 }

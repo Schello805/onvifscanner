@@ -152,11 +152,16 @@ export async function POST(req: Request) {
         method: "GET",
         timeoutMs,
         credentials: body.credentials,
+        signal: req.signal,
         headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
         debugLog
       });
 
       attemptLog.push(`Status: ${res.status}`);
+      const www = res.headers.get("www-authenticate");
+      if (res.status === 401 && www && /digest/i.test(www) && !body.credentials?.username) {
+        attemptLog.push("Hinweis: Digest auth nötig (Credentials fehlen).");
+      }
       for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
       if (!res.ok) continue;
 

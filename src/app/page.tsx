@@ -38,7 +38,16 @@ export default function HomePage() {
   const [data, setData] = useState<ScanResponse | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [thumbnailLog, setThumbnailLog] = useState<Record<string, string>>({});
+  const [scanPhases, setScanPhases] = useState<
+    Partial<
+      Record<
+        string,
+        { status?: "start" | "done"; done?: number; total?: number; message?: string }
+      >
+    >
+  >({});
   const runNonceRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function tryLoadImageDirect(url: string, timeoutMs: number): Promise<boolean> {
     return await new Promise<boolean>((resolve) => {
@@ -106,33 +115,45 @@ export default function HomePage() {
   async function runScan() {
     runNonceRef.current += 1;
     const runNonce = runNonceRef.current;
+    abortRef.current?.abort();
+    const abortController = new AbortController();
+    abortRef.current = abortController;
     setError(null);
     setLoading(true);
     setData(null);
+    setScanPhases({});
     try {
-      const res = await fetch("/api/scan", {
+      const res = await fetch("/api/scan/stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
+        signal: abortController.signal
       });
-      const json = (await res.json()) as ScanResponse;
-      if (!res.ok) {
-        throw new Error(json.error ?? "Scan fehlgeschlagen.");
+      if (!res.ok || !res.body) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || "Scan fehlgeschlagen.");
       }
-      setData(json);
-      setThumbnails((prev) => {
-        for (const v of Object.values(prev)) {
-          try {
-            if (v.startsWith("blob:")) URL.revokeObjectURL(v);
-          } catch {
-            // ignore
-          }
-        }
-        return {};
-      });
-      setThumbnailLog({});
 
-      if (includeThumbnails) {
+      const decoder = new TextDecoder("utf-8");
+      const reader = res.body.getReader();
+      let buffer = "";
+
+      const resetThumbs = () => {
+        setThumbnails((prev) => {
+          for (const v of Object.values(prev)) {
+            try {
+              if (v.startsWith("blob:")) URL.revokeObjectURL(v);
+            } catch {
+              // ignore
+            }
+          }
+          return {};
+        });
+        setThumbnailLog({});
+      };
+
+      const loadThumbsIfNeeded = (json: ScanResponse) => {
+        if (!includeThumbnails) return;
         type ThumbJob = { ip: string; urls: string[] };
         const jobs = json.results
           .map((r) => {
@@ -150,19 +171,17 @@ export default function HomePage() {
         const maxThumbs = 12;
         void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
           try {
-            // Prefer server-side thumbnail proxy (fast and consistent). Only fallback to direct browser
-            // load when the proxy cannot access the resource (e.g. camera relies on browser session cookies).
             const thumbRes = await fetch("/api/thumbnail", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
-                  urls,
-                  size: 200,
-                  timeoutMs: 2500,
-                  credentials:
-                    username.trim() && password
-                      ? { username: username.trim(), password }
-                      : undefined
+                urls,
+                size: 200,
+                timeoutMs: 2500,
+                credentials:
+                  username.trim() && password
+                    ? { username: username.trim(), password }
+                    : undefined
               })
             });
             if (!thumbRes.ok) {
@@ -189,7 +208,6 @@ export default function HomePage() {
             if (!blob.size) return null;
             const objectUrl = URL.createObjectURL(blob);
 
-            // Ignore outdated scan runs.
             if (runNonceRef.current !== runNonce) {
               try {
                 URL.revokeObjectURL(objectUrl);
@@ -217,12 +235,77 @@ export default function HomePage() {
             return null;
           }
         });
+      };
+
+      resetThumbs();
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const lines = part.split("\n").map((l) => l.trimEnd());
+          let eventName = "";
+          const dataLines: string[] = [];
+          for (const line of lines) {
+            if (line.startsWith("event:")) eventName = line.slice(6).trim();
+            if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+          }
+          const dataStr = dataLines.join("\n").trim();
+          if (!dataStr) continue;
+          let payload: any;
+          try {
+            payload = JSON.parse(dataStr);
+          } catch {
+            continue;
+          }
+
+          if (eventName === "phase") {
+            setScanPhases((prev) => ({
+              ...prev,
+              [payload.phase]: {
+                ...(prev[payload.phase] ?? {}),
+                status: payload.status,
+                message: payload.message
+              }
+            }));
+          } else if (eventName === "progress") {
+            setScanPhases((prev) => ({
+              ...prev,
+              [payload.phase]: {
+                ...(prev[payload.phase] ?? {}),
+                done: payload.done,
+                total: payload.total,
+                message: payload.message
+              }
+            }));
+          } else if (eventName === "error") {
+            throw new Error(payload.error ?? "Scan fehlgeschlagen.");
+          } else if (eventName === "result") {
+            const json = payload.result as ScanResponse;
+            if (json?.error) throw new Error(json.error);
+            setData(json);
+            loadThumbsIfNeeded(json);
+          }
+        }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (abortController.signal.aborted) {
+        setError("Scan abgebrochen.");
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  function stopScan() {
+    abortRef.current?.abort();
   }
 
   function addCredsIfWanted(url: string): string {
@@ -432,7 +515,7 @@ export default function HomePage() {
 	                </label>
 	             </div>
 
-               <div className="mt-5">
+               <div className="mt-5 flex items-center gap-3">
                  <button
                    className="w-full group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
                    onClick={runScan}
@@ -465,7 +548,66 @@ export default function HomePage() {
                      {loading ? "Sucht…" : "Scan Starten"}
                    </span>
                  </button>
+                 {loading ? (
+                   <button
+                     className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-950/30 px-4 text-sm font-medium text-red-200 hover:bg-red-950/50"
+                     onClick={stopScan}
+                     type="button"
+                   >
+                     Stop
+                   </button>
+                 ) : null}
                </div>
+
+               {(loading || Object.keys(scanPhases).length > 0) ? (
+                 <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
+                   <div className="flex flex-col gap-1.5">
+                     {(["validate", preset === "ws-discovery" ? "discovery" : "cidr", "onvif", "rtsp"] as const).map((p) => {
+                       const s = scanPhases[p];
+                       const done = typeof s?.done === "number" ? s.done : undefined;
+                       const total = typeof s?.total === "number" ? s.total : undefined;
+                       const label =
+                         p === "validate"
+                           ? "Validierung"
+                           : p === "discovery"
+                             ? "Discovery"
+                             : p === "cidr"
+                               ? "CIDR Scan"
+                               : p === "onvif"
+                                 ? "ONVIF Probe"
+                                 : "RTSP Probe";
+                       const active = s?.status === "start";
+                       const finished = s?.status === "done";
+                       const show = Boolean(s) || (p === "validate" && loading);
+                       if (!show) return null;
+                       return (
+                         <div key={p} className="flex items-center justify-between gap-3">
+                           <div className="flex items-center gap-2">
+                             <span
+                               className={
+                                 "inline-block h-2 w-2 rounded-full " +
+                                 (finished
+                                   ? "bg-emerald-400"
+                                   : active
+                                     ? "bg-indigo-400 animate-pulse"
+                                     : "bg-slate-600")
+                               }
+                             />
+                             <span className={finished ? "text-slate-200" : "text-slate-300"}>
+                               {label}
+                             </span>
+                           </div>
+                           <div className="font-mono text-[11px] text-slate-400">
+                             {typeof done === "number" && typeof total === "number"
+                               ? `${done}/${total}`
+                               : s?.message ?? (active ? "…" : finished ? "OK" : "")}
+                           </div>
+                         </div>
+                       );
+                     })}
+                   </div>
+                 </div>
+               ) : null}
 	          </div>
 	          
 	        </div>
@@ -523,7 +665,13 @@ export default function HomePage() {
                           />
                         ) : (
                           <div className="flex h-14 w-24 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-[10px] font-medium uppercase tracking-wider text-slate-600">
-                            Kein Bild
+                            {(() => {
+                              const log = thumbnailLog[r.ip] ?? "";
+                              const lower = log.toLowerCase();
+                              if (lower.includes("digest") && lower.includes("401")) return "Digest nötig";
+                              if (lower.includes("401")) return "Auth nötig";
+                              return "Kein Bild";
+                            })()}
                           </div>
                         )}
                       </td>

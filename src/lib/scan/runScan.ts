@@ -8,11 +8,30 @@ import { probeRtsp } from "@/lib/rtsp/probeRtsp";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 import { buildRtspCandidates } from "@/lib/rtsp/candidates";
 
-export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
+type Phase =
+  | "onvif"
+  | "rtsp"
+  | "cidr"
+  | "discovery";
+
+type PhaseEvent =
+  | { type: "phase"; phase: Phase; status: "start" | "done"; message?: string }
+  | { type: "progress"; phase: Phase; done: number; total: number; message?: string };
+
+export async function runScan(
+  req: ParsedScanRequest,
+  opts?: { signal?: AbortSignal; onPhase?: (ev: PhaseEvent) => void }
+): Promise<ScanResponse> {
   const startedAt = new Date();
 
   const warnings: string[] = [];
   const results: ScanResult[] = [];
+  const onPhase = opts?.onPhase;
+  const signal = opts?.signal;
+
+  function throwIfAborted() {
+    if (signal?.aborted) throw new Error("Scan abgebrochen.");
+  }
 
   if (req.preset === "ws-discovery") {
     const discoveryTimeoutMs = Number(
@@ -21,13 +40,23 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     const found = await wsDiscoveryProbe({
       timeoutMs: Math.min(req.timeoutMs, discoveryTimeoutMs),
       deepProbe: req.deepProbe,
-      credentials: req.credentials
+      credentials: req.credentials,
+      signal,
+      onProgress(done, total) {
+        onPhase?.({ type: "progress", phase: "onvif", done, total });
+      },
+      onPhase(ev) {
+        onPhase?.(ev);
+      }
     });
     results.push(...found);
 
     if (req.deepProbe) {
       // RTSP: attach candidates and attempt a lightweight probe on common ports.
+      onPhase?.({ type: "phase", phase: "rtsp", status: "start" });
+      let done = 0;
       await mapLimit(results, 32, async (r) => {
+        throwIfAborted();
         const commonPorts = [554, 8554];
         const open = await scanTcpPorts(
           r.ip,
@@ -44,6 +73,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
         // Try ONVIF-provided first, then candidates.
         const probeList = [...uris, ...candidates].slice(0, 4);
         for (const uri of probeList) {
+          throwIfAborted();
           const res = await probeRtsp({
             ip: r.ip,
             port,
@@ -68,10 +98,15 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
             uris: uris.length ? uris : undefined
           };
         }
+
+        done += 1;
+        onPhase?.({ type: "progress", phase: "rtsp", done, total: results.length });
       });
+      onPhase?.({ type: "phase", phase: "rtsp", status: "done" });
     } else {
       // Fast scan: show RTSP candidates without actively probing (keeps scans snappy).
       for (const r of results) {
+        throwIfAborted();
         const port = 554;
         r.rtsp = {
           ok: false,
@@ -83,6 +118,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
       }
     }
   } else {
+    onPhase?.({ type: "phase", phase: "cidr", status: "start" });
     const ips = expandCidr(req.cidr!);
     if (ips.length === 0) {
       throw new Error("CIDR enthält keine Hosts.");
@@ -90,7 +126,9 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     const ports = req.ports ?? [];
     const concurrency = req.concurrency;
 
+    let done = 0;
     const scanned = await mapLimit(ips, concurrency, async (ip) => {
+      throwIfAborted();
       const openTcpPorts = await scanTcpPorts(ip, ports, req.timeoutMs);
       const result: ScanResult = { ip, openTcpPorts };
 
@@ -156,6 +194,8 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
         }
       }
 
+      done += 1;
+      onPhase?.({ type: "progress", phase: "cidr", done, total: ips.length });
       return result;
     });
 
@@ -163,6 +203,7 @@ export async function runScan(req: ParsedScanRequest): Promise<ScanResponse> {
     warnings.push(
       "CIDR/Port-Scan kann in großen Netzen lange dauern und als aggressiv wahrgenommen werden."
     );
+    onPhase?.({ type: "phase", phase: "cidr", status: "done" });
   }
 
   // Thumbnails are loaded separately via `/api/thumbnail` to keep the scan response small.

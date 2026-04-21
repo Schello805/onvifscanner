@@ -7,5 +7,4 @@ PORT="${PORT:-3000}"
 
 cd "$APP_DIR"
 
-exec /usr/bin/node node_modules/next/dist/bin/next start -H "$HOST" -p "$PORT"
-
+exec /usr/bin/node "$APP_DIR/deploy/onvifscanner-notify.mjs"

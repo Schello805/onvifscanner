@@ -4,7 +4,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
 User=onvifscanner
 Group=onvifscanner
 WorkingDirectory=/opt/onvifscanner
@@ -12,6 +13,8 @@ EnvironmentFile=/etc/onvifscanner/onvifscanner.env
 ExecStart=/usr/local/bin/onvifscanner-start
 Restart=on-failure
 RestartSec=2
+WatchdogSec=30
+TimeoutStartSec=60
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -20,4 +23,3 @@ ReadWritePaths=/opt/onvifscanner
 
 [Install]
 WantedBy=multi-user.target
-
