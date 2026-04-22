@@ -2,6 +2,8 @@ import { runScan } from "@/lib/scan/runScan";
 import { parseScanRequest } from "@/lib/scan/validation";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type Phase =
   | "validate"

@@ -52,6 +52,19 @@ export default function HomePage() {
   const runNonceRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
+  function InfoTip(props: { tip: string }) {
+    return (
+      <span className="tooltip tooltip-bottom" data-tip={props.tip}>
+        <span
+          className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[10px] font-bold text-slate-300"
+          aria-label="Info"
+        >
+          i
+        </span>
+      </span>
+    );
+  }
+
   async function tryLoadImageDirect(url: string, timeoutMs: number): Promise<boolean> {
     return await new Promise<boolean>((resolve) => {
       const img = new Image();
@@ -140,6 +153,7 @@ export default function HomePage() {
       const decoder = new TextDecoder("utf-8");
       const reader = res.body.getReader();
       let buffer = "";
+      let gotResult = false;
 
       const resetThumbs = () => {
         setThumbnails((prev) => {
@@ -257,6 +271,8 @@ export default function HomePage() {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        // Safari/servers may use CRLF. Normalize so we can reliably split on "\n\n".
+        buffer = buffer.replace(/\r\n/g, "\n");
 
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
@@ -302,10 +318,15 @@ export default function HomePage() {
           } else if (eventName === "result") {
             const json = payload.result as ScanResponse;
             if (json?.error) throw new Error(json.error);
+            gotResult = true;
             setData(json);
             loadThumbsIfNeeded(json);
           }
         }
+      }
+
+      if (!abortController.signal.aborted && !gotResult) {
+        throw new Error("Scan-Stream beendet, aber keine Ergebnisse empfangen (SSE Parsing/Proxy?).");
       }
     } catch (e) {
       if (abortController.signal.aborted) {
@@ -496,48 +517,48 @@ export default function HomePage() {
              </div>
              
 	             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
-	                <label
-                    className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
-                    title="Wenn aktiv, werden beim Kopieren Benutzername+Passwort in die URL eingebettet (z. B. http://user:pass@ip/...). Vorsicht: sensibel."
-                  >
+	                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
                   </div>
-                  <span className="text-[11px] text-slate-300">Credentials beim Kopieren anhängen</span>
+                  <span className="text-[11px] text-slate-300">
+                    Credentials beim Kopieren anhängen
+                    <InfoTip tip='Wenn aktiv, werden beim Kopieren Benutzername+Passwort in die URL eingebettet (z. B. "http://user:pass@ip/..."). Vorsicht: sensibel.' />
+                  </span>
                 </label>
 
-                <label
-                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
-                  title="Lädt Snapshot/ISAPI-Bilder als 200×200 Vorschau. Kann je nach Kamera Digest/Basic Auth erfordern und ist langsamer."
-                >
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {includeThumbnails && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={includeThumbnails} onChange={(e) => setIncludeThumbnails(e.target.checked)} />
                   </div>
-                  <span className="text-[11px] text-slate-300">Vorschau-Bilder laden (langsamer)</span>
+                  <span className="text-[11px] text-slate-300">
+                    Vorschau-Bilder laden (langsamer)
+                    <InfoTip tip="Lädt Snapshot/ISAPI-Bilder als 200×200 Vorschau. Manche Kameras benötigen Digest/Basic Auth. Das kann dauern." />
+                  </span>
                 </label>
 
-                <label
-                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
-                  title="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Das kann deutlich länger dauern."
-                >
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {deepProbe && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={deepProbe} onChange={(e) => setDeepProbe(e.target.checked)} />
                   </div>
-                  <span className="text-[11px] text-slate-300">Erweiterte Analyse (ONVIF/RTSP prüfen)</span>
+                  <span className="text-[11px] text-slate-300">
+                    Erweiterte Analyse (ONVIF/RTSP prüfen)
+                    <InfoTip tip="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Kann deutlich länger dauern." />
+                  </span>
                 </label>
                 
-                <label
-                  className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity"
-                  title="Nur im eigenen/autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden."
-                >
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {ack && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={ack} onChange={(e) => setAck(e.target.checked)} />
                   </div>
-	                  <span className="text-[11px] text-slate-300">Netzwerk-Berechtigung bestätigt</span>
+	                  <span className="text-[11px] text-slate-300">
+                      Netzwerk-Berechtigung bestätigt
+                      <InfoTip tip="Nur im eigenen/autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden." />
+                    </span>
 	                </label>
 	             </div>
 
