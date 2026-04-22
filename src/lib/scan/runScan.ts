@@ -71,22 +71,9 @@ export async function runScan(
     }
 
     if (req.deepProbe && results.length) {
-      onPhase?.({ type: "phase", phase: "onvif", status: "start" });
-      let onvifDone = 0;
-      await mapLimit(results, Math.min(8, results.length), async (r) => {
-        throwIfAborted();
-        if (r.onvif?.xaddrs?.length) {
-          r.onvif = await probeOnvifFromXaddr({
-            ip: r.ip,
-            xaddrs: r.onvif.xaddrs,
-            timeoutMs: req.timeoutMs,
-            credentials: req.credentials
-          });
-        }
-        onvifDone += 1;
-        onPhase?.({ type: "progress", phase: "onvif", done: onvifDone, total: results.length });
-      });
-      onPhase?.({ type: "phase", phase: "onvif", status: "done" });
+      warnings.push(
+        "WS-Discovery liefert zuerst schnelle Ergebnisse. ONVIF-SOAP-Tiefenanalyse wird im Web-Modus nicht blockierend ausgeführt, damit der Scan nicht hängt."
+      );
     }
   } else {
     onPhase?.({ type: "phase", phase: "cidr", status: "start" });
@@ -180,7 +167,9 @@ export async function runScan(
   if (req.deepProbe && results.length) {
     onPhase?.({ type: "phase", phase: "vendor", status: "start" });
     let done = 0;
-    await mapLimit(results, Math.min(4, results.length), async (r) => {
+    const vendorLimit = clampInt(process.env.SCAN_VENDOR_MAX_DEVICES ?? "12", 1, results.length);
+    const vendorTargets = results.slice(0, vendorLimit);
+    await mapLimit(vendorTargets, Math.min(4, vendorTargets.length), async (r) => {
       throwIfAborted();
       let vendor;
       try {
@@ -211,8 +200,13 @@ export async function runScan(
         }
       }
       done += 1;
-      onPhase?.({ type: "progress", phase: "vendor", done, total: results.length });
+      onPhase?.({ type: "progress", phase: "vendor", done, total: vendorTargets.length });
     });
+    if (vendorTargets.length < results.length) {
+      warnings.push(
+        `Vendor-URL-Prüfung auf ${vendorTargets.length}/${results.length} Geräte begrenzt, damit der Scan schnell antwortet.`
+      );
+    }
     onPhase?.({ type: "phase", phase: "vendor", status: "done" });
   }
 

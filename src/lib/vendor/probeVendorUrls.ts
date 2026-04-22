@@ -19,7 +19,7 @@ export async function probeVendorUrls(args: {
   const rtspUris: string[] = [];
   const httpStreamUris: string[] = [];
   const snapshotUris: string[] = [];
-  const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "4500", 1200, 12000);
+  const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "2500", 900, 8000);
   let matchedProfile = profiles[0]?.label ?? "Vendor-Katalog";
 
   for (const profile of profiles) {
@@ -31,7 +31,7 @@ export async function probeVendorUrls(args: {
     log.push(`Vendor profile: ${profile.label}`);
     let profileHit = false;
 
-    for (const candidate of profile.snapshot) {
+    for (const candidate of profile.snapshot.slice(0, 2)) {
       if (snapshotUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`Snapshot probe: ${candidate.label} ${url}`);
@@ -50,7 +50,7 @@ export async function probeVendorUrls(args: {
       }
     }
 
-    for (const candidate of profile.httpStream) {
+    for (const candidate of profile.httpStream.slice(0, 1)) {
       if (httpStreamUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`HTTP stream probe: ${candidate.label} ${url}`);
@@ -69,7 +69,7 @@ export async function probeVendorUrls(args: {
       }
     }
 
-    for (const candidate of profile.rtsp) {
+    for (const candidate of profile.rtsp.slice(0, 2)) {
       if (rtspUris.length >= 2 || Date.now() >= deadlineAt) break;
       const url = `rtsp://${args.result.ip}:${rtspPort}${candidate.path}`;
       log.push(`RTSP probe: ${candidate.label} ${url}`);
@@ -121,7 +121,7 @@ async function probeHttpUrl(args: {
     res = await fetchWithDigestAuth({
       url: args.url,
       method: "GET",
-      timeoutMs: Math.min(Math.max(args.timeoutMs, 700), 1200),
+      timeoutMs: Math.min(Math.max(args.timeoutMs, 500), 800),
       credentials: args.credentials,
       signal: args.signal,
       fastMode: false,
