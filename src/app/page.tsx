@@ -138,132 +138,175 @@ export default function HomePage() {
     setLoading(true);
     setData(null);
     setScanPhases({});
-    try {
-      const res = await fetch("/api/scan/stream", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(request),
-        signal: abortController.signal
+
+    const resetThumbs = () => {
+      setThumbnails((prev) => {
+        for (const v of Object.values(prev)) {
+          try {
+            if (v.startsWith("blob:")) URL.revokeObjectURL(v);
+          } catch {
+            // ignore
+          }
+        }
+        return {};
       });
+      setThumbnailLog({});
+      setThumbnailState({});
+    };
+
+    const loadThumbsIfNeeded = (json: ScanResponse) => {
+      if (!includeThumbnails) return;
+      type ThumbJob = { ip: string; urls: string[] };
+      const jobs = json.results
+        .map((r) => {
+          const urls = Array.from(
+            new Set(
+              [
+                ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ??
+                  []),
+                // Hikvision ISAPI picture endpoints (often work even if ONVIF fails).
+                `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
+                `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
+              ].filter(Boolean)
+            )
+          );
+          const limited = urls.slice(0, 4);
+          return limited.length
+            ? ({ ip: r.ip, urls: limited } satisfies ThumbJob)
+            : null;
+        })
+        .filter(Boolean) as ThumbJob[];
+
+      const thumbConcurrency = 2;
+      const maxThumbs = 12;
+      void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
+        setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
+        try {
+          const ac = new AbortController();
+          const t = window.setTimeout(() => ac.abort(), 3500);
+          const thumbRes = await fetch("/api/thumbnail", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              urls,
+              size: 200,
+              timeoutMs: 1500,
+              fastAuth: true,
+              credentials:
+                username.trim() && password
+                  ? { username: username.trim(), password }
+                  : undefined
+            }),
+            signal: ac.signal
+          }).finally(() => window.clearTimeout(t));
+          if (!thumbRes.ok) {
+            try {
+              const txt = await thumbRes.text();
+              setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
+            } catch {
+              // ignore
+            }
+            setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
+
+            // Fallback: try direct browser load for ISAPI-like endpoints.
+            for (const candidate of urls) {
+              if (runNonceRef.current !== runNonce) return null;
+              if (!candidate.includes("/ISAPI/")) continue;
+              const ok = await tryLoadImageDirect(candidate, 2500);
+              if (!ok) continue;
+              setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
+              setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
+              setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
+              return null;
+            }
+            return null;
+          }
+          const blob = await thumbRes.blob();
+          if (!blob.size) return null;
+          const objectUrl = URL.createObjectURL(blob);
+
+          if (runNonceRef.current !== runNonce) {
+            try {
+              URL.revokeObjectURL(objectUrl);
+            } catch {
+              // ignore
+            }
+            return null;
+          }
+
+          setThumbnails((prev) => {
+            const existing = prev[ip];
+            if (existing) {
+              try {
+                if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
+              } catch {
+                // ignore
+              }
+            }
+            return { ...prev, [ip]: objectUrl };
+          });
+          const src = thumbRes.headers.get("x-thumbnail-source");
+          if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
+          setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
+          return null;
+        } catch {
+          setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
+          return null;
+        }
+      });
+    };
+
+    try {
+      async function runScanNonStream() {
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request),
+          signal: abortController.signal
+        });
+        const json = (await res.json().catch(() => ({}))) as ScanResponse;
+        if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
+        setData(json);
+        resetThumbs();
+        loadThumbsIfNeeded(json);
+      }
+
+      let res: Response;
+      try {
+        res = await fetch("/api/scan/stream", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request),
+          signal: abortController.signal
+        });
+      } catch (e) {
+        // Safari sometimes reports streaming fetch as "Load failed" even though the server is fine.
+        // Fall back to the classic non-stream endpoint so the user still gets results.
+        const msg = e instanceof Error ? e.message : String(e);
+        setScanPhases((prev) => ({
+          ...prev,
+          validate: { status: "done" },
+          discovery: { status: "done", message: `Stream fehlgeschlagen (${msg}). Fallback…` }
+        }));
+        await runScanNonStream();
+        return;
+      }
+
       if (!res.ok || !res.body) {
         const txt = await res.text().catch(() => "");
-        throw new Error(txt || "Scan fehlgeschlagen.");
+        // Fallback for proxies/servers that don't support streaming.
+        setScanPhases((prev) => ({
+          ...prev,
+          discovery: { status: "done", message: `Stream nicht verfügbar. Fallback…` }
+        }));
+        await runScanNonStream();
+        return;
       }
 
       const decoder = new TextDecoder("utf-8");
       const reader = res.body.getReader();
       let buffer = "";
       let gotResult = false;
-
-      const resetThumbs = () => {
-        setThumbnails((prev) => {
-          for (const v of Object.values(prev)) {
-            try {
-              if (v.startsWith("blob:")) URL.revokeObjectURL(v);
-            } catch {
-              // ignore
-            }
-          }
-          return {};
-        });
-        setThumbnailLog({});
-        setThumbnailState({});
-      };
-
-      const loadThumbsIfNeeded = (json: ScanResponse) => {
-        if (!includeThumbnails) return;
-        type ThumbJob = { ip: string; urls: string[] };
-        const jobs = json.results
-          .map((r) => {
-            const urls = Array.from(new Set([
-              ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
-              // Hikvision ISAPI picture endpoints (often work even if ONVIF fails).
-              `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
-              `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
-            ].filter(Boolean)));
-            const limited = urls.slice(0, 4);
-            return limited.length ? ({ ip: r.ip, urls: limited } satisfies ThumbJob) : null;
-          })
-          .filter(Boolean) as ThumbJob[];
-
-        const thumbConcurrency = 2;
-        const maxThumbs = 12;
-        void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
-          setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
-          try {
-            const ac = new AbortController();
-            const t = window.setTimeout(() => ac.abort(), 3500);
-            const thumbRes = await fetch("/api/thumbnail", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                urls,
-                size: 200,
-                timeoutMs: 1500,
-                fastAuth: true,
-                credentials:
-                  username.trim() && password
-                    ? { username: username.trim(), password }
-                    : undefined
-              }),
-              signal: ac.signal
-            }).finally(() => window.clearTimeout(t));
-            if (!thumbRes.ok) {
-              try {
-                const txt = await thumbRes.text();
-                setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
-              } catch {
-                // ignore
-              }
-              setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-
-              // Fallback: try direct browser load for ISAPI-like endpoints.
-              for (const candidate of urls) {
-                if (runNonceRef.current !== runNonce) return null;
-                if (!candidate.includes("/ISAPI/")) continue;
-                const ok = await tryLoadImageDirect(candidate, 2500);
-                if (!ok) continue;
-                setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
-                setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
-                setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-                return null;
-              }
-              return null;
-            }
-            const blob = await thumbRes.blob();
-            if (!blob.size) return null;
-            const objectUrl = URL.createObjectURL(blob);
-
-            if (runNonceRef.current !== runNonce) {
-              try {
-                URL.revokeObjectURL(objectUrl);
-              } catch {
-                // ignore
-              }
-              return null;
-            }
-
-            setThumbnails((prev) => {
-              const existing = prev[ip];
-              if (existing) {
-                try {
-                  if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
-                } catch {
-                  // ignore
-                }
-              }
-              return { ...prev, [ip]: objectUrl };
-            });
-            const src = thumbRes.headers.get("x-thumbnail-source");
-            if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
-            setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-            return null;
-          } catch {
-            setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-            return null;
-          }
-        });
-      };
 
       resetThumbs();
 
@@ -326,7 +369,12 @@ export default function HomePage() {
       }
 
       if (!abortController.signal.aborted && !gotResult) {
-        throw new Error("Scan-Stream beendet, aber keine Ergebnisse empfangen (SSE Parsing/Proxy?).");
+        // If stream ended unexpectedly, fall back to non-stream scan once.
+        setScanPhases((prev) => ({
+          ...prev,
+          discovery: { status: "done", message: "Stream beendet. Fallback…" }
+        }));
+        await runScanNonStream();
       }
     } catch (e) {
       if (abortController.signal.aborted) {
