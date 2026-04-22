@@ -37,6 +37,13 @@ function sseEncode(event: PhaseEvent): Uint8Array {
   return new TextEncoder().encode(lines.join("\n"));
 }
 
+function sseCommentPadding(bytes: number): Uint8Array {
+  // Some clients/proxies (notably Safari/fetch streaming) buffer small chunks.
+  // Send an initial SSE comment with padding to force flush.
+  const pad = " ".repeat(Math.max(0, bytes));
+  return new TextEncoder().encode(`:${pad}\n\n`);
+}
+
 export async function POST(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -48,6 +55,20 @@ export async function POST(req: Request) {
           // ignore
         }
       };
+
+      // Force early flush + keep the connection alive.
+      try {
+        controller.enqueue(sseCommentPadding(2048));
+      } catch {
+        // ignore
+      }
+      const ping = setInterval(() => {
+        try {
+          controller.enqueue(sseEncode({ type: "progress", phase: "validate", done: 0, total: 0, message: "ping" }));
+        } catch {
+          // ignore
+        }
+      }, 1000);
 
       void (async () => {
         try {
@@ -222,15 +243,18 @@ export async function POST(req: Request) {
           }
 
           send({ type: "phase", phase: "done", status: "done" });
+          clearInterval(ping);
           close();
         } catch (e) {
           if (req.signal.aborted) {
             send({ type: "phase", phase: "aborted", status: "done", message: "Abgebrochen." });
+            clearInterval(ping);
             close();
             return;
           }
           const message = e instanceof Error ? e.message : "Unbekannter Fehler";
           send({ type: "error", error: message });
+          clearInterval(ping);
           close();
         }
       })();
@@ -242,6 +266,7 @@ export async function POST(req: Request) {
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
       connection: "keep-alive"
     }
   });

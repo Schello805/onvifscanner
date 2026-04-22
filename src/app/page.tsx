@@ -471,11 +471,12 @@ export default function HomePage() {
               }
             }));
           } else if (eventName === "progress") {
-              setScanPhases((prev) => ({
-                ...prev,
-                [payload.phase]: {
-                  ...(prev[payload.phase] ?? {}),
-                  done: payload.done,
+            if (payload?.message === "ping") continue;
+            setScanPhases((prev) => ({
+              ...prev,
+              [payload.phase]: {
+                ...(prev[payload.phase] ?? {}),
+                done: payload.done,
                   total: payload.total,
                   message: payload.message
                 }
