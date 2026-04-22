@@ -30,7 +30,7 @@ export default function HomePage() {
   const [includeThumbnails, setIncludeThumbnails] = useState(true);
   const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(true);
   const [verboseLog, setVerboseLog] = useState(true);
-  const [deepProbe, setDeepProbe] = useState(true);
+  const [deepProbe, setDeepProbe] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(true);

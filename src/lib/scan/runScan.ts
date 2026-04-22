@@ -42,7 +42,8 @@ export async function runScan(
     const found = await wsDiscoveryProbe({
       discoveryTimeoutMs,
       timeoutMs: req.timeoutMs,
-      deepProbe: req.deepProbe,
+      // Keep the main scan short and reliable. Deep analysis should not block showing devices.
+      deepProbe: false,
       credentials: req.credentials,
       signal,
       onProgress(done, total) {
@@ -54,71 +55,17 @@ export async function runScan(
     });
     results.push(...found);
 
-    if (req.deepProbe) {
-      // RTSP: attach candidates and attempt a lightweight probe on common ports.
-      onPhase?.({ type: "phase", phase: "rtsp", status: "start" });
-      let done = 0;
-      await mapLimit(results, 32, async (r) => {
-        throwIfAborted();
-        const commonPorts = [554, 8554];
-        const open = await scanTcpPorts(
-          r.ip,
-          commonPorts,
-          Math.min(req.timeoutMs, 900)
-        );
-        const port = open[0] ?? 554;
-
-        const onvifUris =
-          r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? [];
-        const candidates = buildRtspCandidates({ ip: r.ip, port });
-        const uris = Array.from(new Set([...onvifUris]));
-
-        // Try ONVIF-provided first, then candidates.
-        const probeList = [...uris, ...candidates].slice(0, 4);
-        for (const uri of probeList) {
-          throwIfAborted();
-          const res = await probeRtsp({
-            ip: r.ip,
-            port,
-            timeoutMs: Math.min(req.timeoutMs, 1200),
-            credentials: req.credentials,
-            uri
-          });
-          r.rtsp = {
-            ...res,
-            port,
-            uris: uris.length ? uris : undefined,
-            candidates
-          };
-          if (res.ok) break;
-        }
-
-        if (!r.rtsp) {
-          r.rtsp = {
-            ok: false,
-            port,
-            candidates,
-            uris: uris.length ? uris : undefined
-          };
-        }
-
-        done += 1;
-        onPhase?.({ type: "progress", phase: "rtsp", done, total: results.length });
-      });
-      onPhase?.({ type: "phase", phase: "rtsp", status: "done" });
-    } else {
-      // Fast scan: show RTSP candidates without actively probing (keeps scans snappy).
-      for (const r of results) {
-        throwIfAborted();
-        const port = 554;
-        r.rtsp = {
-          ok: false,
-          discoveryOnly: true,
-          port,
-          candidates: buildRtspCandidates({ ip: r.ip, port }),
-          log: ["RTSP Probe: übersprungen (Fast Scan)."]
-        };
-      }
+    // Fast scan: show RTSP candidates without actively probing (keeps scans snappy).
+    for (const r of results) {
+      throwIfAborted();
+      const port = 554;
+      r.rtsp = {
+        ok: false,
+        discoveryOnly: true,
+        port,
+        candidates: buildRtspCandidates({ ip: r.ip, port }),
+        log: ["RTSP Probe: übersprungen (Fast Scan)."]
+      };
     }
   } else {
     onPhase?.({ type: "phase", phase: "cidr", status: "start" });
