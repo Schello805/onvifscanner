@@ -26,14 +26,14 @@ export default function HomePage() {
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [copyWithCreds, setCopyWithCreds] = useState(false);
-  const [includeThumbnails, setIncludeThumbnails] = useState(false);
+  const [copyWithCreds, setCopyWithCreds] = useState(true);
+  const [includeThumbnails, setIncludeThumbnails] = useState(true);
   const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(true);
-  const [verboseLog, setVerboseLog] = useState(false);
-  const [deepProbe, setDeepProbe] = useState(false);
+  const [verboseLog, setVerboseLog] = useState(true);
+  const [deepProbe, setDeepProbe] = useState(true);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
-  const [ack, setAck] = useState(false);
+  const [ack, setAck] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
