@@ -11,22 +11,28 @@ export async function probeVendorUrls(args: {
 }): Promise<VendorUrlResult | undefined> {
   const manufacturer = args.result.onvif?.deviceInformation?.manufacturer;
   const model = args.result.onvif?.deviceInformation?.model;
-  const profiles = orderedProfiles(manufacturer, model);
+  const hasVendorHint = Boolean(manufacturer || model);
+  const profiles = orderedProfiles(manufacturer, model).slice(0, hasVendorHint ? 2 : 1);
   const httpBase = buildHttpBase(args.result);
   const rtspPort = args.result.rtsp?.port ?? 554;
   const log: string[] = [];
   const rtspUris: string[] = [];
   const httpStreamUris: string[] = [];
   const snapshotUris: string[] = [];
+  const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "4500", 1200, 12000);
   let matchedProfile = profiles[0]?.label ?? "Vendor-Katalog";
 
   for (const profile of profiles) {
     if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
+    if (Date.now() >= deadlineAt) {
+      log.push("Vendor probe: Zeitbudget erreicht.");
+      break;
+    }
     log.push(`Vendor profile: ${profile.label}`);
     let profileHit = false;
 
     for (const candidate of profile.snapshot) {
-      if (snapshotUris.length >= 2) break;
+      if (snapshotUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`Snapshot probe: ${candidate.label} ${url}`);
       const ok = await probeHttpUrl({
@@ -45,7 +51,7 @@ export async function probeVendorUrls(args: {
     }
 
     for (const candidate of profile.httpStream) {
-      if (httpStreamUris.length >= 2) break;
+      if (httpStreamUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`HTTP stream probe: ${candidate.label} ${url}`);
       const ok = await probeHttpUrl({
@@ -64,7 +70,7 @@ export async function probeVendorUrls(args: {
     }
 
     for (const candidate of profile.rtsp) {
-      if (rtspUris.length >= 2) break;
+      if (rtspUris.length >= 2 || Date.now() >= deadlineAt) break;
       const url = `rtsp://${args.result.ip}:${rtspPort}${candidate.path}`;
       log.push(`RTSP probe: ${candidate.label} ${url}`);
       const rtsp = await probeRtsp({
@@ -115,7 +121,7 @@ async function probeHttpUrl(args: {
     res = await fetchWithDigestAuth({
       url: args.url,
       method: "GET",
-      timeoutMs: Math.min(Math.max(args.timeoutMs, 800), 2200),
+      timeoutMs: Math.min(Math.max(args.timeoutMs, 700), 1200),
       credentials: args.credentials,
       signal: args.signal,
       fastMode: false,
@@ -172,4 +178,11 @@ function limitLog(lines: string[]): string[] {
   const max = 100;
   if (lines.length <= max) return lines;
   return [...lines.slice(0, 35), `... (${lines.length - 70} more) ...`, ...lines.slice(-34)];
+}
+
+function clampInt(value: unknown, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return min;
+  const i = Math.trunc(n);
+  return Math.min(max, Math.max(min, i));
 }
