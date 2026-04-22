@@ -56,6 +56,7 @@ export default function HomePage() {
     "idle" | "stream" | "fallback" | "fallback-stream-ended"
   >("idle");
   const [expandedIps, setExpandedIps] = useState<Record<string, boolean>>({});
+  const [scanStartedAt, setScanStartedAt] = useState<string | null>(null);
   const runNonceRef = useRef(0);
   const activeRunNonceRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -321,6 +322,7 @@ export default function HomePage() {
     runNonceRef.current += 1;
     const runNonce = runNonceRef.current;
     activeRunNonceRef.current = runNonce;
+    setScanStartedAt(new Date().toISOString());
     abortRef.current?.abort();
     const abortController = new AbortController();
     abortRef.current = abortController;
@@ -415,6 +417,15 @@ export default function HomePage() {
         return;
       }
 
+      // Ensure we can show found devices immediately (even before first `result`).
+      setData({
+        meta: scanStartedAt
+          ? { mode: preset, startedAt: scanStartedAt, durationMs: 0 }
+          : undefined,
+        results: [],
+        warnings: ["Live: Geräte erscheinen sofort beim Finden."]
+      });
+
       const decoder = new TextDecoder("utf-8");
       const reader = res.body.getReader();
       let buffer = "";
@@ -476,9 +487,19 @@ export default function HomePage() {
             const ip = item?.ip as string | undefined;
             if (!ip) continue;
             setData((prev) => {
-              if (!prev) return prev;
-              const nextResults = prev.results.map((r) => (r.ip === ip ? { ...r, ...item } : r));
-              return { ...prev, results: nextResults };
+              const base: ScanResponse =
+                prev ??
+                ({
+                  meta: undefined,
+                  results: [],
+                  warnings: undefined
+                } satisfies ScanResponse);
+
+              const existing = base.results.find((r) => r.ip === ip);
+              const nextResults = existing
+                ? base.results.map((r) => (r.ip === ip ? { ...r, ...item } : r))
+                : [...base.results, item];
+              return { ...base, results: nextResults };
             });
           } else if (eventName === "result") {
             const json = payload.result as ScanResponse;

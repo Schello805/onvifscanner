@@ -74,7 +74,8 @@ export async function wsDiscoveryProbe(args: {
 
 async function wsDiscoveryRaw(
   timeoutMs: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onFound?: (d: { ip: string; xaddrs: string[] }) => void
 ): Promise<Array<{ ip: string; xaddrs: string[] }>> {
   const probe = buildProbeMessage();
   const socket = dgram.createSocket("udp4");
@@ -114,6 +115,7 @@ async function wsDiscoveryRaw(
       if (seen.has(key)) return;
       seen.add(key);
       results.push({ ip: rinfo.address, xaddrs });
+      onFound?.({ ip: rinfo.address, xaddrs });
     });
 
     socket.bind(0, () => {
@@ -138,6 +140,14 @@ async function wsDiscoveryRaw(
   }
   socket.close();
   return results;
+}
+
+export async function wsDiscoveryRawLive(args: {
+  timeoutMs: number;
+  signal?: AbortSignal;
+  onFound: (d: { ip: string; xaddrs: string[] }) => void;
+}): Promise<Array<{ ip: string; xaddrs: string[] }>> {
+  return await wsDiscoveryRaw(args.timeoutMs, args.signal, args.onFound);
 }
 
 function buildProbeMessage(): Buffer {

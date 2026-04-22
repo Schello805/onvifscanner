@@ -1,7 +1,7 @@
 import type { ScanResponse, ScanResult } from "@/lib/types";
 import { runScan } from "@/lib/scan/runScan";
 import { parseScanRequest } from "@/lib/scan/validation";
-import { wsDiscoveryProbe } from "@/lib/wsdiscovery/wsDiscovery";
+import { wsDiscoveryProbe, wsDiscoveryRawLive } from "@/lib/wsdiscovery/wsDiscovery";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 import { buildRtspCandidates } from "@/lib/rtsp/candidates";
 import { scanTcpPorts } from "@/lib/scan/tcpScan";
@@ -64,27 +64,54 @@ export async function POST(req: Request) {
               process.env.WS_DISCOVERY_TIMEOUT_MS ?? "1800"
             );
             send({ type: "phase", phase: "discovery", status: "start" });
-            const baseline = await wsDiscoveryProbe({
+            const baselineByIp = new Map<string, ScanResult>();
+            let foundCount = 0;
+
+            const discovered = await wsDiscoveryRawLive({
               timeoutMs: Math.min(parsed.timeoutMs, discoveryTimeoutMs),
-              deepProbe: false,
-              credentials: parsed.credentials,
-              signal: req.signal
+              signal: req.signal,
+              onFound(d) {
+                const existing = baselineByIp.get(d.ip);
+                const xaddrs = existing?.onvif?.xaddrs ?? [];
+                const merged = Array.from(new Set([...xaddrs, ...d.xaddrs]));
+
+                const updated: ScanResult = {
+                  ip: d.ip,
+                  onvif: {
+                    ok: false,
+                    discoveryOnly: true,
+                    deviceServiceUrl: merged[0],
+                    xaddrs: merged,
+                    log: ["WS-Discovery: XAddr(s) gefunden. Deep Probe läuft…"]
+                  },
+                  rtsp: {
+                    ok: false,
+                    discoveryOnly: true,
+                    port: 554,
+                    candidates: buildRtspCandidates({ ip: d.ip, port: 554 }),
+                    log: ["RTSP Probe: pending (Deep Probe)."]
+                  }
+                };
+
+                baselineByIp.set(d.ip, updated);
+                foundCount = baselineByIp.size;
+                send({ type: "item", item: updated });
+                send({
+                  type: "progress",
+                  phase: "discovery",
+                  done: foundCount,
+                  total: foundCount,
+                  message: `${foundCount} gefunden`
+                });
+              }
             });
-            // Attach RTSP candidates in fast mode so the UI shows something useful immediately.
-            for (const r of baseline) {
-              r.rtsp = {
-                ok: false,
-                discoveryOnly: true,
-                port: 554,
-                candidates: buildRtspCandidates({ ip: r.ip, port: 554 }),
-                log: ["RTSP Probe: pending (Deep Probe)."]
-              };
-            }
+
+            const baseline = Array.from(baselineByIp.values());
             send({
               type: "phase",
               phase: "discovery",
               status: "done",
-              message: `${baseline.length} Gerät(e)`
+              message: `${baseline.length} Gerät(e), ${discovered.length} Antwort(en)`
             });
 
             const initial: ScanResponse = {
