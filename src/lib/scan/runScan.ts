@@ -34,11 +34,14 @@ export async function runScan(
   }
 
   if (req.preset === "ws-discovery") {
-    const discoveryTimeoutMs = Number(
-      process.env.WS_DISCOVERY_TIMEOUT_MS ?? "1800"
+    const discoveryTimeoutMs = clampInt(
+      process.env.WS_DISCOVERY_TIMEOUT_MS ?? "4000",
+      500,
+      15000
     );
     const found = await wsDiscoveryProbe({
-      timeoutMs: Math.min(req.timeoutMs, discoveryTimeoutMs),
+      discoveryTimeoutMs,
+      timeoutMs: req.timeoutMs,
       deepProbe: req.deepProbe,
       credentials: req.credentials,
       signal,
@@ -218,4 +221,11 @@ export async function runScan(
     results,
     warnings: warnings.length ? warnings : undefined
   };
+}
+
+function clampInt(value: unknown, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return min;
+  const i = Math.trunc(n);
+  return Math.min(max, Math.max(min, i));
 }

@@ -60,15 +60,17 @@ export async function POST(req: Request) {
 
           // Progressive WS-Discovery: send discovery results immediately, then enrich via ONVIF/RTSP.
           if (parsed.preset === "ws-discovery" && parsed.deepProbe) {
-            const discoveryTimeoutMs = Number(
-              process.env.WS_DISCOVERY_TIMEOUT_MS ?? "1800"
+            const discoveryTimeoutMs = clampInt(
+              process.env.WS_DISCOVERY_TIMEOUT_MS ?? "4000",
+              500,
+              15000
             );
             send({ type: "phase", phase: "discovery", status: "start" });
             const baselineByIp = new Map<string, ScanResult>();
             let foundCount = 0;
 
             const discovered = await wsDiscoveryRawLive({
-              timeoutMs: Math.min(parsed.timeoutMs, discoveryTimeoutMs),
+              timeoutMs: discoveryTimeoutMs,
               signal: req.signal,
               onFound(d) {
                 const existing = baselineByIp.get(d.ip);
@@ -243,4 +245,11 @@ export async function POST(req: Request) {
       connection: "keep-alive"
     }
   });
+}
+
+function clampInt(value: unknown, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return min;
+  const i = Math.trunc(n);
+  return Math.min(max, Math.max(min, i));
 }

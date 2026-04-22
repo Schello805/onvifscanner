@@ -9,6 +9,7 @@ const WS_DISCOVERY_PORT = 3702;
 
 export async function wsDiscoveryProbe(args: {
   timeoutMs: number;
+  discoveryTimeoutMs?: number;
   deepProbe: boolean;
   credentials?: { username: string; password: string };
   signal?: AbortSignal;
@@ -16,7 +17,10 @@ export async function wsDiscoveryProbe(args: {
   onPhase?: (ev: { type: "phase"; phase: "discovery" | "onvif"; status: "start" | "done"; message?: string }) => void;
 }): Promise<ScanResult[]> {
   args.onPhase?.({ type: "phase", phase: "discovery", status: "start" });
-  const discovered = await wsDiscoveryRaw(args.timeoutMs, args.signal);
+  const discovered = await wsDiscoveryRaw(
+    args.discoveryTimeoutMs ?? args.timeoutMs,
+    args.signal
+  );
   args.onPhase?.({
     type: "phase",
     phase: "discovery",
