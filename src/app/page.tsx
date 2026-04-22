@@ -44,19 +44,7 @@ export default function HomePage() {
     Record<string, "idle" | "loading" | "ok" | "fail">
   >({});
   const [thumbStoppedEarly, setThumbStoppedEarly] = useState(false);
-  const [scanPhases, setScanPhases] = useState<
-    Partial<
-      Record<
-        string,
-        { status?: "start" | "done"; done?: number; total?: number; message?: string }
-      >
-    >
-  >({});
-  const [scanTransport, setScanTransport] = useState<
-    "idle" | "stream" | "fallback" | "fallback-stream-ended"
-  >("idle");
   const [expandedIps, setExpandedIps] = useState<Record<string, boolean>>({});
-  const [scanStartedAt, setScanStartedAt] = useState<string | null>(null);
   const runNonceRef = useRef(0);
   const activeRunNonceRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -80,6 +68,10 @@ export default function HomePage() {
         </span>
       </span>
     );
+  }
+
+  function apiUrl(path: string): string {
+    return new URL(path, window.location.origin).toString();
   }
 
   function getThumbUrlsForIp(ip: string): string[] {
@@ -117,7 +109,7 @@ export default function HomePage() {
     try {
       const ac = new AbortController();
       const t = window.setTimeout(() => ac.abort(), 3500);
-      const thumbRes = await fetch("/api/thumbnail", {
+      const thumbRes = await fetch(apiUrl("/api/thumbnail"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -322,15 +314,12 @@ export default function HomePage() {
     runNonceRef.current += 1;
     const runNonce = runNonceRef.current;
     activeRunNonceRef.current = runNonce;
-    setScanStartedAt(new Date().toISOString());
     abortRef.current?.abort();
     const abortController = new AbortController();
     abortRef.current = abortController;
     setError(null);
     setLoading(true);
     setData(null);
-    setScanPhases({});
-    setScanTransport("idle");
     setExpandedIps({});
     setThumbStoppedEarly(false);
 
@@ -367,176 +356,18 @@ export default function HomePage() {
     }
 
     try {
-      async function runScanNonStream() {
-        const res = await fetch("/api/scan", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(request),
-          signal: abortController.signal
-        });
-        const json = (await res.json().catch(() => ({}))) as ScanResponse;
-        if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
-        setData(json);
-        indexResultsForThumbs(json);
-        resetThumbs();
-        enqueueInitialThumbs(json);
-      }
-
-      let res: Response;
-      try {
-        setScanTransport("stream");
-        res = await fetch("/api/scan/stream", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(request),
-          signal: abortController.signal
-        });
-      } catch (e) {
-        // Safari sometimes reports streaming fetch as "Load failed" even though the server is fine.
-        // Fall back to the classic non-stream endpoint so the user still gets results.
-        const msg = e instanceof Error ? e.message : String(e);
-        setScanPhases((prev) => ({
-          ...prev,
-          validate: { status: "done" },
-          discovery: { status: "done", message: `Stream fehlgeschlagen (${msg}). Fallback…` }
-        }));
-        setScanTransport("fallback");
-        await runScanNonStream();
-        return;
-      }
-
-      if (!res.ok || !res.body) {
-        const txt = await res.text().catch(() => "");
-        // Fallback for proxies/servers that don't support streaming.
-        setScanPhases((prev) => ({
-          ...prev,
-          discovery: { status: "done", message: `Stream nicht verfügbar. Fallback…` }
-        }));
-        setScanTransport("fallback");
-        await runScanNonStream();
-        return;
-      }
-
-      // Ensure we can show found devices immediately (even before first `result`).
-      setData({
-        meta: scanStartedAt
-          ? { mode: preset, startedAt: scanStartedAt, durationMs: 0 }
-          : undefined,
-        results: [],
-        warnings: ["Live: Geräte erscheinen sofort beim Finden."]
-      });
-
-      const decoder = new TextDecoder("utf-8");
-      const reader = res.body.getReader();
-      let buffer = "";
-      let gotResult = false;
-
       resetThumbs();
-
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          // Safari/servers may use CRLF. Normalize so we can reliably split on "\n\n".
-          buffer = buffer.replace(/\r\n/g, "\n");
-
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-
-          for (const part of parts) {
-            const lines = part.split("\n").map((l) => l.trimEnd());
-            let eventName = "";
-            const dataLines: string[] = [];
-            for (const line of lines) {
-              if (line.startsWith("event:")) eventName = line.slice(6).trim();
-              if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-            }
-            const dataStr = dataLines.join("\n").trim();
-            if (!dataStr) continue;
-            let payload: any;
-            try {
-              payload = JSON.parse(dataStr);
-            } catch {
-              continue;
-            }
-
-          if (eventName === "phase") {
-            setScanPhases((prev) => ({
-              ...prev,
-              [payload.phase]: {
-                ...(prev[payload.phase] ?? {}),
-                status: payload.status,
-                message: payload.message
-              }
-            }));
-          } else if (eventName === "progress") {
-            if (payload?.message === "ping") continue;
-            setScanPhases((prev) => ({
-              ...prev,
-              [payload.phase]: {
-                ...(prev[payload.phase] ?? {}),
-                done: payload.done,
-                  total: payload.total,
-                  message: payload.message
-                }
-              }));
-          } else if (eventName === "error") {
-            throw new Error(payload.error ?? "Scan fehlgeschlagen.");
-          } else if (eventName === "item") {
-            const item = payload.item ?? payload;
-            const ip = item?.ip as string | undefined;
-            if (!ip) continue;
-            setData((prev) => {
-              const base: ScanResponse =
-                prev ??
-                ({
-                  meta: undefined,
-                  results: [],
-                  warnings: undefined
-                } satisfies ScanResponse);
-
-              const existing = base.results.find((r) => r.ip === ip);
-              const nextResults = existing
-                ? base.results.map((r) => (r.ip === ip ? { ...r, ...item } : r))
-                : [...base.results, item];
-              return { ...base, results: nextResults };
-            });
-          } else if (eventName === "result") {
-            const json = payload.result as ScanResponse;
-            if (json?.error) throw new Error(json.error);
-            gotResult = true;
-            setData(json);
-            indexResultsForThumbs(json);
-            enqueueInitialThumbs(json);
-          }
-          }
-        }
-      } catch (streamErr) {
-        // If streaming fails mid-flight (Safari often says "Load failed"), fall back.
-        if (!abortController.signal.aborted && !gotResult) {
-          const msg =
-            streamErr instanceof Error ? streamErr.message : String(streamErr);
-          setScanPhases((prev) => ({
-            ...prev,
-            discovery: { status: "done", message: `Stream error (${msg}). Fallback…` }
-          }));
-          setScanTransport("fallback");
-          await runScanNonStream();
-          return;
-        }
-        throw streamErr;
-      }
-
-      if (!abortController.signal.aborted && !gotResult) {
-        // If stream ended unexpectedly, fall back to non-stream scan once.
-        setScanPhases((prev) => ({
-          ...prev,
-          discovery: { status: "done", message: "Stream beendet. Fallback…" }
-        }));
-        setScanTransport("fallback-stream-ended");
-        await runScanNonStream();
-      }
+      const res = await fetch(apiUrl("/api/scan"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+        signal: abortController.signal
+      });
+      const json = (await res.json().catch(() => ({}))) as ScanResponse;
+      if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
+      setData(json);
+      indexResultsForThumbs(json);
+      enqueueInitialThumbs(json);
     } catch (e) {
       if (abortController.signal.aborted) {
         setError("Scan abgebrochen.");
@@ -852,53 +683,9 @@ export default function HomePage() {
                  ) : null}
                </div>
 
-               {(loading || Object.keys(scanPhases).length > 0) ? (
+               {loading ? (
                  <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
-                   <div className="flex flex-col gap-1.5">
-                     {(["validate", preset === "ws-discovery" ? "discovery" : "cidr", "onvif", "rtsp"] as const).map((p) => {
-                       const s = scanPhases[p];
-                       const done = typeof s?.done === "number" ? s.done : undefined;
-                       const total = typeof s?.total === "number" ? s.total : undefined;
-                       const label =
-                         p === "validate"
-                           ? "Validierung"
-                           : p === "discovery"
-                             ? "Discovery"
-                             : p === "cidr"
-                               ? "CIDR Scan"
-                               : p === "onvif"
-                                 ? "ONVIF Probe"
-                                 : "RTSP Probe";
-                       const active = s?.status === "start";
-                       const finished = s?.status === "done";
-                       const show = Boolean(s) || (p === "validate" && loading);
-                       if (!show) return null;
-                       return (
-                         <div key={p} className="flex items-center justify-between gap-3">
-                           <div className="flex items-center gap-2">
-                             <span
-                               className={
-                                 "inline-block h-2 w-2 rounded-full " +
-                                 (finished
-                                   ? "bg-emerald-400"
-                                   : active
-                                     ? "bg-indigo-400 animate-pulse"
-                                     : "bg-slate-600")
-                               }
-                             />
-                             <span className={finished ? "text-slate-200" : "text-slate-300"}>
-                               {label}
-                             </span>
-                           </div>
-                           <div className="font-mono text-[11px] text-slate-400">
-                             {typeof done === "number" && typeof total === "number"
-                               ? `${done}/${total}`
-                               : s?.message ?? (active ? "…" : finished ? "OK" : "")}
-                           </div>
-                         </div>
-                       );
-                     })}
-                   </div>
+                   Scan läuft… (Safari-kompatibler Modus ohne Live-Streaming)
                  </div>
                ) : null}
 	          </div>
@@ -920,15 +707,6 @@ export default function HomePage() {
               <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 {data.results.length} Gerät(e) • {data.meta.durationMs}ms
-                {scanTransport !== "idle" ? (
-                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-200">
-                    {scanTransport === "stream"
-                      ? "Live"
-                      : scanTransport === "fallback-stream-ended"
-                        ? "Fallback (Stream)"
-                        : "Fallback"}
-                  </span>
-                ) : null}
                 {includeThumbnails ? (
                   <span className="text-slate-300/80">
                     • Preview{" "}
