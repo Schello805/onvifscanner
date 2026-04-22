@@ -182,12 +182,21 @@ export async function runScan(
     let done = 0;
     await mapLimit(results, Math.min(4, results.length), async (r) => {
       throwIfAborted();
-      const vendor = await probeVendorUrls({
-        result: r,
-        timeoutMs: req.timeoutMs,
-        credentials: req.credentials,
-        signal
-      });
+      let vendor;
+      try {
+        vendor = await probeVendorUrls({
+          result: r,
+          timeoutMs: req.timeoutMs,
+          credentials: req.credentials,
+          signal
+        });
+      } catch (e) {
+        if (signal?.aborted) throw e;
+        vendor = {
+          profile: "Vendor-Katalog",
+          log: [`Vendor probe failed: ${e instanceof Error ? e.message : String(e)}`]
+        };
+      }
       if (vendor) {
         r.vendor = vendor;
         if (vendor.rtspUris?.length) {

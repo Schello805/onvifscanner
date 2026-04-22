@@ -110,20 +110,27 @@ async function probeHttpUrl(args: {
   signal?: AbortSignal;
   log: string[];
 }): Promise<boolean> {
-  const res = await fetchWithDigestAuth({
-    url: args.url,
-    method: "GET",
-    timeoutMs: Math.min(Math.max(args.timeoutMs, 800), 2200),
-    credentials: args.credentials,
-    signal: args.signal,
-    fastMode: false,
-    headers: {
-      accept: args.purpose === "snapshot" ? "image/*,*/*;q=0.8" : "multipart/x-mixed-replace,image/*,*/*;q=0.8",
-      "user-agent": "ONVIFscanner/0.1"
-    }
-  });
-  args.log.push(`HTTP ${res.status}: ${args.url}`);
+  let res: Response;
+  try {
+    res = await fetchWithDigestAuth({
+      url: args.url,
+      method: "GET",
+      timeoutMs: Math.min(Math.max(args.timeoutMs, 800), 2200),
+      credentials: args.credentials,
+      signal: args.signal,
+      fastMode: false,
+      headers: {
+        accept: args.purpose === "snapshot" ? "image/*,*/*;q=0.8" : "multipart/x-mixed-replace,image/*,*/*;q=0.8",
+        "user-agent": "ONVIFscanner/0.1"
+      }
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    args.log.push(`HTTP failed: ${args.url} (${message})`);
+    return false;
+  }
 
+  args.log.push(`HTTP ${res.status}: ${args.url}`);
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
   try {
     await res.body?.cancel();

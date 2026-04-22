@@ -758,6 +758,10 @@ export default function HomePage() {
                                 .filter(Boolean)
                                 .join(" ")}
                             </span>
+                          ) : r.vendor?.profile && r.vendor.profile !== "Vendor-Katalog" ? (
+                            <span className="text-sm font-bold text-slate-200 tracking-wide">
+                              {r.vendor.profile}
+                            </span>
                           ) : (
                             <span className="text-sm font-medium text-slate-500">Unbekannt</span>
                           )}
