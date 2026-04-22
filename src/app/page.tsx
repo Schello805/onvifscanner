@@ -59,18 +59,53 @@ export default function HomePage() {
 
   function InfoTip(props: { tip: string }) {
     return (
-      <span className="relative z-20 ml-1 inline-flex align-middle group/info">
+      <span className="relative z-[9999] inline-flex shrink-0 align-middle group/info">
         <span
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[10px] font-bold text-slate-300 hover:border-indigo-400 hover:text-white"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-slate-900 text-[10px] font-bold text-slate-300 shadow-sm hover:border-indigo-400 hover:text-white"
           aria-label="Info"
           role="img"
         >
           i
         </span>
-        <span className="pointer-events-none absolute left-1/2 top-5 z-50 hidden w-64 -translate-x-1/2 rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-normal leading-snug text-slate-200 shadow-xl group-hover/info:block">
+        <span className="pointer-events-none absolute bottom-6 right-0 z-[9999] hidden w-64 rounded-md border border-indigo-400/20 bg-slate-950 px-3 py-2 text-[11px] font-normal leading-snug tracking-normal text-slate-100 shadow-2xl shadow-black/40 group-hover/info:block sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
           {props.tip}
         </span>
       </span>
+    );
+  }
+
+  function OptionCheck(props: {
+    checked: boolean;
+    disabled?: boolean;
+    label: string;
+    tip: string;
+    onChange: (checked: boolean) => void;
+  }) {
+    const disabled = props.disabled ?? false;
+
+    return (
+      <label
+        className={`relative flex min-h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 transition-colors ${
+          disabled ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-indigo-400/30 hover:bg-white/[0.06]"
+        }`}
+      >
+        <span className="relative flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded border border-white/20 bg-white/5">
+          {props.checked && (
+            <svg className="h-3 w-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          <input
+            type="checkbox"
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+            checked={props.checked}
+            disabled={disabled}
+            onChange={(e) => props.onChange(e.target.checked)}
+          />
+        </span>
+        <span className="min-w-0 flex-1 text-[11px] leading-tight text-slate-300">{props.label}</span>
+        <InfoTip tip={props.tip} />
+      </label>
     );
   }
 
@@ -463,7 +498,7 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="glass-panel overflow-hidden relative rounded-2xl p-5 md:p-6">
+      <section className="glass-panel relative overflow-visible rounded-2xl p-5 md:p-6">
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
         
@@ -569,79 +604,45 @@ export default function HomePage() {
                 </label>
              </div>
              
-	             <div className="flex flex-col sm:flex-row gap-3 sm:items-center mt-2">
-	                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {copyWithCreds && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={copyWithCreds} onChange={(e) => setCopyWithCreds(e.target.checked)} />
-                  </div>
-                  <span className="text-[11px] text-slate-300">
-                    Credentials beim Kopieren anhängen
-                    <InfoTip tip='Wenn aktiv, werden beim Kopieren Benutzername+Passwort in die URL eingebettet (z. B. "http://user:pass@ip/..."). Vorsicht: sensibel.' />
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {includeThumbnails && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={includeThumbnails} onChange={(e) => setIncludeThumbnails(e.target.checked)} />
-                  </div>
-                  <span className="text-[11px] text-slate-300">
-                    Vorschau-Bilder laden (langsamer)
-                    <InfoTip tip="Lädt Snapshot/ISAPI-Bilder als 200×200 Vorschau. Manche Kameras benötigen Digest/Basic Auth. Das kann dauern." />
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {thumbnailsOnExpandOnly && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input
-                      type="checkbox"
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      checked={thumbnailsOnExpandOnly}
-                      onChange={(e) => setThumbnailsOnExpandOnly(e.target.checked)}
-                      disabled={!includeThumbnails}
-                    />
-                  </div>
-                  <span className={`text-[11px] ${includeThumbnails ? "text-slate-300" : "text-slate-500"}`}>
-                    Previews nur bei geöffneten Details
-                    <InfoTip tip="Wenn aktiv, werden Vorschauen erst geladen, wenn du eine Kamera-Zeile aufklappst. Das ist viel schneller und schont die Kameras." />
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {verboseLog && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={verboseLog} onChange={(e) => setVerboseLog(e.target.checked)} />
-                  </div>
-                  <span className="text-[11px] text-slate-300">
-                    Verbose Log
-                    <InfoTip tip="Zeigt im Log mehr Details (z. B. Digest/401, Timeout, genutzte Snapshot-URL). Hilft beim Debuggen, kann aber mehr Text erzeugen." />
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {deepProbe && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={deepProbe} onChange={(e) => setDeepProbe(e.target.checked)} />
-                  </div>
-                  <span className="text-[11px] text-slate-300">
-                    Erweiterte Analyse (ONVIF/RTSP prüfen)
-                    <InfoTip tip="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Kann deutlich länger dauern." />
-                  </span>
-                </label>
-                
-                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
-                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
-                    {ack && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-                  </div>
-	                  <span className="text-[11px] text-slate-300">
-                      Netzwerk-Berechtigung bestätigt
-                      <InfoTip tip="Nur im eigenen/autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden." />
-                    </span>
-	                </label>
-	             </div>
+             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+               <OptionCheck
+                 checked={copyWithCreds}
+                 label="Credentials anhängen"
+                 tip='Beim Kopieren werden Benutzername und Passwort in die URL eingebettet (z. B. "http://user:pass@ip/..."). Vorsicht: sensibel.'
+                 onChange={setCopyWithCreds}
+               />
+               <OptionCheck
+                 checked={includeThumbnails}
+                 label="Vorschau-Bilder laden"
+                 tip="Lädt Snapshot/ISAPI-Bilder als kleine Vorschau. Manche Kameras benötigen Digest/Basic Auth; das kann länger dauern."
+                 onChange={setIncludeThumbnails}
+               />
+               <OptionCheck
+                 checked={thumbnailsOnExpandOnly}
+                 disabled={!includeThumbnails}
+                 label="Previews erst in Details"
+                 tip="Lädt Vorschauen erst, wenn du eine Kamera-Zeile aufklappst. Das ist schneller und schont die Kameras."
+                 onChange={setThumbnailsOnExpandOnly}
+               />
+               <OptionCheck
+                 checked={verboseLog}
+                 label="Verbose Log"
+                 tip="Zeigt mehr Details wie Digest/401, Timeouts und genutzte Snapshot-URLs. Hilft beim Debuggen, erzeugt aber mehr Text."
+                 onChange={setVerboseLog}
+               />
+               <OptionCheck
+                 checked={deepProbe}
+                 label="Erweiterte Analyse"
+                 tip="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Kann deutlich länger dauern."
+                 onChange={setDeepProbe}
+               />
+               <OptionCheck
+                 checked={ack}
+                 label="Netzwerk bestätigt"
+                 tip="Nur im eigenen oder ausdrücklich autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden."
+                 onChange={setAck}
+               />
+             </div>
 
                <div className="mt-5 flex items-center gap-3">
                  <button
