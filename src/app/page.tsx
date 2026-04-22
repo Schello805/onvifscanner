@@ -66,6 +66,7 @@ export default function HomePage() {
   const thumbStopRef = useRef(false);
   const thumbPumpRef = useRef(false);
   const thumbRequestedRef = useRef<Set<string>>(new Set());
+  const initialThumbIpsRef = useRef<Set<string>>(new Set());
 
   function InfoTip(props: { tip: string }) {
     return (
@@ -349,8 +350,19 @@ export default function HomePage() {
       thumbSuccessRef.current = 0;
       thumbStopRef.current = false;
       thumbRequestedRef.current = new Set();
+      initialThumbIpsRef.current = new Set();
       setThumbStoppedEarly(false);
     };
+
+    function enqueueInitialThumbs(json: ScanResponse) {
+      if (!includeThumbnails) return;
+      const count = thumbnailsOnExpandOnly ? 4 : 12;
+      const ips = json.results.map((r) => r.ip).slice(0, count);
+      for (const ip of ips) {
+        initialThumbIpsRef.current.add(ip);
+        enqueueThumb(ip);
+      }
+    }
 
     try {
       async function runScanNonStream() {
@@ -365,9 +377,7 @@ export default function HomePage() {
         setData(json);
         indexResultsForThumbs(json);
         resetThumbs();
-        if (includeThumbnails && !thumbnailsOnExpandOnly) {
-          for (const r of json.results.slice(0, 12)) enqueueThumb(r.ip);
-        }
+        enqueueInitialThumbs(json);
       }
 
       let res: Response;
@@ -412,65 +422,79 @@ export default function HomePage() {
 
       resetThumbs();
 
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        // Safari/servers may use CRLF. Normalize so we can reliably split on "\n\n".
-        buffer = buffer.replace(/\r\n/g, "\n");
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // Safari/servers may use CRLF. Normalize so we can reliably split on "\n\n".
+          buffer = buffer.replace(/\r\n/g, "\n");
 
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
 
-        for (const part of parts) {
-          const lines = part.split("\n").map((l) => l.trimEnd());
-          let eventName = "";
-          const dataLines: string[] = [];
-          for (const line of lines) {
-            if (line.startsWith("event:")) eventName = line.slice(6).trim();
-            if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-          }
-          const dataStr = dataLines.join("\n").trim();
-          if (!dataStr) continue;
-          let payload: any;
-          try {
-            payload = JSON.parse(dataStr);
-          } catch {
-            continue;
-          }
+          for (const part of parts) {
+            const lines = part.split("\n").map((l) => l.trimEnd());
+            let eventName = "";
+            const dataLines: string[] = [];
+            for (const line of lines) {
+              if (line.startsWith("event:")) eventName = line.slice(6).trim();
+              if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+            }
+            const dataStr = dataLines.join("\n").trim();
+            if (!dataStr) continue;
+            let payload: any;
+            try {
+              payload = JSON.parse(dataStr);
+            } catch {
+              continue;
+            }
 
-          if (eventName === "phase") {
-            setScanPhases((prev) => ({
-              ...prev,
-              [payload.phase]: {
-                ...(prev[payload.phase] ?? {}),
-                status: payload.status,
-                message: payload.message
-              }
-            }));
-          } else if (eventName === "progress") {
-            setScanPhases((prev) => ({
-              ...prev,
-              [payload.phase]: {
-                ...(prev[payload.phase] ?? {}),
-                done: payload.done,
-                total: payload.total,
-                message: payload.message
-              }
-            }));
-          } else if (eventName === "error") {
-            throw new Error(payload.error ?? "Scan fehlgeschlagen.");
-          } else if (eventName === "result") {
-            const json = payload.result as ScanResponse;
-            if (json?.error) throw new Error(json.error);
-            gotResult = true;
-            setData(json);
-            indexResultsForThumbs(json);
-            if (includeThumbnails && !thumbnailsOnExpandOnly) {
-              for (const r of json.results.slice(0, 12)) enqueueThumb(r.ip);
+            if (eventName === "phase") {
+              setScanPhases((prev) => ({
+                ...prev,
+                [payload.phase]: {
+                  ...(prev[payload.phase] ?? {}),
+                  status: payload.status,
+                  message: payload.message
+                }
+              }));
+            } else if (eventName === "progress") {
+              setScanPhases((prev) => ({
+                ...prev,
+                [payload.phase]: {
+                  ...(prev[payload.phase] ?? {}),
+                  done: payload.done,
+                  total: payload.total,
+                  message: payload.message
+                }
+              }));
+            } else if (eventName === "error") {
+              throw new Error(payload.error ?? "Scan fehlgeschlagen.");
+            } else if (eventName === "result") {
+              const json = payload.result as ScanResponse;
+              if (json?.error) throw new Error(json.error);
+              gotResult = true;
+              setData(json);
+              indexResultsForThumbs(json);
+              enqueueInitialThumbs(json);
             }
           }
         }
+      } catch (streamErr) {
+        // If streaming fails mid-flight (Safari often says "Load failed"), fall back.
+        if (!abortController.signal.aborted && !gotResult) {
+          const msg =
+            streamErr instanceof Error ? streamErr.message : String(streamErr);
+          setScanPhases((prev) => ({
+            ...prev,
+            discovery: { status: "done", message: `Stream error (${msg}). Fallback…` }
+          }));
+          setScanTransport("fallback");
+          await runScanNonStream();
+          return;
+        }
+        throw streamErr;
       }
 
       if (!abortController.signal.aborted && !gotResult) {
@@ -930,6 +954,14 @@ export default function HomePage() {
                               if (thumbnailState[r.ip] === "loading") return "Lädt…";
                               if (lower.includes("digest") && lower.includes("401")) return "Digest nötig";
                               if (lower.includes("401")) return "Auth nötig";
+                              if (
+                                includeThumbnails &&
+                                thumbnailsOnExpandOnly &&
+                                !expandedIps[r.ip] &&
+                                !initialThumbIpsRef.current.has(r.ip)
+                              ) {
+                                return "Aufklappen";
+                              }
                               return "Kein Bild";
                             })()}
                           </div>

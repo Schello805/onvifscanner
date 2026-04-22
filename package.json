@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.2.38",
+  "version": "0.2.39",
   "private": true,
   "description": "Local-first web app to discover ONVIF/RTSP cameras in your network.",
   "license": "PolyForm-Noncommercial-1.0.0",
