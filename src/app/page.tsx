@@ -59,12 +59,16 @@ export default function HomePage() {
 
   function InfoTip(props: { tip: string }) {
     return (
-      <span className="tooltip tooltip-bottom" data-tip={props.tip}>
+      <span className="relative z-20 ml-1 inline-flex align-middle group/info">
         <span
-          className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[10px] font-bold text-slate-300"
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-white/5 text-[10px] font-bold text-slate-300 hover:border-indigo-400 hover:text-white"
           aria-label="Info"
+          role="img"
         >
           i
+        </span>
+        <span className="pointer-events-none absolute left-1/2 top-5 z-50 hidden w-64 -translate-x-1/2 rounded-md border border-white/10 bg-slate-950 px-3 py-2 text-[11px] font-normal leading-snug text-slate-200 shadow-xl group-hover/info:block">
+          {props.tip}
         </span>
       </span>
     );
@@ -799,7 +803,12 @@ export default function HomePage() {
                             {r.onvif?.ok ? (
                               <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">ONVIF</span>
                             ) : r.onvif?.discoveryOnly ? (
-                              <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10">ONVIF?</span>
+                              <span
+                                className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10"
+                                title="ONVIF XAddr per WS-Discovery gefunden, SOAP/Media wurde nicht aktiv geprüft."
+                              >
+                                ONVIF XAddr
+                              </span>
                             ) : r.onvif ? (
                               <span title={r.onvif.error} className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/30">Kein ONVIF</span>
                             ) : null}
@@ -807,7 +816,12 @@ export default function HomePage() {
                             {r.rtsp?.ok ? (
                               <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">RTSP</span>
                             ) : r.rtsp?.discoveryOnly ? (
-                              <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10">RTSP?</span>
+                              <span
+                                className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10"
+                                title="RTSP-Pfade wurden als Kandidaten erzeugt, aber nicht aktiv getestet."
+                              >
+                                RTSP Kandidat
+                              </span>
                             ) : r.rtsp ? (
                               <span title={r.rtsp.error} className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border border-white/10">RTSP Fehler</span>
                             ) : null}
