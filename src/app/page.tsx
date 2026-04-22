@@ -6,9 +6,9 @@ import type {
   ScanResponse,
   ScanTargetPreset
 } from "@/lib/types";
-import { mapLimit } from "@/lib/util/mapLimit";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
+const THUMB_SUCCESS_MAX = 6;
 
 function parsePorts(input: string): number[] {
   const ports = input
@@ -28,6 +28,8 @@ export default function HomePage() {
   const [password, setPassword] = useState("");
   const [copyWithCreds, setCopyWithCreds] = useState(false);
   const [includeThumbnails, setIncludeThumbnails] = useState(false);
+  const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(true);
+  const [verboseLog, setVerboseLog] = useState(false);
   const [deepProbe, setDeepProbe] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
@@ -41,6 +43,7 @@ export default function HomePage() {
   const [thumbnailState, setThumbnailState] = useState<
     Record<string, "idle" | "loading" | "ok" | "fail">
   >({});
+  const [thumbStoppedEarly, setThumbStoppedEarly] = useState(false);
   const [scanPhases, setScanPhases] = useState<
     Partial<
       Record<
@@ -49,8 +52,20 @@ export default function HomePage() {
       >
     >
   >({});
+  const [scanTransport, setScanTransport] = useState<
+    "idle" | "stream" | "fallback" | "fallback-stream-ended"
+  >("idle");
+  const [expandedIps, setExpandedIps] = useState<Record<string, boolean>>({});
   const runNonceRef = useRef(0);
+  const activeRunNonceRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const latestResultsRef = useRef<Record<string, { ip: string; urls: string[] }>>({});
+  const thumbQueueRef = useRef<string[]>([]);
+  const thumbInFlightRef = useRef(0);
+  const thumbSuccessRef = useRef(0);
+  const thumbStopRef = useRef(false);
+  const thumbPumpRef = useRef(false);
+  const thumbRequestedRef = useRef<Set<string>>(new Set());
 
   function InfoTip(props: { tip: string }) {
     return (
@@ -63,6 +78,179 @@ export default function HomePage() {
         </span>
       </span>
     );
+  }
+
+  function getThumbUrlsForIp(ip: string): string[] {
+    return latestResultsRef.current[ip]?.urls ?? [
+      `http://${ip}/ISAPI/Streaming/channels/101/picture`,
+      `http://${ip}/ISAPI/Streaming/channels/102/picture`
+    ];
+  }
+
+  function indexResultsForThumbs(json: ScanResponse) {
+    const map: Record<string, { ip: string; urls: string[] }> = {};
+    for (const r of json.results) {
+      const urls = Array.from(
+        new Set(
+          [
+            ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
+            `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
+            `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
+          ].filter(Boolean)
+        )
+      ).slice(0, 4);
+      map[r.ip] = { ip: r.ip, urls };
+    }
+    latestResultsRef.current = map;
+  }
+
+  async function fetchThumbnail(ip: string): Promise<void> {
+    if (thumbStopRef.current) return;
+    if (thumbnailState[ip] === "loading" || thumbnailState[ip] === "ok") return;
+
+    const urls = getThumbUrlsForIp(ip).slice(0, 4);
+    if (!urls.length) return;
+
+    setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
+    try {
+      const ac = new AbortController();
+      const t = window.setTimeout(() => ac.abort(), 3500);
+      const thumbRes = await fetch("/api/thumbnail", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          urls,
+          size: 200,
+          timeoutMs: 1500,
+          fastAuth: true,
+          credentials:
+            username.trim() && password
+              ? { username: username.trim(), password }
+              : undefined
+        }),
+        signal: ac.signal
+      }).finally(() => window.clearTimeout(t));
+
+      // Ignore outdated scan runs.
+      if (activeRunNonceRef.current !== runNonceRef.current) return;
+
+      if (!thumbRes.ok) {
+        try {
+          const ct = (thumbRes.headers.get("content-type") ?? "").toLowerCase();
+          if (ct.includes("application/json")) {
+            const j = (await thumbRes.json().catch(() => null)) as any;
+            if (j?.error) {
+              const lines = [String(j.error), ...(Array.isArray(j.log) ? j.log : [])];
+              setThumbnailLog((prev) => ({
+                ...prev,
+                [ip]: lines.slice(0, verboseLog ? 60 : 12).join("\n")
+              }));
+            } else {
+              const txt = JSON.stringify(j).slice(0, 1200);
+              setThumbnailLog((prev) => ({ ...prev, [ip]: txt }));
+            }
+          } else {
+            const txt = await thumbRes.text();
+            setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
+          }
+        } catch {
+          // ignore
+        }
+        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
+
+        for (const candidate of urls) {
+          if (runNonceRef.current !== activeRunNonceRef.current) return;
+          if (!candidate.includes("/ISAPI/")) continue;
+          const ok = await tryLoadImageDirect(candidate, 2500);
+          if (!ok) continue;
+          setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
+          setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
+          setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
+          thumbSuccessRef.current += 1;
+          if (thumbSuccessRef.current >= THUMB_SUCCESS_MAX) {
+            thumbStopRef.current = true;
+            setThumbStoppedEarly(true);
+            thumbQueueRef.current = [];
+          }
+          return;
+        }
+        return;
+      }
+
+      const blob = await thumbRes.blob();
+      if (!blob.size) return;
+      const objectUrl = URL.createObjectURL(blob);
+      if (runNonceRef.current !== activeRunNonceRef.current) {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      setThumbnails((prev) => {
+        const existing = prev[ip];
+        if (existing) {
+          try {
+            if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
+          } catch {
+            // ignore
+          }
+        }
+        return { ...prev, [ip]: objectUrl };
+      });
+      const src = thumbRes.headers.get("x-thumbnail-source");
+      if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
+      setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
+      thumbSuccessRef.current += 1;
+      if (thumbSuccessRef.current >= THUMB_SUCCESS_MAX) {
+        thumbStopRef.current = true;
+        setThumbStoppedEarly(true);
+        thumbQueueRef.current = [];
+      }
+    } catch {
+      setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
+    }
+  }
+
+  function pumpThumbQueue() {
+    if (thumbPumpRef.current) return;
+    thumbPumpRef.current = true;
+
+    const tick = () => {
+      const maxConcurrency = 2;
+      while (
+        !thumbStopRef.current &&
+        thumbInFlightRef.current < maxConcurrency &&
+        thumbQueueRef.current.length > 0
+      ) {
+        const ip = thumbQueueRef.current.shift()!;
+        thumbInFlightRef.current += 1;
+        void fetchThumbnail(ip).finally(() => {
+          thumbInFlightRef.current = Math.max(0, thumbInFlightRef.current - 1);
+          tick();
+        });
+      }
+
+      if (
+        thumbStopRef.current ||
+        (thumbInFlightRef.current === 0 && thumbQueueRef.current.length === 0)
+      ) {
+        thumbPumpRef.current = false;
+      }
+    };
+
+    tick();
+  }
+
+  function enqueueThumb(ip: string) {
+    if (!includeThumbnails) return;
+    if (thumbStopRef.current) return;
+    if (thumbnailState[ip] === "ok" || thumbnailState[ip] === "loading") return;
+    if (thumbRequestedRef.current.has(ip)) return;
+    thumbRequestedRef.current.add(ip);
+    if (!thumbQueueRef.current.includes(ip)) thumbQueueRef.current.push(ip);
+    pumpThumbQueue();
   }
 
   async function tryLoadImageDirect(url: string, timeoutMs: number): Promise<boolean> {
@@ -131,6 +319,7 @@ export default function HomePage() {
   async function runScan() {
     runNonceRef.current += 1;
     const runNonce = runNonceRef.current;
+    activeRunNonceRef.current = runNonce;
     abortRef.current?.abort();
     const abortController = new AbortController();
     abortRef.current = abortController;
@@ -138,6 +327,9 @@ export default function HomePage() {
     setLoading(true);
     setData(null);
     setScanPhases({});
+    setScanTransport("idle");
+    setExpandedIps({});
+    setThumbStoppedEarly(false);
 
     const resetThumbs = () => {
       setThumbnails((prev) => {
@@ -152,108 +344,12 @@ export default function HomePage() {
       });
       setThumbnailLog({});
       setThumbnailState({});
-    };
-
-    const loadThumbsIfNeeded = (json: ScanResponse) => {
-      if (!includeThumbnails) return;
-      type ThumbJob = { ip: string; urls: string[] };
-      const jobs = json.results
-        .map((r) => {
-          const urls = Array.from(
-            new Set(
-              [
-                ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ??
-                  []),
-                // Hikvision ISAPI picture endpoints (often work even if ONVIF fails).
-                `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
-                `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
-              ].filter(Boolean)
-            )
-          );
-          const limited = urls.slice(0, 4);
-          return limited.length
-            ? ({ ip: r.ip, urls: limited } satisfies ThumbJob)
-            : null;
-        })
-        .filter(Boolean) as ThumbJob[];
-
-      const thumbConcurrency = 2;
-      const maxThumbs = 12;
-      void mapLimit(jobs.slice(0, maxThumbs), thumbConcurrency, async ({ ip, urls }) => {
-        setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
-        try {
-          const ac = new AbortController();
-          const t = window.setTimeout(() => ac.abort(), 3500);
-          const thumbRes = await fetch("/api/thumbnail", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              urls,
-              size: 200,
-              timeoutMs: 1500,
-              fastAuth: true,
-              credentials:
-                username.trim() && password
-                  ? { username: username.trim(), password }
-                  : undefined
-            }),
-            signal: ac.signal
-          }).finally(() => window.clearTimeout(t));
-          if (!thumbRes.ok) {
-            try {
-              const txt = await thumbRes.text();
-              setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
-            } catch {
-              // ignore
-            }
-            setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-
-            // Fallback: try direct browser load for ISAPI-like endpoints.
-            for (const candidate of urls) {
-              if (runNonceRef.current !== runNonce) return null;
-              if (!candidate.includes("/ISAPI/")) continue;
-              const ok = await tryLoadImageDirect(candidate, 2500);
-              if (!ok) continue;
-              setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
-              setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
-              setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-              return null;
-            }
-            return null;
-          }
-          const blob = await thumbRes.blob();
-          if (!blob.size) return null;
-          const objectUrl = URL.createObjectURL(blob);
-
-          if (runNonceRef.current !== runNonce) {
-            try {
-              URL.revokeObjectURL(objectUrl);
-            } catch {
-              // ignore
-            }
-            return null;
-          }
-
-          setThumbnails((prev) => {
-            const existing = prev[ip];
-            if (existing) {
-              try {
-                if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
-              } catch {
-                // ignore
-              }
-            }
-            return { ...prev, [ip]: objectUrl };
-          });
-          const src = thumbRes.headers.get("x-thumbnail-source");
-          if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
-          setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-          return null;
-        } catch {
-          setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-          return null;
-        }
-      });
+      thumbQueueRef.current = [];
+      thumbInFlightRef.current = 0;
+      thumbSuccessRef.current = 0;
+      thumbStopRef.current = false;
+      thumbRequestedRef.current = new Set();
+      setThumbStoppedEarly(false);
     };
 
     try {
@@ -267,12 +363,16 @@ export default function HomePage() {
         const json = (await res.json().catch(() => ({}))) as ScanResponse;
         if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
         setData(json);
+        indexResultsForThumbs(json);
         resetThumbs();
-        loadThumbsIfNeeded(json);
+        if (includeThumbnails && !thumbnailsOnExpandOnly) {
+          for (const r of json.results.slice(0, 12)) enqueueThumb(r.ip);
+        }
       }
 
       let res: Response;
       try {
+        setScanTransport("stream");
         res = await fetch("/api/scan/stream", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -288,6 +388,7 @@ export default function HomePage() {
           validate: { status: "done" },
           discovery: { status: "done", message: `Stream fehlgeschlagen (${msg}). Fallback…` }
         }));
+        setScanTransport("fallback");
         await runScanNonStream();
         return;
       }
@@ -299,6 +400,7 @@ export default function HomePage() {
           ...prev,
           discovery: { status: "done", message: `Stream nicht verfügbar. Fallback…` }
         }));
+        setScanTransport("fallback");
         await runScanNonStream();
         return;
       }
@@ -363,7 +465,10 @@ export default function HomePage() {
             if (json?.error) throw new Error(json.error);
             gotResult = true;
             setData(json);
-            loadThumbsIfNeeded(json);
+            indexResultsForThumbs(json);
+            if (includeThumbnails && !thumbnailsOnExpandOnly) {
+              for (const r of json.results.slice(0, 12)) enqueueThumb(r.ip);
+            }
           }
         }
       }
@@ -374,6 +479,7 @@ export default function HomePage() {
           ...prev,
           discovery: { status: "done", message: "Stream beendet. Fallback…" }
         }));
+        setScanTransport("fallback-stream-ended");
         await runScanNonStream();
       }
     } catch (e) {
@@ -389,6 +495,15 @@ export default function HomePage() {
 
   function stopScan() {
     abortRef.current?.abort();
+  }
+
+  function handleDetailsToggle(ip: string, open: boolean) {
+    setExpandedIps((prev) => ({ ...prev, [ip]: open }));
+    if (!includeThumbnails) return;
+    if (!thumbnailsOnExpandOnly) return;
+    if (!open) return;
+    // Enqueue thumbnail when a row is expanded.
+    enqueueThumb(ip);
   }
 
   function addCredsIfWanted(url: string): string {
@@ -589,6 +704,34 @@ export default function HomePage() {
 
                 <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
                   <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {thumbnailsOnExpandOnly && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input
+                      type="checkbox"
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      checked={thumbnailsOnExpandOnly}
+                      onChange={(e) => setThumbnailsOnExpandOnly(e.target.checked)}
+                      disabled={!includeThumbnails}
+                    />
+                  </div>
+                  <span className={`text-[11px] ${includeThumbnails ? "text-slate-300" : "text-slate-500"}`}>
+                    Previews nur bei geöffneten Details
+                    <InfoTip tip="Wenn aktiv, werden Vorschauen erst geladen, wenn du eine Kamera-Zeile aufklappst. Das ist viel schneller und schont die Kameras." />
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
+                    {verboseLog && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={verboseLog} onChange={(e) => setVerboseLog(e.target.checked)} />
+                  </div>
+                  <span className="text-[11px] text-slate-300">
+                    Verbose Log
+                    <InfoTip tip="Zeigt im Log mehr Details (z. B. Digest/401, Timeout, genutzte Snapshot-URL). Hilft beim Debuggen, kann aber mehr Text erzeugen." />
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-opacity">
+                  <div className="w-4 h-4 shrink-0 rounded bg-white/5 border border-white/20 flex items-center justify-center relative overflow-hidden group-hover:border-indigo-500/50 transition-colors">
                     {deepProbe && <svg className="w-3 h-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                     <input type="checkbox" className="absolute inset-0 opacity-0 cursor-pointer" checked={deepProbe} onChange={(e) => setDeepProbe(e.target.checked)} />
                   </div>
@@ -722,11 +865,25 @@ export default function HomePage() {
               <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 {data.results.length} Gerät(e) • {data.meta.durationMs}ms
+                {scanTransport !== "idle" ? (
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-200">
+                    {scanTransport === "stream"
+                      ? "Live"
+                      : scanTransport === "fallback-stream-ended"
+                        ? "Fallback (Stream)"
+                        : "Fallback"}
+                  </span>
+                ) : null}
                 {includeThumbnails ? (
                   <span className="text-slate-300/80">
                     • Preview{" "}
                     {Object.values(thumbnailState).filter((s) => s === "ok").length}/
                     {Math.min(12, data.results.length)}
+                  </span>
+                ) : null}
+                {thumbStoppedEarly ? (
+                  <span className="text-slate-400/90">
+                    • Stop nach {THUMB_SUCCESS_MAX} OK
                   </span>
                 ) : null}
               </div>
@@ -818,7 +975,15 @@ export default function HomePage() {
                       </td>
 
                       <td className="p-4">
-                        <details className="group rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm shadow-xl transition-all open:bg-black/40">
+                        <details
+                          className="group rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm shadow-xl transition-all open:bg-black/40"
+                          onToggle={(e) =>
+                            handleDetailsToggle(
+                              r.ip,
+                              (e.currentTarget as HTMLDetailsElement).open
+                            )
+                          }
+                        >
                           <summary className="cursor-pointer select-none text-sm font-semibold text-slate-300 hover:text-white transition flex items-center justify-between">
                             URLs & Log einblenden
                             <span className="text-indigo-400 transition-transform group-open:rotate-180">▼</span>
