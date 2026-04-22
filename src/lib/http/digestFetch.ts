@@ -59,7 +59,8 @@ export async function fetchWithDigestAuth(args: {
           signal: args.signal
         });
         args.debugLog?.push(`Auth: Digest -> HTTP ${res0d.status}`);
-        return res0d;
+        if (res0d.status !== 401) return res0d;
+        args.debugLog?.push("Auth: Digest(from basic challenge) failed; trying fresh unauth challenge");
       }
     }
 

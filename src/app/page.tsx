@@ -168,6 +168,7 @@ export default function HomePage() {
       if (activeRunNonceRef.current !== runNonceRef.current) return;
 
       if (!thumbRes.ok) {
+        let logWritten = false;
         try {
           const ct = (thumbRes.headers.get("content-type") ?? "").toLowerCase();
           if (ct.includes("application/json")) {
@@ -178,35 +179,27 @@ export default function HomePage() {
                 ...prev,
                 [ip]: lines.slice(0, verboseLog ? 60 : 12).join("\n")
               }));
+              logWritten = true;
             } else {
               const txt = JSON.stringify(j).slice(0, 1200);
               setThumbnailLog((prev) => ({ ...prev, [ip]: txt }));
+              logWritten = true;
             }
           } else {
             const txt = await thumbRes.text();
             setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
+            logWritten = true;
           }
         } catch {
           // ignore
         }
-        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-
-        for (const candidate of urls) {
-          if (runNonceRef.current !== activeRunNonceRef.current) return;
-          if (!candidate.includes("/ISAPI/")) continue;
-          const ok = await tryLoadImageDirect(candidate, 2500);
-          if (!ok) continue;
-          setThumbnails((prev) => ({ ...prev, [ip]: candidate }));
-          setThumbnailLog((prev) => ({ ...prev, [ip]: `OK (direct): ${candidate}` }));
-          setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-          thumbSuccessRef.current += 1;
-          if (thumbSuccessRef.current >= THUMB_SUCCESS_MAX) {
-            thumbStopRef.current = true;
-            setThumbStoppedEarly(true);
-            thumbQueueRef.current = [];
-          }
-          return;
+        if (!logWritten) {
+          setThumbnailLog((prev) => ({
+            ...prev,
+            [ip]: `Thumbnail proxy failed (HTTP ${thumbRes.status}).`
+          }));
         }
+        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
         return;
       }
 
@@ -284,40 +277,6 @@ export default function HomePage() {
     thumbRequestedRef.current.add(ip);
     if (!thumbQueueRef.current.includes(ip)) thumbQueueRef.current.push(ip);
     pumpThumbQueue();
-  }
-
-  async function tryLoadImageDirect(url: string, timeoutMs: number): Promise<boolean> {
-    return await new Promise<boolean>((resolve) => {
-      const img = new Image();
-      let done = false;
-      const t = window.setTimeout(() => {
-        if (done) return;
-        done = true;
-        try {
-          img.src = "";
-        } catch {
-          // ignore
-        }
-        resolve(false);
-      }, timeoutMs);
-
-      img.onload = () => {
-        if (done) return;
-        done = true;
-        window.clearTimeout(t);
-        resolve(true);
-      };
-      img.onerror = () => {
-        if (done) return;
-        done = true;
-        window.clearTimeout(t);
-        resolve(false);
-      };
-
-      // Avoid leaking referrer into camera logs.
-      img.referrerPolicy = "no-referrer";
-      img.src = url;
-    });
   }
 
   const request: ScanRequest = useMemo(

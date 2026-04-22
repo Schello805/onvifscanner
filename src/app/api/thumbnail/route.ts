@@ -124,6 +124,8 @@ export async function POST(req: Request) {
     const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 2, 1, 8);
     const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 30_000, 0, 300_000);
     const attemptLog: string[] = [];
+    let attempts = 0;
+    let authFailures = 0;
 
     await acquireSlot(maxConcurrency);
     acquired = true;
@@ -161,9 +163,13 @@ export async function POST(req: Request) {
       });
 
       attemptLog.push(`Status: ${res.status}`);
+      attempts += 1;
+      if (res.status === 401) authFailures += 1;
       const www = res.headers.get("www-authenticate");
       if (res.status === 401 && www && /digest/i.test(www) && !body.credentials?.username) {
         attemptLog.push("Hinweis: Digest auth nötig (Credentials fehlen).");
+      } else if (res.status === 401 && body.credentials?.username) {
+        attemptLog.push("Hinweis: Authentifizierung fehlgeschlagen (Credentials wurden von der Kamera abgelehnt).");
       }
       for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
       if (!res.ok) continue;
@@ -216,7 +222,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       { error: "No usable image from candidates.", log: attemptLog },
-      { status: 502 }
+      { status: attempts > 0 && authFailures === attempts ? 401 : 502 }
     );
   } catch (e) {
     return NextResponse.json(
