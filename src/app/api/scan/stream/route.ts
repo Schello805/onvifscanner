@@ -1,5 +1,12 @@
+import type { ScanResponse, ScanResult } from "@/lib/types";
 import { runScan } from "@/lib/scan/runScan";
 import { parseScanRequest } from "@/lib/scan/validation";
+import { wsDiscoveryProbe } from "@/lib/wsdiscovery/wsDiscovery";
+import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
+import { buildRtspCandidates } from "@/lib/rtsp/candidates";
+import { scanTcpPorts } from "@/lib/scan/tcpScan";
+import { probeRtsp } from "@/lib/rtsp/probeRtsp";
+import { mapLimit } from "@/lib/util/mapLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +26,7 @@ type PhaseEvent =
   | { type: "phase"; phase: Phase; status: "start" | "done"; message?: string }
   | { type: "progress"; phase: Phase; done: number; total: number; message?: string }
   | { type: "result"; result: unknown }
+  | { type: "item"; item: Partial<ScanResult> & { ip: string } }
   | { type: "error"; error: string };
 
 function sseEncode(event: PhaseEvent): Uint8Array {
@@ -48,14 +56,142 @@ export async function POST(req: Request) {
           const parsed = parseScanRequest(body);
           send({ type: "phase", phase: "validate", status: "done" });
 
-          const result = await runScan(parsed, {
-            signal: req.signal,
-            onPhase(ev) {
-              send(ev);
-            }
-          });
+          const startedAt = new Date();
 
-          send({ type: "result", result });
+          // Progressive WS-Discovery: send discovery results immediately, then enrich via ONVIF/RTSP.
+          if (parsed.preset === "ws-discovery" && parsed.deepProbe) {
+            const discoveryTimeoutMs = Number(
+              process.env.WS_DISCOVERY_TIMEOUT_MS ?? "1800"
+            );
+            send({ type: "phase", phase: "discovery", status: "start" });
+            const baseline = await wsDiscoveryProbe({
+              timeoutMs: Math.min(parsed.timeoutMs, discoveryTimeoutMs),
+              deepProbe: false,
+              credentials: parsed.credentials,
+              signal: req.signal
+            });
+            // Attach RTSP candidates in fast mode so the UI shows something useful immediately.
+            for (const r of baseline) {
+              r.rtsp = {
+                ok: false,
+                discoveryOnly: true,
+                port: 554,
+                candidates: buildRtspCandidates({ ip: r.ip, port: 554 }),
+                log: ["RTSP Probe: pending (Deep Probe)."]
+              };
+            }
+            send({
+              type: "phase",
+              phase: "discovery",
+              status: "done",
+              message: `${baseline.length} Gerät(e)`
+            });
+
+            const initial: ScanResponse = {
+              meta: {
+                mode: "ws-discovery",
+                startedAt: startedAt.toISOString(),
+                durationMs: Date.now() - startedAt.getTime()
+              },
+              results: baseline,
+              warnings: ["Deep Probe läuft im Hintergrund – Ergebnisse werden nachgeladen."]
+            };
+            send({ type: "result", result: initial });
+
+            // ONVIF enrichment
+            send({ type: "phase", phase: "onvif", status: "start" });
+            const results = baseline;
+            let doneOnvif = 0;
+            await mapLimit(results, Math.min(12, results.length || 1), async (r) => {
+              if (req.signal.aborted) return null;
+              const xaddrs = r.onvif?.xaddrs ?? [];
+              if (!xaddrs.length) {
+                doneOnvif += 1;
+                send({ type: "progress", phase: "onvif", done: doneOnvif, total: results.length });
+                return null;
+              }
+              const onvif = await probeOnvifFromXaddr({
+                ip: r.ip,
+                xaddrs,
+                timeoutMs: parsed.timeoutMs,
+                credentials: parsed.credentials
+              });
+              r.onvif = onvif;
+              send({ type: "item", item: { ip: r.ip, onvif } });
+              doneOnvif += 1;
+              send({ type: "progress", phase: "onvif", done: doneOnvif, total: results.length });
+              return null;
+            });
+            send({ type: "phase", phase: "onvif", status: "done" });
+
+            // RTSP enrichment
+            send({ type: "phase", phase: "rtsp", status: "start" });
+            let doneRtsp = 0;
+            await mapLimit(results, Math.min(12, results.length || 1), async (r) => {
+              if (req.signal.aborted) return null;
+              const commonPorts = [554, 8554];
+              const open = await scanTcpPorts(
+                r.ip,
+                commonPorts,
+                Math.min(parsed.timeoutMs, 900)
+              );
+              const port = open[0] ?? 554;
+
+              const onvifUris = r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? [];
+              const candidates = buildRtspCandidates({ ip: r.ip, port });
+              const uris = Array.from(new Set([...onvifUris]));
+              const probeList = [...uris, ...candidates].slice(0, 4);
+
+              for (const uri of probeList) {
+                const res = await probeRtsp({
+                  ip: r.ip,
+                  port,
+                  timeoutMs: Math.min(parsed.timeoutMs, 1200),
+                  credentials: parsed.credentials,
+                  uri
+                });
+                r.rtsp = {
+                  ...res,
+                  port,
+                  uris: uris.length ? uris : undefined,
+                  candidates
+                };
+                send({ type: "item", item: { ip: r.ip, rtsp: r.rtsp } });
+                if (res.ok) break;
+                if (req.signal.aborted) break;
+              }
+
+              if (!r.rtsp) {
+                r.rtsp = { ok: false, port, candidates, uris: uris.length ? uris : undefined };
+                send({ type: "item", item: { ip: r.ip, rtsp: r.rtsp } });
+              }
+
+              doneRtsp += 1;
+              send({ type: "progress", phase: "rtsp", done: doneRtsp, total: results.length });
+              return null;
+            });
+            send({ type: "phase", phase: "rtsp", status: "done" });
+
+            const final: ScanResponse = {
+              meta: {
+                mode: "ws-discovery",
+                startedAt: startedAt.toISOString(),
+                durationMs: Date.now() - startedAt.getTime()
+              },
+              results,
+              warnings: initial.warnings
+            };
+            send({ type: "result", result: final });
+          } else {
+            const result = await runScan(parsed, {
+              signal: req.signal,
+              onPhase(ev) {
+                send(ev);
+              }
+            });
+            send({ type: "result", result });
+          }
+
           send({ type: "phase", phase: "done", status: "done" });
           close();
         } catch (e) {

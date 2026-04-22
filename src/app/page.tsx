@@ -450,16 +450,16 @@ export default function HomePage() {
               continue;
             }
 
-            if (eventName === "phase") {
-              setScanPhases((prev) => ({
-                ...prev,
-                [payload.phase]: {
-                  ...(prev[payload.phase] ?? {}),
-                  status: payload.status,
-                  message: payload.message
-                }
-              }));
-            } else if (eventName === "progress") {
+          if (eventName === "phase") {
+            setScanPhases((prev) => ({
+              ...prev,
+              [payload.phase]: {
+                ...(prev[payload.phase] ?? {}),
+                status: payload.status,
+                message: payload.message
+              }
+            }));
+          } else if (eventName === "progress") {
               setScanPhases((prev) => ({
                 ...prev,
                 [payload.phase]: {
@@ -469,16 +469,25 @@ export default function HomePage() {
                   message: payload.message
                 }
               }));
-            } else if (eventName === "error") {
-              throw new Error(payload.error ?? "Scan fehlgeschlagen.");
-            } else if (eventName === "result") {
-              const json = payload.result as ScanResponse;
-              if (json?.error) throw new Error(json.error);
-              gotResult = true;
-              setData(json);
-              indexResultsForThumbs(json);
-              enqueueInitialThumbs(json);
-            }
+          } else if (eventName === "error") {
+            throw new Error(payload.error ?? "Scan fehlgeschlagen.");
+          } else if (eventName === "item") {
+            const item = payload.item ?? payload;
+            const ip = item?.ip as string | undefined;
+            if (!ip) continue;
+            setData((prev) => {
+              if (!prev) return prev;
+              const nextResults = prev.results.map((r) => (r.ip === ip ? { ...r, ...item } : r));
+              return { ...prev, results: nextResults };
+            });
+          } else if (eventName === "result") {
+            const json = payload.result as ScanResponse;
+            if (json?.error) throw new Error(json.error);
+            gotResult = true;
+            setData(json);
+            indexResultsForThumbs(json);
+            enqueueInitialThumbs(json);
+          }
           }
         }
       } catch (streamErr) {
