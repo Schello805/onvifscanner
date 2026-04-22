@@ -9,6 +9,29 @@ export type VendorCameraProfile = {
 
 export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
   {
+    id: "reolink",
+    label: "Reolink",
+    match: ["reolink", "bc streaming media"],
+    rtsp: [
+      { label: "RTSP Main H.264", path: "/h264Preview_01_main" },
+      { label: "RTSP Sub H.264", path: "/h264Preview_01_sub" },
+      { label: "RTSP Main", path: "/Preview_01_main" },
+      { label: "RTSP Sub", path: "/Preview_01_sub" },
+      { label: "RTSP Main H.265", path: "/h265Preview_01_main" },
+      { label: "RTSP Sub H.265", path: "/h265Preview_01_sub" }
+    ],
+    httpStream: [
+      { label: "HTTP FLV Main", path: "/flv?port=1935&app=bcs&stream=channel0_main.bcs" },
+      { label: "HTTP FLV Sub", path: "/flv?port=1935&app=bcs&stream=channel0_ext.bcs" }
+    ],
+    snapshot: [
+      { label: "Snapshot Main CGI", path: "/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner" },
+      { label: "Snapshot Sub CGI", path: "/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner&width=640&height=480" },
+      { label: "Snapshot Logical Main", path: "/cgi-bin/api.cgi?cmd=Snap&channel=1&iLogicChannel=1&snapType=main&rs=onvifscanner" },
+      { label: "Snapshot Logical Sub", path: "/cgi-bin/api.cgi?cmd=Snap&channel=1&iLogicChannel=1&snapType=sub&rs=onvifscanner" }
+    ]
+  },
+  {
     id: "hikvision",
     label: "Hikvision / HiLook / Annke ISAPI",
     match: ["hikvision", "hilook", "annke", "safire", "ezviz", "ip camera"],

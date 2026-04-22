@@ -115,6 +115,7 @@ export default function HomePage() {
 
   function getThumbUrlsForIp(ip: string): string[] {
     return latestResultsRef.current[ip]?.urls ?? [
+      `http://${ip}/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner`,
       `http://${ip}/ISAPI/Streaming/channels/101/picture`,
       `http://${ip}/ISAPI/Streaming/channels/102/picture`
     ];
@@ -128,6 +129,7 @@ export default function HomePage() {
           [
             ...(r.vendor?.snapshotUris ?? []),
             ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
+            `http://${r.ip}/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner`,
             `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
             `http://${r.ip}/ISAPI/Streaming/channels/102/picture`,
             `http://${r.ip}/Streaming/channels/1/picture`

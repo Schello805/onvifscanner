@@ -1,7 +1,7 @@
 import type { ScanResult, VendorUrlResult } from "@/lib/types";
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
 import { probeRtsp } from "@/lib/rtsp/probeRtsp";
-import { orderedProfiles } from "@/lib/vendor/cameraProfiles";
+import { VENDOR_CAMERA_PROFILES, orderedProfiles } from "@/lib/vendor/cameraProfiles";
 
 export async function probeVendorUrls(args: {
   result: ScanResult;
@@ -12,7 +12,7 @@ export async function probeVendorUrls(args: {
   const manufacturer = args.result.onvif?.deviceInformation?.manufacturer;
   const model = args.result.onvif?.deviceInformation?.model;
   const hasVendorHint = Boolean(manufacturer || model);
-  const profiles = orderedProfiles(manufacturer, model).slice(0, hasVendorHint ? 2 : 1);
+  const profiles = chooseProfiles(args.result, manufacturer, model, hasVendorHint);
   const httpBase = buildHttpBase(args.result);
   const rtspPort = args.result.rtsp?.port ?? 554;
   const log: string[] = [];
@@ -20,7 +20,7 @@ export async function probeVendorUrls(args: {
   const httpStreamUris: string[] = [];
   const snapshotUris: string[] = [];
   const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "2500", 900, 8000);
-  let matchedProfile = profiles[0]?.label ?? "Vendor-Katalog";
+  let matchedProfile = "Vendor-Katalog";
 
   for (const profile of profiles) {
     if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
@@ -36,7 +36,7 @@ export async function probeVendorUrls(args: {
       const url = `${httpBase}${candidate.path}`;
       log.push(`Snapshot probe: ${candidate.label} ${url}`);
       const ok = await probeHttpUrl({
-        url,
+        url: withReolinkQueryCredentials(url, args.credentials),
         purpose: "snapshot",
         timeoutMs: args.timeoutMs,
         credentials: args.credentials,
@@ -44,7 +44,7 @@ export async function probeVendorUrls(args: {
         log
       });
       if (ok) {
-        snapshotUris.push(url);
+        snapshotUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
         log.push(`Snapshot OK: ${url}`);
       }
@@ -55,7 +55,7 @@ export async function probeVendorUrls(args: {
       const url = `${httpBase}${candidate.path}`;
       log.push(`HTTP stream probe: ${candidate.label} ${url}`);
       const ok = await probeHttpUrl({
-        url,
+        url: withReolinkQueryCredentials(url, args.credentials),
         purpose: "stream",
         timeoutMs: args.timeoutMs,
         credentials: args.credentials,
@@ -63,7 +63,7 @@ export async function probeVendorUrls(args: {
         log
       });
       if (ok) {
-        httpStreamUris.push(url);
+        httpStreamUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
         log.push(`HTTP stream OK: ${url}`);
       }
@@ -106,6 +106,48 @@ export async function probeVendorUrls(args: {
     snapshotUris: snapshotUris.length ? unique(snapshotUris) : undefined,
     log: limitLog(log)
   };
+}
+
+function chooseProfiles(
+  result: ScanResult,
+  manufacturer?: string,
+  model?: string,
+  hasVendorHint?: boolean
+) {
+  const ordered = orderedProfiles(manufacturer, model);
+  if (hasVendorHint) return ordered.slice(0, 2);
+
+  const xaddrText = [
+    result.onvif?.deviceServiceUrl,
+    ...(result.onvif?.xaddrs ?? [])
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (xaddrText.includes(":8000/")) {
+    const reolink = VENDOR_CAMERA_PROFILES.find((p) => p.id === "reolink");
+    const hikvision = VENDOR_CAMERA_PROFILES.find((p) => p.id === "hikvision");
+    return [reolink, hikvision].filter((p): p is NonNullable<typeof p> => Boolean(p)).slice(0, 2);
+  }
+
+  return ordered.filter((p) => p.id !== "reolink").slice(0, 1);
+}
+
+function withReolinkQueryCredentials(
+  url: string,
+  credentials?: { username: string; password: string }
+): string {
+  if (!credentials?.username) return url;
+  if (!url.includes("/cgi-bin/api.cgi") && !url.includes("/flv?")) return url;
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("user")) u.searchParams.set("user", credentials.username);
+    if (!u.searchParams.has("password")) u.searchParams.set("password", credentials.password);
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 async function probeHttpUrl(args: {
