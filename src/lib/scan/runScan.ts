@@ -7,12 +7,14 @@ import { scanTcpPorts } from "@/lib/scan/tcpScan";
 import { probeRtsp } from "@/lib/rtsp/probeRtsp";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 import { buildRtspCandidates } from "@/lib/rtsp/candidates";
+import { probeVendorUrls } from "@/lib/vendor/probeVendorUrls";
 
 type Phase =
   | "onvif"
   | "rtsp"
   | "cidr"
-  | "discovery";
+  | "discovery"
+  | "vendor";
 
 type PhaseEvent =
   | { type: "phase"; phase: Phase; status: "start" | "done"; message?: string }
@@ -66,6 +68,25 @@ export async function runScan(
         candidates: buildRtspCandidates({ ip: r.ip, port }),
         log: ["RTSP Probe: übersprungen (Fast Scan)."]
       };
+    }
+
+    if (req.deepProbe && results.length) {
+      onPhase?.({ type: "phase", phase: "onvif", status: "start" });
+      let onvifDone = 0;
+      await mapLimit(results, Math.min(8, results.length), async (r) => {
+        throwIfAborted();
+        if (r.onvif?.xaddrs?.length) {
+          r.onvif = await probeOnvifFromXaddr({
+            ip: r.ip,
+            xaddrs: r.onvif.xaddrs,
+            timeoutMs: req.timeoutMs,
+            credentials: req.credentials
+          });
+        }
+        onvifDone += 1;
+        onPhase?.({ type: "progress", phase: "onvif", done: onvifDone, total: results.length });
+      });
+      onPhase?.({ type: "phase", phase: "onvif", status: "done" });
     }
   } else {
     onPhase?.({ type: "phase", phase: "cidr", status: "start" });
@@ -154,6 +175,36 @@ export async function runScan(
       "CIDR/Port-Scan kann in großen Netzen lange dauern und als aggressiv wahrgenommen werden."
     );
     onPhase?.({ type: "phase", phase: "cidr", status: "done" });
+  }
+
+  if (req.deepProbe && results.length) {
+    onPhase?.({ type: "phase", phase: "vendor", status: "start" });
+    let done = 0;
+    await mapLimit(results, Math.min(4, results.length), async (r) => {
+      throwIfAborted();
+      const vendor = await probeVendorUrls({
+        result: r,
+        timeoutMs: req.timeoutMs,
+        credentials: req.credentials,
+        signal
+      });
+      if (vendor) {
+        r.vendor = vendor;
+        if (vendor.rtspUris?.length) {
+          r.rtsp = {
+            ...(r.rtsp ?? { ok: true, port: 554 }),
+            ok: true,
+            port: r.rtsp?.port ?? 554,
+            uris: Array.from(new Set([...(r.rtsp?.uris ?? []), ...vendor.rtspUris])),
+            candidates: r.rtsp?.candidates,
+            log: r.rtsp?.log
+          };
+        }
+      }
+      done += 1;
+      onPhase?.({ type: "progress", phase: "vendor", done, total: results.length });
+    });
+    onPhase?.({ type: "phase", phase: "vendor", status: "done" });
   }
 
   // Thumbnails are loaded separately via `/api/thumbnail` to keep the scan response small.

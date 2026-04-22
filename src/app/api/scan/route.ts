@@ -8,11 +8,10 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const parsed = parseScanRequest(body);
-    const result = await runScan(parsed);
+    const result = await runScan(parsed, { signal: req.signal });
     return NextResponse.json(result, { status: 200 });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unbekannter Fehler";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
-

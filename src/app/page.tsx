@@ -30,7 +30,7 @@ export default function HomePage() {
   const [includeThumbnails, setIncludeThumbnails] = useState(true);
   const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(true);
   const [verboseLog, setVerboseLog] = useState(true);
-  const [deepProbe, setDeepProbe] = useState(false);
+  const [deepProbe, setDeepProbe] = useState(true);
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(true);
@@ -126,9 +126,11 @@ export default function HomePage() {
       const urls = Array.from(
         new Set(
           [
+            ...(r.vendor?.snapshotUris ?? []),
             ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
             `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
-            `http://${r.ip}/ISAPI/Streaming/channels/102/picture`
+            `http://${r.ip}/ISAPI/Streaming/channels/102/picture`,
+            `http://${r.ip}/Streaming/channels/1/picture`
           ].filter(Boolean)
         )
       ).slice(0, 4);
@@ -858,8 +860,43 @@ export default function HomePage() {
                                 </div>
                               )}
 
+                              {r.vendor?.rtspUris?.length ||
+                              r.vendor?.httpStreamUris?.length ||
+                              r.vendor?.snapshotUris?.length ? (
+                                <>
+                                  <div className="mt-2 text-[11px] text-emerald-300">
+                                    Erkannte Hersteller-URLs ({r.vendor.profile}):
+                                  </div>
+                                  {r.vendor.rtspUris?.map((u, idx) => (
+                                    <UrlRow
+                                      key={`vendor-rtsp-${idx}`}
+                                      label={idx === 0 ? "RTSP Stream" : `RTSP Stream ${idx + 1}`}
+                                      url={u}
+                                    />
+                                  ))}
+                                  {r.vendor.httpStreamUris?.map((u, idx) => (
+                                    <UrlRow
+                                      key={`vendor-http-${idx}`}
+                                      label={idx === 0 ? "HTTP Stream" : `HTTP Stream ${idx + 1}`}
+                                      url={u}
+                                    />
+                                  ))}
+                                  {r.vendor.snapshotUris?.map((u, idx) => (
+                                    <UrlRow
+                                      key={`vendor-snap-${idx}`}
+                                      label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`}
+                                      url={u}
+                                    />
+                                  ))}
+                                </>
+                              ) : r.vendor?.log?.length ? (
+                                <div className="text-xs text-slate-500">
+                                  Keine passende Hersteller-URL gefunden.
+                                </div>
+                              ) : null}
+
                               <div className="mt-2 text-[11px] text-slate-400">
-                                Vendor-Kandidaten (z. B. Hikvision ISAPI):
+                                Manuelle Kandidaten (nicht geprüft):
                               </div>
                               <UrlRow
                                 label="ISAPI Bild (Main)"
@@ -877,7 +914,7 @@ export default function HomePage() {
                                 ? r.rtsp.uris.map((u, idx) => (
                                     <UrlRow
                                       key={`rtsp-ok-${idx}`}
-                                      label={idx === 0 ? "RTSP (ONVIF)" : `RTSP (ONVIF) ${idx + 1}`}
+                                      label={idx === 0 ? "RTSP erkannt" : `RTSP erkannt ${idx + 1}`}
                                       url={u}
                                     />
                                   ))
@@ -928,12 +965,14 @@ export default function HomePage() {
                               {Boolean(
                                 (r.onvif?.log?.length ?? 0) +
                                   (r.rtsp?.log?.length ?? 0) +
+                                  (r.vendor?.log?.length ?? 0) +
                                   (thumbnailLog[r.ip] ? 1 : 0)
                               ) ? (
                                 <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
 {[
   ...(r.onvif?.log ?? []),
   ...(r.rtsp?.log ?? []),
+  ...(r.vendor?.log ?? []),
   ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
 ].join("\n")}
                                 </pre>

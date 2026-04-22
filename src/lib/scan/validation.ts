@@ -41,7 +41,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     1024
   );
   const deepProbe =
-    typeof body.deepProbe === "boolean" ? body.deepProbe : false;
+    typeof body.deepProbe === "boolean" ? body.deepProbe : true;
   const includeThumbnails = Boolean(body.includeThumbnails);
 
   if (preset === "ws-discovery") {

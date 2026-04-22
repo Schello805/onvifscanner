@@ -18,6 +18,7 @@ type Phase =
   | "onvif"
   | "rtsp"
   | "cidr"
+  | "vendor"
   | "done"
   | "aborted"
   | "error";

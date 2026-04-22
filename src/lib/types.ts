@@ -56,11 +56,20 @@ export type RtspResult = {
   error?: string;
 };
 
+export type VendorUrlResult = {
+  profile: string;
+  rtspUris?: string[];
+  httpStreamUris?: string[];
+  snapshotUris?: string[];
+  log?: string[];
+};
+
 export type ScanResult = {
   ip: string;
   openTcpPorts?: number[];
   onvif?: OnvifResult;
   rtsp?: RtspResult;
+  vendor?: VendorUrlResult;
 };
 
 export type ScanResponse = {
