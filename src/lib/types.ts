@@ -59,6 +59,11 @@ export type RtspResult = {
 
 export type VendorUrlResult = {
   profile: string;
+  deviceInformation?: {
+    manufacturer?: string;
+    model?: string;
+    hostname?: string;
+  };
   rtspUris?: string[];
   httpStreamUris?: string[];
   snapshotUris?: string[];

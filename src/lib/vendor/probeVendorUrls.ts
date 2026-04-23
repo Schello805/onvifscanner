@@ -19,6 +19,7 @@ export async function probeVendorUrls(args: {
   const rtspUris: string[] = [];
   const httpStreamUris: string[] = [];
   const snapshotUris: string[] = [];
+  let deviceInformation: VendorUrlResult["deviceInformation"];
   const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "2500", 900, 8000);
   let matchedProfile = "Vendor-Katalog";
 
@@ -31,11 +32,30 @@ export async function probeVendorUrls(args: {
     log.push(`Vendor profile: ${profile.label}`);
     let profileHit = false;
 
+    if (profile.id === "hikvision") {
+      const isapiInfo = await probeHikvisionDeviceInfo({
+        httpBase,
+        timeoutMs: args.timeoutMs,
+        credentials: args.credentials,
+        signal: args.signal,
+        log
+      });
+      if (isapiInfo.exists) {
+        profileHit = true;
+        matchedProfile = profile.label;
+        deviceInformation = {
+          manufacturer: "Hikvision",
+          model: isapiInfo.model,
+          hostname: isapiInfo.hostname
+        };
+      }
+    }
+
     for (const candidate of profile.snapshot.slice(0, 2)) {
       if (snapshotUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`Snapshot probe: ${candidate.label} ${url}`);
-      const ok = await probeHttpUrl({
+      const probe = await probeHttpUrl({
         url: withReolinkQueryCredentials(url, args.credentials),
         purpose: "snapshot",
         timeoutMs: args.timeoutMs,
@@ -43,10 +63,10 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (ok) {
+      if (probe.ok || (profile.id === "hikvision" && probe.exists)) {
         snapshotUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
-        log.push(`Snapshot OK: ${url}`);
+        log.push(`${probe.ok ? "Snapshot OK" : "Snapshot endpoint exists"}: ${url}`);
       }
     }
 
@@ -54,7 +74,7 @@ export async function probeVendorUrls(args: {
       if (httpStreamUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`HTTP stream probe: ${candidate.label} ${url}`);
-      const ok = await probeHttpUrl({
+      const probe = await probeHttpUrl({
         url: withReolinkQueryCredentials(url, args.credentials),
         purpose: "stream",
         timeoutMs: args.timeoutMs,
@@ -62,10 +82,10 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (ok) {
+      if (probe.ok || (profile.id === "hikvision" && probe.exists)) {
         httpStreamUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
-        log.push(`HTTP stream OK: ${url}`);
+        log.push(`${probe.ok ? "HTTP stream OK" : "HTTP stream endpoint exists"}: ${url}`);
       }
     }
 
@@ -88,6 +108,12 @@ export async function probeVendorUrls(args: {
       }
     }
 
+    if (profile.id === "hikvision" && profileHit && !rtspUris.length) {
+      rtspUris.push(`rtsp://${args.result.ip}:${rtspPort}/Streaming/Channels/101`);
+      rtspUris.push(`rtsp://${args.result.ip}:${rtspPort}/Streaming/Channels/102`);
+      log.push("RTSP: Hikvision Standardpfade anhand ISAPI-Erkennung übernommen.");
+    }
+
     if (profileHit) {
       matchedProfile = profile.label;
       if (snapshotUris.length && (rtspUris.length || httpStreamUris.length)) break;
@@ -101,6 +127,7 @@ export async function probeVendorUrls(args: {
 
   return {
     profile: matchedProfile,
+    deviceInformation,
     rtspUris: rtspUris.length ? unique(rtspUris) : undefined,
     httpStreamUris: httpStreamUris.length ? unique(httpStreamUris) : undefined,
     snapshotUris: snapshotUris.length ? unique(snapshotUris) : undefined,
@@ -157,7 +184,7 @@ async function probeHttpUrl(args: {
   credentials?: { username: string; password: string };
   signal?: AbortSignal;
   log: string[];
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; exists: boolean; status?: number }> {
   let res: Response;
   try {
     res = await fetchWithDigestAuth({
@@ -175,7 +202,7 @@ async function probeHttpUrl(args: {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     args.log.push(`HTTP failed: ${args.url} (${message})`);
-    return false;
+    return { ok: false, exists: false };
   }
 
   args.log.push(`HTTP ${res.status}: ${args.url}`);
@@ -185,16 +212,67 @@ async function probeHttpUrl(args: {
   } catch {
     // ignore
   }
-  if (!res.ok) return false;
+  const exists = res.ok || res.status === 401 || res.status === 403;
+  if (!res.ok) return { ok: false, exists, status: res.status };
   if (args.purpose === "snapshot") {
-    return contentType.startsWith("image/") || contentType.includes("jpeg");
+    return {
+      ok: contentType.startsWith("image/") || contentType.includes("jpeg"),
+      exists,
+      status: res.status
+    };
   }
-  return (
-    contentType.startsWith("image/") ||
-    contentType.includes("multipart") ||
-    contentType.includes("mjpeg") ||
-    contentType.includes("octet-stream")
-  );
+  return {
+    ok:
+      contentType.startsWith("image/") ||
+      contentType.includes("multipart") ||
+      contentType.includes("mjpeg") ||
+      contentType.includes("octet-stream"),
+    exists,
+    status: res.status
+  };
+}
+
+async function probeHikvisionDeviceInfo(args: {
+  httpBase: string;
+  timeoutMs: number;
+  credentials?: { username: string; password: string };
+  signal?: AbortSignal;
+  log: string[];
+}): Promise<{ exists: boolean; model?: string; hostname?: string }> {
+  const url = `${args.httpBase}/ISAPI/System/deviceInfo`;
+  args.log.push(`DeviceInfo probe: ${url}`);
+  try {
+    const res = await fetchWithDigestAuth({
+      url,
+      method: "GET",
+      timeoutMs: Math.min(Math.max(args.timeoutMs, 700), 1400),
+      credentials: args.credentials,
+      signal: args.signal,
+      fastMode: false,
+      headers: {
+        accept: "application/xml,text/xml,*/*;q=0.8",
+        "user-agent": "ONVIFscanner/0.1"
+      }
+    });
+    args.log.push(`DeviceInfo HTTP ${res.status}: ${url}`);
+    const exists = res.ok || res.status === 401 || res.status === 403;
+    if (!res.ok) return { exists };
+    const text = await res.text();
+    return {
+      exists,
+      model: extractXmlText(text, "model") ?? extractXmlText(text, "deviceModel"),
+      hostname: extractXmlText(text, "deviceName") ?? extractXmlText(text, "hostName")
+    };
+  } catch (e) {
+    args.log.push(`DeviceInfo failed: ${e instanceof Error ? e.message : String(e)}`);
+    return { exists: false };
+  }
+}
+
+function extractXmlText(xml: string, tag: string): string | undefined {
+  const re = new RegExp(`<(?:[A-Za-z0-9_]+:)?${tag}[^>]*>([^<]+)</(?:[A-Za-z0-9_]+:)?${tag}>`, "i");
+  const value = re.exec(xml)?.[1]?.trim();
+  return value || undefined;
 }
 
 function buildHttpBase(result: ScanResult): string {

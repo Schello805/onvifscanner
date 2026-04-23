@@ -256,8 +256,8 @@ function finalizeCameraResult(result: ScanResult) {
       : undefined;
 
   result.manufacturer = info?.manufacturer ?? vendorProfile;
-  result.model = info?.model;
-  result.hostname = info?.hostname ?? result.hostname;
+  result.model = info?.model ?? result.vendor?.deviceInformation?.model;
+  result.hostname = info?.hostname ?? result.vendor?.deviceInformation?.hostname ?? result.hostname;
   result.streamUris = unique([
     ...(result.onvif?.rtspUris?.map((u) => u.uri) ?? []),
     ...(result.vendor?.rtspUris ?? []),
