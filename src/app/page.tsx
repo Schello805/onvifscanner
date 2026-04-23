@@ -8,8 +8,6 @@ import type {
 } from "@/lib/types";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
-const THUMB_SUCCESS_MAX = 6;
-
 function parsePorts(input: string): number[] {
   const ports = input
     .split(",")
@@ -21,14 +19,14 @@ function parsePorts(input: string): number[] {
 }
 
 export default function HomePage() {
-  const [preset, setPreset] = useState<ScanTargetPreset>("ws-discovery");
+  const [preset, setPreset] = useState<ScanTargetPreset>("cidr");
   const [cidr, setCidr] = useState("192.168.1.0/24");
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [copyWithCreds, setCopyWithCreds] = useState(true);
   const [includeThumbnails, setIncludeThumbnails] = useState(true);
-  const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(true);
+  const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(false);
   const [verboseLog, setVerboseLog] = useState(true);
   const [deepProbe, setDeepProbe] = useState(true);
   const [timeoutMs, setTimeoutMs] = useState(1200);
@@ -43,7 +41,6 @@ export default function HomePage() {
   const [thumbnailState, setThumbnailState] = useState<
     Record<string, "idle" | "loading" | "ok" | "fail">
   >({});
-  const [thumbStoppedEarly, setThumbStoppedEarly] = useState(false);
   const [expandedIps, setExpandedIps] = useState<Record<string, boolean>>({});
   const runNonceRef = useRef(0);
   const activeRunNonceRef = useRef(0);
@@ -114,11 +111,7 @@ export default function HomePage() {
   }
 
   function getThumbUrlsForIp(ip: string): string[] {
-    return latestResultsRef.current[ip]?.urls ?? [
-      `http://${ip}/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner`,
-      `http://${ip}/ISAPI/Streaming/channels/101/picture`,
-      `http://${ip}/ISAPI/Streaming/channels/102/picture`
-    ];
+    return latestResultsRef.current[ip]?.urls ?? [];
   }
 
   function indexResultsForThumbs(json: ScanResponse) {
@@ -127,15 +120,12 @@ export default function HomePage() {
       const urls = Array.from(
         new Set(
           [
+            ...(r.snapshotUris ?? []),
             ...(r.vendor?.snapshotUris ?? []),
             ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
-            `http://${r.ip}/cgi-bin/api.cgi?cmd=Snap&channel=0&rs=onvifscanner`,
-            `http://${r.ip}/ISAPI/Streaming/channels/101/picture`,
-            `http://${r.ip}/ISAPI/Streaming/channels/102/picture`,
-            `http://${r.ip}/Streaming/channels/1/picture`
           ].filter(Boolean)
         )
-      ).slice(0, 4);
+      ).slice(0, 3);
       map[r.ip] = { ip: r.ip, urls };
     }
     latestResultsRef.current = map;
@@ -233,11 +223,6 @@ export default function HomePage() {
       if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
       setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
       thumbSuccessRef.current += 1;
-      if (thumbSuccessRef.current >= THUMB_SUCCESS_MAX) {
-        thumbStopRef.current = true;
-        setThumbStoppedEarly(true);
-        thumbQueueRef.current = [];
-      }
     } catch {
       setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
     }
@@ -323,7 +308,6 @@ export default function HomePage() {
     setLoading(true);
     setData(null);
     setExpandedIps({});
-    setThumbStoppedEarly(false);
 
     const resetThumbs = () => {
       setThumbnails((prev) => {
@@ -344,12 +328,11 @@ export default function HomePage() {
       thumbStopRef.current = false;
       thumbRequestedRef.current = new Set();
       initialThumbIpsRef.current = new Set();
-      setThumbStoppedEarly(false);
     };
 
     function enqueueInitialThumbs(json: ScanResponse) {
       if (!includeThumbnails) return;
-      const count = thumbnailsOnExpandOnly ? 4 : 12;
+      const count = thumbnailsOnExpandOnly ? 4 : json.results.length;
       const ips = json.results.map((r) => r.ip).slice(0, count);
       for (const ip of ips) {
         initialThumbIpsRef.current.add(ip);
@@ -401,6 +384,7 @@ export default function HomePage() {
     try {
       const u = new URL(url);
       if (u.username || u.password) return url;
+      if (u.searchParams.has("user") || u.searchParams.has("password")) return url;
       u.username = username.trim();
       u.password = password;
       return u.toString();
@@ -678,13 +662,8 @@ export default function HomePage() {
                 {includeThumbnails ? (
                   <span className="text-slate-300/80">
                     • Preview{" "}
-                    {Object.values(thumbnailState).filter((s) => s === "ok").length}/
-                    {Math.min(12, data.results.length)}
-                  </span>
-                ) : null}
-                {thumbStoppedEarly ? (
-                  <span className="text-slate-400/90">
-                    • Stop nach {THUMB_SUCCESS_MAX} OK
+	                    {Object.values(thumbnailState).filter((s) => s === "ok").length}/
+	                    {data.results.length}
                   </span>
                 ) : null}
               </div>
@@ -707,7 +686,7 @@ export default function HomePage() {
                 <thead>
                   <tr className="bg-white/5 border-b border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400">
                     <th className="py-3 pr-4 pl-4">Preview</th>
-                  <th className="py-3 pr-4">Gerät (IP & Ports)</th>
+	                  <th className="py-3 pr-4">Gerät (IP & Hostname)</th>
                   <th className="py-3 pr-4">Hersteller & Modell</th>
                   <th className="py-3 pr-4 w-1/2">URLs & Details</th>
                 </tr>
@@ -748,52 +727,27 @@ export default function HomePage() {
                       <td className="p-4 align-middle">
                         <div className="font-mono text-sm text-slate-200">{r.ip}</div>
                         <div className="mt-1 text-xs text-slate-500 font-medium">
-                          {r.openTcpPorts?.length ? `Ports: ${r.openTcpPorts.join(", ")}` : "—"}
+                          {r.hostname ?? "Hostname unbekannt"}
                         </div>
                       </td>
 
                       <td className="p-4 align-middle">
                         <div className="flex flex-col gap-1.5">
-                          {r.onvif?.ok && (r.onvif.deviceInformation?.manufacturer || r.onvif.deviceInformation?.model) ? (
-                            <span className="text-sm font-bold text-white tracking-wide">
-                              {[r.onvif.deviceInformation.manufacturer, r.onvif.deviceInformation.model]
-                                .filter(Boolean)
-                                .join(" ")}
-                            </span>
-                          ) : r.vendor?.profile && r.vendor.profile !== "Vendor-Katalog" ? (
-                            <span className="text-sm font-bold text-slate-200 tracking-wide">
-                              {r.vendor.profile}
-                            </span>
-                          ) : (
-                            <span className="text-sm font-medium text-slate-500">Unbekannt</span>
-                          )}
-                          <div className="flex items-center gap-2">
-                            {r.onvif?.ok ? (
-                              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">ONVIF</span>
-                            ) : r.onvif?.discoveryOnly ? (
-                              <span
-                                className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10"
-                                title="ONVIF XAddr per WS-Discovery gefunden, SOAP/Media wurde nicht aktiv geprüft."
-                              >
-                                ONVIF XAddr
+	                          {r.manufacturer || r.model ? (
+	                            <span className="text-sm font-bold text-white tracking-wide">
+	                              {[r.manufacturer, r.model].filter(Boolean).join(" ")}
+	                            </span>
+	                          ) : (
+	                            <span className="text-sm font-medium text-slate-500">Unbekannt</span>
+	                          )}
+	                          <div className="flex items-center gap-2">
+                              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
+                                {r.streamUris?.length ?? 0} Stream
                               </span>
-                            ) : r.onvif ? (
-                              <span title={r.onvif.error} className="rounded bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/30">Kein ONVIF</span>
-                            ) : null}
-                            
-                            {r.rtsp?.ok ? (
-                              <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">RTSP</span>
-                            ) : r.rtsp?.discoveryOnly ? (
-                              <span
-                                className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 border border-white/10"
-                                title="RTSP-Pfade wurden als Kandidaten erzeugt, aber nicht aktiv getestet."
-                              >
-                                RTSP Kandidat
+                              <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
+                                {r.snapshotUris?.length ?? 0} Snapshot
                               </span>
-                            ) : r.rtsp ? (
-                              <span title={r.rtsp.error} className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border border-white/10">RTSP Fehler</span>
-                            ) : null}
-                          </div>
+	                          </div>
                         </div>
                       </td>
 
@@ -837,132 +791,34 @@ export default function HomePage() {
 
                             {/* Media / Streams */}
                             <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400 pb-1">Media & Streams</div>
-                              {r.onvif?.rtspUris?.length ? (
-                                r.onvif.rtspUris.map((u, idx) => (
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400 pb-1">Stream & Snapshot URLs</div>
+                              {r.streamUris?.length ? (
+                                r.streamUris.map((u, idx) => (
                                   <UrlRow
-                                    key={`${u.uri}-onvif-${idx}`}
-                                    label={u.profileName ? `RTSP (${u.profileName})` : `RTSP ${idx + 1}`}
-                                    url={u.uri}
+                                    key={`stream-${idx}-${u}`}
+                                    label={idx === 0 ? "Stream" : `Stream ${idx + 1}`}
+                                    url={u}
                                   />
                                 ))
                               ) : (
                                 <div className="text-xs text-slate-500">
-                                  Keine RTSP-URLs via ONVIF erkannt.
+                                  Keine Stream-URL erkannt.
                                 </div>
                               )}
 
-                              {r.onvif?.snapshotUris?.length ? (
-                                r.onvif.snapshotUris.map((u, idx) => (
+                              {r.snapshotUris?.length ? (
+                                r.snapshotUris.map((u, idx) => (
                                   <UrlRow
-                                    key={`${u.uri}-snap-${idx}`}
-                                    label={u.profileName ? `Snapshot (${u.profileName})` : `Snapshot ${idx + 1}`}
-                                    url={u.uri}
+                                    key={`snapshot-${idx}-${u}`}
+                                    label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`}
+                                    url={u}
                                   />
                                 ))
                               ) : (
                                 <div className="text-xs text-slate-500">
-                                  Keine Snapshot-URLs via ONVIF erkannt.
+                                  Keine Snapshot-URL erkannt.
                                 </div>
                               )}
-
-                              {r.vendor?.rtspUris?.length ||
-                              r.vendor?.httpStreamUris?.length ||
-                              r.vendor?.snapshotUris?.length ? (
-                                <>
-                                  <div className="mt-2 text-[11px] text-emerald-300">
-                                    Erkannte Hersteller-URLs ({r.vendor.profile}):
-                                  </div>
-                                  {r.vendor.rtspUris?.map((u, idx) => (
-                                    <UrlRow
-                                      key={`vendor-rtsp-${idx}`}
-                                      label={idx === 0 ? "RTSP Stream" : `RTSP Stream ${idx + 1}`}
-                                      url={u}
-                                    />
-                                  ))}
-                                  {r.vendor.httpStreamUris?.map((u, idx) => (
-                                    <UrlRow
-                                      key={`vendor-http-${idx}`}
-                                      label={idx === 0 ? "HTTP Stream" : `HTTP Stream ${idx + 1}`}
-                                      url={u}
-                                    />
-                                  ))}
-                                  {r.vendor.snapshotUris?.map((u, idx) => (
-                                    <UrlRow
-                                      key={`vendor-snap-${idx}`}
-                                      label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`}
-                                      url={u}
-                                    />
-                                  ))}
-                                </>
-                              ) : r.vendor?.log?.length ? (
-                                <div className="text-xs text-slate-500">
-                                  Keine passende Hersteller-URL gefunden.
-                                </div>
-                              ) : null}
-
-                              <div className="mt-2 text-[11px] text-slate-400">
-                                Manuelle Kandidaten (nicht geprüft):
-                              </div>
-                              <UrlRow
-                                label="ISAPI Bild (Main)"
-                                url={`http://${r.ip}/ISAPI/Streaming/channels/101/picture`}
-                              />
-                              <UrlRow
-                                label="ISAPI Bild (Sub)"
-                                url={`http://${r.ip}/ISAPI/Streaming/channels/102/picture`}
-                              />
-
-                              {r.rtsp?.uriTried ? (
-                                <UrlRow label="RTSP getestet" url={r.rtsp.uriTried} />
-                              ) : null}
-                              {r.rtsp?.uris?.length
-                                ? r.rtsp.uris.map((u, idx) => (
-                                    <UrlRow
-                                      key={`rtsp-ok-${idx}`}
-                                      label={idx === 0 ? "RTSP erkannt" : `RTSP erkannt ${idx + 1}`}
-                                      url={u}
-                                    />
-                                  ))
-                                : null}
-                              {r.rtsp?.candidates?.length ? (
-                                <>
-                                  <div className="mt-1 text-[11px] text-slate-400">
-                                    Vermutete RTSP-Pfade (nicht garantiert):
-                                  </div>
-                                  {r.rtsp.candidates.map((u, idx) => (
-                                    <UrlRow
-                                      key={`rtsp-cand-${idx}`}
-                                      label={idx === 0 ? "Kandidat" : `Kandidat ${idx + 1}`}
-                                      url={u}
-                                    />
-                                  ))}
-                                </>
-                              ) : null}
-                            </div>
-
-                            {/* ONVIF API */}
-                            <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 pb-1">ONVIF API Endpoints</div>
-                              {r.onvif?.deviceServiceUrl ? (
-                                <UrlRow label="Device Service" url={r.onvif.deviceServiceUrl} isApi />
-                              ) : (
-                                <div className="text-xs text-slate-500">Kein Device Service erkannt.</div>
-                              )}
-                              {r.onvif?.mediaServiceUrl && <UrlRow label="Media Service" url={r.onvif.mediaServiceUrl} isApi />}
-                              {r.onvif?.mediaServiceUrl2 && <UrlRow label="Media2 Service" url={r.onvif.mediaServiceUrl2} isApi />}
-                              {r.onvif?.xaddrs?.length
-                                ? r.onvif.xaddrs.map((u, idx) => (
-                                    <UrlRow key={`xaddr-${idx}`} label={`XAddr ${idx + 1}`} url={u} isApi />
-                                  ))
-                                : null}
-                            </div>
-
-                            {/* Web */}
-                            <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-400 pb-1">Web Interface</div>
-                              <UrlRow label="HTTP" url={`http://${r.ip}`} />
-                              <UrlRow label="HTTPS" url={`https://${r.ip}`} />
                             </div>
 
                             {/* Log */}

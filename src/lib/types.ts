@@ -36,6 +36,7 @@ export type OnvifResult = {
   deviceInformation?: {
     manufacturer?: string;
     model?: string;
+    hostname?: string;
     firmwareVersion?: string;
     serialNumber?: string;
     hardwareId?: string;
@@ -66,6 +67,11 @@ export type VendorUrlResult = {
 
 export type ScanResult = {
   ip: string;
+  hostname?: string;
+  manufacturer?: string;
+  model?: string;
+  streamUris?: string[];
+  snapshotUris?: string[];
   openTcpPorts?: number[];
   onvif?: OnvifResult;
   rtsp?: RtspResult;

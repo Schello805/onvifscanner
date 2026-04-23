@@ -48,6 +48,17 @@ export async function probeOnvifFromXaddr(args: {
     const firmwareVersion = extractText(devInfo.text, "FirmwareVersion");
     const serialNumber = extractText(devInfo.text, "SerialNumber");
     const hardwareId = extractText(devInfo.text, "HardwareId");
+    let hostname: string | undefined;
+
+    const host = await onvifSoapCall({
+      url: deviceServiceUrl,
+      action: "http://www.onvif.org/ver10/device/wsdl/GetHostname",
+      timeoutMs: args.timeoutMs,
+      credentials: args.credentials,
+      body: `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
+    });
+    log.push(`GetHostname: HTTP ${host.status} (SOAP ${host.soap})`);
+    hostname = host.ok ? extractText(host.text, "Name") : undefined;
 
     const caps = await onvifSoapCall({
       url: deviceServiceUrl,
@@ -180,6 +191,7 @@ export async function probeOnvifFromXaddr(args: {
       deviceInformation: {
         manufacturer,
         model,
+        hostname,
         firmwareVersion,
         serialNumber,
         hardwareId

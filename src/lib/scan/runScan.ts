@@ -8,6 +8,7 @@ import { probeRtsp } from "@/lib/rtsp/probeRtsp";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 import { buildRtspCandidates } from "@/lib/rtsp/candidates";
 import { probeVendorUrls } from "@/lib/vendor/probeVendorUrls";
+import { reverseHostname } from "@/lib/net/hostname";
 
 type Phase =
   | "onvif"
@@ -157,7 +158,7 @@ export async function runScan(
       return result;
     });
 
-    results.push(...scanned);
+    results.push(...scanned.filter(isCameraCandidate));
     warnings.push(
       "CIDR/Port-Scan kann in großen Netzen lange dauern und als aggressiv wahrgenommen werden."
     );
@@ -210,6 +211,12 @@ export async function runScan(
     onPhase?.({ type: "phase", phase: "vendor", status: "done" });
   }
 
+  await mapLimit(results, Math.min(16, results.length || 1), async (r) => {
+    r.hostname = await reverseHostname(r.ip);
+    finalizeCameraResult(r);
+  });
+  const cameraResults = results.filter(isConfirmedCamera);
+
   // Thumbnails are loaded separately via `/api/thumbnail` to keep the scan response small.
 
   const durationMs = Date.now() - startedAt.getTime();
@@ -219,9 +226,53 @@ export async function runScan(
       startedAt: startedAt.toISOString(),
       durationMs
     },
-    results,
+    results: cameraResults,
     warnings: warnings.length ? warnings : undefined
   };
+}
+
+function isCameraCandidate(result: ScanResult): boolean {
+  const ports = result.openTcpPorts ?? [];
+  return Boolean(
+    result.onvif ||
+      result.rtsp ||
+      ports.some((p) => [80, 443, 554, 8554, 8000, 8080, 8899].includes(p))
+  );
+}
+
+function isConfirmedCamera(result: ScanResult): boolean {
+  const hasUrls = Boolean(result.streamUris?.length || result.snapshotUris?.length);
+  const hasOnvifDiscovery = Boolean(result.onvif?.ok || result.onvif?.discoveryOnly);
+  const hasRtspPort = Boolean(result.openTcpPorts?.some((p) => [554, 8554, 10554, 8555].includes(p)));
+  const hasRtspSuccess = Boolean(result.rtsp?.ok);
+  return hasUrls || hasOnvifDiscovery || hasRtspPort || hasRtspSuccess;
+}
+
+function finalizeCameraResult(result: ScanResult) {
+  const info = result.onvif?.deviceInformation;
+  const vendorProfile =
+    result.vendor?.profile && result.vendor.profile !== "Vendor-Katalog"
+      ? result.vendor.profile
+      : undefined;
+
+  result.manufacturer = info?.manufacturer ?? vendorProfile;
+  result.model = info?.model;
+  result.hostname = info?.hostname ?? result.hostname;
+  result.streamUris = unique([
+    ...(result.onvif?.rtspUris?.map((u) => u.uri) ?? []),
+    ...(result.vendor?.rtspUris ?? []),
+    ...(result.vendor?.httpStreamUris ?? []),
+    ...(result.rtsp?.uris ?? [])
+  ]);
+  result.snapshotUris = unique([
+    ...(result.onvif?.snapshotUris?.map((u) => u.uri) ?? []),
+    ...(result.vendor?.snapshotUris ?? [])
+  ]);
+}
+
+function unique(values: string[]): string[] | undefined {
+  const out = Array.from(new Set(values.filter(Boolean)));
+  return out.length ? out : undefined;
 }
 
 function clampInt(value: unknown, min: number, max: number): number {
