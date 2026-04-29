@@ -26,7 +26,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
   const body = input as Partial<ScanRequest>;
 
   if (!body.acknowledgeAuthorizedNetwork) {
-    throw new Error("Bitte bestätige, dass du im autorisierten Netzwerk scannst.");
+    throw new Error("Bitte bestätige zuerst dein Heimnetz/LAN.");
   }
 
   const preset = body.preset;
@@ -62,7 +62,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
   if (!ALLOW_PUBLIC_SCAN) {
     if (!isPrivateOnly(cidr)) {
       throw new Error(
-        "CIDR-Scan ist standardmäßig nur für private IP-Ranges erlaubt. Setze ALLOW_PUBLIC_SCAN=true, wenn du das wirklich willst."
+        "CIDR-Scan ist standardmäßig auf private Heimnetz/LAN-Bereiche begrenzt. Setze ALLOW_PUBLIC_SCAN=true, wenn du andere Bereiche verwenden möchtest."
       );
     }
   }

@@ -49,6 +49,10 @@ export async function probeVendorUrls(args: {
           hostname: isapiInfo.hostname
         };
       }
+      if (!isapiInfo.exists && !hasVendorHint) {
+        log.push("Hikvision: ISAPI nicht erkannt, Profil wird übersprungen.");
+        continue;
+      }
     }
 
     for (const candidate of profile.snapshot.slice(0, 2)) {
@@ -63,10 +67,10 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (probe.ok || (profile.id === "hikvision" && probe.exists)) {
+      if (probe.ok || (profile.id !== "generic" && probe.exists)) {
         snapshotUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
-        log.push(`${probe.ok ? "Snapshot OK" : "Snapshot endpoint exists"}: ${url}`);
+        log.push(`${probe.ok ? "Snapshot OK" : "Snapshot-Endpunkt erkannt (Login nötig)"}: ${url}`);
       }
     }
 
@@ -82,14 +86,15 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (probe.ok || (profile.id === "hikvision" && probe.exists)) {
+      if (probe.ok || (profile.id !== "generic" && probe.exists)) {
         httpStreamUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
-        log.push(`${probe.ok ? "HTTP stream OK" : "HTTP stream endpoint exists"}: ${url}`);
+        log.push(`${probe.ok ? "HTTP stream OK" : "HTTP-Stream-Endpunkt erkannt (Login nötig)"}: ${url}`);
       }
     }
 
-    for (const candidate of profile.rtsp.slice(0, 2)) {
+    const shouldProbeRtsp = profileHit || hasVendorHint || args.result.rtsp?.ok;
+    for (const candidate of shouldProbeRtsp ? profile.rtsp.slice(0, 2) : []) {
       if (rtspUris.length >= 2 || Date.now() >= deadlineAt) break;
       const url = `rtsp://${args.result.ip}:${rtspPort}${candidate.path}`;
       log.push(`RTSP probe: ${candidate.label} ${url}`);
@@ -108,14 +113,14 @@ export async function probeVendorUrls(args: {
       }
     }
 
-    if (profile.id === "hikvision" && profileHit && !rtspUris.length) {
-      rtspUris.push(`rtsp://${args.result.ip}:${rtspPort}/Streaming/Channels/101`);
-      rtspUris.push(`rtsp://${args.result.ip}:${rtspPort}/Streaming/Channels/102`);
-      log.push("RTSP: Hikvision Standardpfade anhand ISAPI-Erkennung übernommen.");
+    if (profileHit && !rtspUris.length && profile.rtsp.length) {
+      rtspUris.push(...profile.rtsp.slice(0, 2).map((candidate) => `rtsp://${args.result.ip}:${rtspPort}${candidate.path}`));
+      log.push(`RTSP: Standardpfade für ${profile.label} anhand erkannter HTTP/ISAPI-Endpunkte übernommen.`);
     }
 
     if (profileHit) {
       matchedProfile = profile.label;
+      deviceInformation ??= { manufacturer: vendorManufacturer(profile.label) };
       if (snapshotUris.length && (rtspUris.length || httpStreamUris.length)) break;
     }
   }
@@ -153,12 +158,16 @@ function chooseProfiles(
     .toLowerCase();
 
   if (xaddrText.includes(":8000/")) {
-    const reolink = VENDOR_CAMERA_PROFILES.find((p) => p.id === "reolink");
-    const hikvision = VENDOR_CAMERA_PROFILES.find((p) => p.id === "hikvision");
-    return [reolink, hikvision].filter((p): p is NonNullable<typeof p> => Boolean(p)).slice(0, 2);
+    return byIds(["reolink", "hikvision", "dahua", "axis", "uniview", "geutebrueck", "generic"]);
   }
 
-  return ordered.filter((p) => p.id !== "reolink").slice(0, 1);
+  return byIds(["hikvision", "reolink", "dahua", "axis", "uniview", "geutebrueck", "foscam", "tapo", "generic"]);
+}
+
+function byIds(ids: string[]) {
+  return ids
+    .map((id) => VENDOR_CAMERA_PROFILES.find((p) => p.id === id))
+    .filter((p): p is NonNullable<typeof p> => Boolean(p));
 }
 
 function withReolinkQueryCredentials(
@@ -194,6 +203,7 @@ async function probeHttpUrl(args: {
       credentials: args.credentials,
       signal: args.signal,
       fastMode: false,
+      debugLog: args.log,
       headers: {
         accept: args.purpose === "snapshot" ? "image/*,*/*;q=0.8" : "multipart/x-mixed-replace,image/*,*/*;q=0.8",
         "user-agent": "ONVIFscanner/0.1"
@@ -230,6 +240,10 @@ async function probeHttpUrl(args: {
     exists,
     status: res.status
   };
+}
+
+function vendorManufacturer(label: string): string {
+  return label.split("/")[0]?.trim() || label;
 }
 
 async function probeHikvisionDeviceInfo(args: {

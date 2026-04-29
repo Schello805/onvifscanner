@@ -15,7 +15,7 @@ Local-first Web-App zum Finden von ONVIF- und RTSP-Kameras im eigenen Netzwerk (
   - RTSP `OPTIONS` mit Basic/Digest (sofern unterstützt).
   - ONVIF `GetDeviceInformation` + Media (WS-Security UsernameToken; zusätzlich HTTP Basic/Digest, sofern verfügbar).
 - **Preview (optional)**: ONVIF Snapshot-URI wird abgefragt und als Thumbnail angezeigt (wenn Kamera das unterstützt).
-- **Sicherheits-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
+- **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 
 ## Woher kommen die Streaming-URLs?
 
@@ -69,9 +69,9 @@ Bitte passe die Platzhalter (Name/Firma/Adresse/Hosting/Analytics etc.) an deine
 
 Lizenzhinweis (Required Notice): siehe `NOTICE`.
 
-## Security / Responsible Use
+## Nutzung im Heimnetz
 
-Dieses Tool ist nur für **eigene oder ausdrücklich autorisierte** Netzwerke gedacht. Scans können als Angriff wahrgenommen werden und sind in fremden Netzen ggf. rechtswidrig.
+Dieses Tool ist für das eigene Heimnetz/LAN gedacht. Standardmäßig akzeptiert der CIDR-Scan nur private IP-Bereiche (RFC1918).
 
 Thumbnails: Wenn aktiviert, werden pro gefundenem ONVIF-Gerät zusätzlich Snapshot-URLs aufgerufen (Image-Download), um eine Vorschau zu zeigen.
 

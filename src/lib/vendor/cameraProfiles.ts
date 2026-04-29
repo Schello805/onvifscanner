@@ -34,7 +34,7 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
   {
     id: "hikvision",
     label: "Hikvision / HiLook / Annke ISAPI",
-    match: ["hikvision", "hilook", "annke", "safire", "ezviz", "ip camera"],
+    match: ["hikvision", "hilook", "annke", "safire", "ezviz", "isapi"],
     rtsp: [
       { label: "RTSP Main", path: "/Streaming/Channels/101" },
       { label: "RTSP Sub", path: "/Streaming/Channels/102" },
@@ -56,8 +56,8 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
   },
   {
     id: "dahua",
-    label: "Dahua / Amcrest",
-    match: ["dahua", "amcrest", "imou"],
+    label: "Dahua / Amcrest / Imou",
+    match: ["dahua", "amcrest", "imou", "ipc-hdw", "ipc-hfw"],
     rtsp: [
       { label: "RTSP Main", path: "/cam/realmonitor?channel=1&subtype=0" },
       { label: "RTSP Sub", path: "/cam/realmonitor?channel=1&subtype=1" }
@@ -69,6 +69,41 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
     snapshot: [
       { label: "Snapshot", path: "/cgi-bin/snapshot.cgi?channel=1" },
       { label: "Snapshot Sub", path: "/cgi-bin/snapshot.cgi?channel=1&subtype=1" }
+    ]
+  },
+  {
+    id: "uniview",
+    label: "Uniview / Uniarch",
+    match: ["uniview", "uniarch", "unv"],
+    rtsp: [
+      { label: "RTSP Main", path: "/media/video1" },
+      { label: "RTSP Sub", path: "/media/video2" },
+      { label: "RTSP Main Channel", path: "/unicast/c1/s1/live" },
+      { label: "RTSP Sub Channel", path: "/unicast/c1/s2/live" }
+    ],
+    httpStream: [
+      { label: "HTTP MJPEG", path: "/mjpeg" }
+    ],
+    snapshot: [
+      { label: "Snapshot", path: "/images/snapshot.jpg" },
+      { label: "Snapshot CGI", path: "/cgi-bin/snapshot.cgi" }
+    ]
+  },
+  {
+    id: "geutebrueck",
+    label: "Geutebrück",
+    match: ["geutebrueck", "geutebrück", "g-core", "geutebruck"],
+    rtsp: [
+      { label: "RTSP Main", path: "/media/video1" },
+      { label: "RTSP Sub", path: "/media/video2" },
+      { label: "RTSP Live", path: "/live" }
+    ],
+    httpStream: [
+      { label: "HTTP MJPEG", path: "/mjpeg" }
+    ],
+    snapshot: [
+      { label: "Snapshot", path: "/snapshot.jpg" },
+      { label: "JPEG Image", path: "/image.jpg" }
     ]
   },
   {
@@ -84,6 +119,37 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
     ],
     snapshot: [
       { label: "Snapshot", path: "/axis-cgi/jpg/image.cgi" }
+    ]
+  },
+  {
+    id: "foscam",
+    label: "Foscam / Instar",
+    match: ["foscam", "instar"],
+    rtsp: [
+      { label: "RTSP Main", path: "/videoMain" },
+      { label: "RTSP Sub", path: "/videoSub" },
+      { label: "RTSP Video", path: "/video" }
+    ],
+    httpStream: [
+      { label: "HTTP MJPEG", path: "/videostream.cgi" }
+    ],
+    snapshot: [
+      { label: "Snapshot CGI", path: "/snapshot.cgi" },
+      { label: "Snapshot", path: "/snapPicture2" }
+    ]
+  },
+  {
+    id: "tapo",
+    label: "TP-Link Tapo / VIGI",
+    match: ["tapo", "tp-link", "vigi"],
+    rtsp: [
+      { label: "RTSP Main", path: "/stream1" },
+      { label: "RTSP Sub", path: "/stream2" }
+    ],
+    httpStream: [],
+    snapshot: [
+      { label: "Snapshot", path: "/stream/snapshot.jpg" },
+      { label: "Snapshot JPG", path: "/snapshot.jpg" }
     ]
   },
   {

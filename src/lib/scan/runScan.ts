@@ -160,7 +160,7 @@ export async function runScan(
 
     results.push(...scanned.filter(isCameraCandidate));
     warnings.push(
-      "CIDR/Port-Scan kann in großen Netzen lange dauern und als aggressiv wahrgenommen werden."
+      "CIDR/Port-Scan läuft lokal im angegebenen Heimnetz/LAN. Große Bereiche können länger dauern."
     );
     onPhase?.({ type: "phase", phase: "cidr", status: "done" });
   }

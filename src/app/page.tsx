@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type {
+  ScanResult,
   ScanRequest,
   ScanResponse,
   ScanTargetPreset
@@ -16,6 +17,33 @@ function parsePorts(input: string): number[] {
     .map((s) => Number(s))
     .filter((n) => Number.isInteger(n) && n > 0 && n <= 65535);
   return Array.from(new Set(ports));
+}
+
+function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
+  const lines = [`Kamera gefunden: ${r.ip}`];
+  if (r.hostname) lines.push(`DNS/Hostname: ${r.hostname}`);
+  if (r.manufacturer || r.model) {
+    lines.push(`Gerät: ${[r.manufacturer, r.model].filter(Boolean).join(" · ")}`);
+  } else {
+    lines.push("Gerät: Hersteller/Modell noch nicht eindeutig erkannt.");
+  }
+  if (r.streamUris?.length) lines.push(`Stream-URLs: ${r.streamUris.length} erkannt.`);
+  else lines.push("Stream-URLs: keine bestätigte URL erkannt.");
+  if (r.snapshotUris?.length) lines.push(`Snapshot-URLs: ${r.snapshotUris.length} erkannt.`);
+  else lines.push("Snapshot-URLs: keine bestätigte URL erkannt.");
+  if (r.onvif?.ok) lines.push("ONVIF: erreichbar, Geräteinfos wurden abgefragt.");
+  else if (r.onvif?.discoveryOnly) lines.push("ONVIF: XAddr/Endpoint gefunden, Tiefenanalyse nicht ausgeführt.");
+  else if (r.onvif?.error) lines.push(`ONVIF: nicht erfolgreich (${r.onvif.error}).`);
+  if (r.rtsp?.ok) lines.push("RTSP: erreichbar.");
+  else if (r.rtsp?.discoveryOnly) lines.push("RTSP: Kandidaten vorhanden, nicht aktiv getestet.");
+  else if (r.rtsp?.error) lines.push(`RTSP: nicht erfolgreich (${r.rtsp.error}).`);
+  if (r.vendor?.profile && r.vendor.profile !== "Vendor-Katalog") {
+    lines.push(`Vendor-Profil: ${r.vendor.profile}.`);
+  }
+  if (thumbnailLog) {
+    lines.push(`Vorschau: ${thumbnailLog.includes("error") ? "nicht geladen, Details im Log." : "geprüft."}`);
+  }
+  return lines;
 }
 
 export default function HomePage() {
@@ -586,7 +614,7 @@ export default function HomePage() {
                <OptionCheck
                  checked={ack}
                  label="Netzwerk bestätigt"
-                 tip="Nur im eigenen oder ausdrücklich autorisierten Netzwerk scannen. Bitte nicht in fremden Netzen verwenden."
+                 tip="Bestätigt, dass der Scan in deinem eigenen Heimnetz/LAN läuft."
                  onChange={setAck}
                />
              </div>
@@ -596,7 +624,7 @@ export default function HomePage() {
                    className="w-full group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
                    onClick={runScan}
                    disabled={loading || !ack}
-                   title={!ack ? "Bitte zuerst die Netzwerk-Berechtigung bestätigen." : undefined}
+                   title={!ack ? "Bitte zuerst dein Heimnetz/LAN bestätigen." : undefined}
                  >
                    <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
                      <div className="relative h-full w-8 bg-white/20" />
@@ -824,18 +852,21 @@ export default function HomePage() {
                             {/* Log */}
                             <div className="flex flex-col gap-2.5">
                               <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 pb-1">Log</div>
-                              {Boolean(
-                                (r.onvif?.log?.length ?? 0) +
-                                  (r.rtsp?.log?.length ?? 0) +
-                                  (r.vendor?.log?.length ?? 0) +
-                                  (thumbnailLog[r.ip] ? 1 : 0)
-                              ) ? (
+                              {buildCameraSummary(r, thumbnailLog[r.ip]).length ? (
                                 <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
 {[
-  ...(r.onvif?.log ?? []),
-  ...(r.rtsp?.log ?? []),
-  ...(r.vendor?.log ?? []),
-  ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
+  "Kurzstatus:",
+  ...buildCameraSummary(r, thumbnailLog[r.ip]).map((line) => `- ${line}`),
+  ...(verboseLog
+    ? [
+        "",
+        "Technisches Log:",
+        ...(r.onvif?.log ?? []),
+        ...(r.rtsp?.log ?? []),
+        ...(r.vendor?.log ?? []),
+        ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
+      ]
+    : [])
 ].join("\n")}
                                 </pre>
                               ) : (

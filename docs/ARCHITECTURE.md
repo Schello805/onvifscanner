@@ -18,9 +18,8 @@ Next.js (App Router) liefert UI + API:
    - Expandiert CIDR in IPv4 Hosts
    - TCP connect() auf Ports, dann Probing (RTSP/HTTP)
 
-## Sicherheitsprinzipien
+## Heimnetz-Prinzipien
 
 - Default: nur private IP-Ranges (RFC1918) erlauben
 - Begrenzung: Max Hosts pro Request + Default Timeouts
 - Keine Speicherung von Credentials (nur Request-scope)
-

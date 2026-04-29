@@ -20,7 +20,7 @@ function Footer() {
             ONVIFscanner <span className="text-slate-400">v{pkg.version}</span>
           </div>
           <div className="text-slate-400">
-            Local-first Scan von ONVIF/RTSP im autorisierten Netzwerk.
+            Local-first Scan von ONVIF/RTSP im eigenen Heimnetz/LAN.
           </div>
         </div>
         <nav className="flex flex-wrap gap-x-4 gap-y-2">
