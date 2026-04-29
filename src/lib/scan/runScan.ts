@@ -168,7 +168,7 @@ export async function runScan(
   if (req.deepProbe && results.length) {
     onPhase?.({ type: "phase", phase: "vendor", status: "start" });
     let done = 0;
-    const vendorLimit = clampInt(process.env.SCAN_VENDOR_MAX_DEVICES ?? "12", 1, results.length);
+    const vendorLimit = clampInt(process.env.SCAN_VENDOR_MAX_DEVICES ?? String(results.length), 1, results.length);
     const vendorTargets = results.slice(0, vendorLimit);
     await mapLimit(vendorTargets, Math.min(4, vendorTargets.length), async (r) => {
       throwIfAborted();
@@ -255,7 +255,7 @@ function finalizeCameraResult(result: ScanResult) {
       ? result.vendor.profile
       : undefined;
 
-  result.manufacturer = info?.manufacturer ?? vendorProfile;
+  result.manufacturer = info?.manufacturer ?? result.vendor?.deviceInformation?.manufacturer ?? vendorProfile;
   result.model = info?.model ?? result.vendor?.deviceInformation?.model;
   result.hostname = info?.hostname ?? result.vendor?.deviceInformation?.hostname ?? result.hostname;
   result.streamUris = unique([
