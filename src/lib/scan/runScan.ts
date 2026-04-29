@@ -81,6 +81,7 @@ export async function runScan(
     }
     const ports = req.ports ?? [];
     const concurrency = req.concurrency;
+    const deepProbeCidr = req.deepProbe && req.preset !== "auto";
 
     let done = 0;
     const scanned = await mapLimit(ips, concurrency, async (ip) => {
@@ -92,7 +93,7 @@ export async function runScan(
         [554, 8554, 10554, 8555].includes(p)
       );
       if (rtspPort) {
-        if (req.deepProbe) {
+        if (deepProbeCidr) {
           const rtsp = await probeRtsp({
             ip,
             port: rtspPort,
@@ -120,7 +121,7 @@ export async function runScan(
       if (httpsPort) xaddrs.push(`https://${ip}:${httpsPort}/onvif/device_service`);
 
       if (xaddrs.length) {
-        if (req.deepProbe) {
+        if (deepProbeCidr) {
           result.onvif = await probeOnvifFromXaddr({
             ip,
             xaddrs,
@@ -145,7 +146,11 @@ export async function runScan(
             discoveryOnly: true,
             deviceServiceUrl: xaddrs[0],
             xaddrs,
-            log: ["ONVIF SOAP Probe: übersprungen (Deep Probe deaktiviert)."]
+            log: [
+              deepProbeCidr
+                ? "ONVIF SOAP Probe: nicht ausgeführt."
+                : "ONVIF SOAP Probe: im Auto-CIDR-Schritt übersprungen; Vendor/URL-Erkennung läuft danach."
+            ]
           };
         }
       }

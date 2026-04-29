@@ -35,11 +35,8 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
   }
 
   const timeoutMs = clampInt(body.timeoutMs ?? DEFAULT_TIMEOUT_MS, 200, 10000);
-  const concurrency = clampInt(
-    body.concurrency ?? DEFAULT_CONCURRENCY,
-    1,
-    1024
-  );
+  const concurrencyMax = body.preset === "auto" ? 96 : 1024;
+  const concurrency = clampInt(body.concurrency ?? DEFAULT_CONCURRENCY, 1, concurrencyMax);
   const deepProbe =
     typeof body.deepProbe === "boolean" ? body.deepProbe : true;
   const includeThumbnails = Boolean(body.includeThumbnails);
