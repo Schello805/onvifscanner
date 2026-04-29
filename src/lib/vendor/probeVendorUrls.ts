@@ -49,9 +49,8 @@ export async function probeVendorUrls(args: {
           hostname: isapiInfo.hostname
         };
       }
-      if (!isapiInfo.exists && !hasVendorHint) {
-        log.push("Hikvision: ISAPI nicht erkannt, Profil wird übersprungen.");
-        continue;
+      if (!isapiInfo.exists) {
+        log.push("Hikvision: DeviceInfo nicht erkannt, bekannte ISAPI Stream/Snapshot-Pfade werden trotzdem geprüft.");
       }
     }
 

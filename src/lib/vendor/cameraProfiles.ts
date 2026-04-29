@@ -34,7 +34,7 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
   {
     id: "hikvision",
     label: "Hikvision / HiLook / Annke ISAPI",
-    match: ["hikvision", "hilook", "annke", "safire", "ezviz", "isapi"],
+    match: ["hikvision", "hilook", "annke", "safire", "ezviz", "isapi", "ds-2cd", "ds-2de", "ds-2df"],
     rtsp: [
       { label: "RTSP Main", path: "/Streaming/Channels/101" },
       { label: "RTSP Sub", path: "/Streaming/Channels/102" },
