@@ -30,7 +30,7 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
   }
 
   const preset = body.preset;
-  if (preset !== "ws-discovery" && preset !== "cidr") {
+  if (preset !== "auto" && preset !== "ws-discovery" && preset !== "cidr") {
     throw new Error("Ungültiger Scan-Modus.");
   }
 

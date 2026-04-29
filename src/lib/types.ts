@@ -1,4 +1,4 @@
-export type ScanTargetPreset = "ws-discovery" | "cidr";
+export type ScanTargetPreset = "auto" | "ws-discovery" | "cidr";
 
 export type Credentials = {
   username: string;

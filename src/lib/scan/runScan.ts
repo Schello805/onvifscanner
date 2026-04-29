@@ -36,7 +36,7 @@ export async function runScan(
     if (signal?.aborted) throw new Error("Scan abgebrochen.");
   }
 
-  if (req.preset === "ws-discovery") {
+  if (req.preset === "ws-discovery" || req.preset === "auto") {
     const discoveryTimeoutMs = clampInt(
       process.env.WS_DISCOVERY_TIMEOUT_MS ?? "4000",
       500,
@@ -56,7 +56,9 @@ export async function runScan(
       }
     });
     results.push(...found);
+  }
 
+  if (req.preset === "ws-discovery") {
     // Fast scan: show RTSP candidates without actively probing (keeps scans snappy).
     for (const r of results) {
       throwIfAborted();
@@ -69,7 +71,9 @@ export async function runScan(
         log: ["RTSP Probe: übersprungen (Fast Scan)."]
       };
     }
-  } else {
+  }
+
+  if (req.preset === "cidr" || req.preset === "auto") {
     onPhase?.({ type: "phase", phase: "cidr", status: "start" });
     const ips = expandCidr(req.cidr!);
     if (ips.length === 0) {
@@ -151,9 +155,11 @@ export async function runScan(
       return result;
     });
 
-    results.push(...scanned.filter(isCameraCandidate));
+    mergeResults(results, scanned.filter(isCameraCandidate));
     warnings.push(
-      "CIDR/Port-Scan läuft lokal im angegebenen Heimnetz/LAN. Große Bereiche können länger dauern."
+      req.preset === "auto"
+        ? "Auto-Scan nutzt WS-Discovery plus CIDR/Port-Scan im angegebenen Heimnetz/LAN."
+        : "CIDR/Port-Scan läuft lokal im angegebenen Heimnetz/LAN. Große Bereiche können länger dauern."
     );
     onPhase?.({ type: "phase", phase: "cidr", status: "done" });
   }
@@ -241,6 +247,59 @@ function isConfirmedCamera(result: ScanResult): boolean {
   return hasUrls || hasOnvifDiscovery || hasRtspPort || hasRtspSuccess;
 }
 
+function mergeResults(target: ScanResult[], incoming: ScanResult[]) {
+  const byIp = new Map(target.map((r) => [r.ip, r]));
+  for (const next of incoming) {
+    const existing = byIp.get(next.ip);
+    if (!existing) {
+      target.push(next);
+      byIp.set(next.ip, next);
+      continue;
+    }
+    existing.openTcpPorts = uniqueNumbers([
+      ...(existing.openTcpPorts ?? []),
+      ...(next.openTcpPorts ?? [])
+    ]);
+    existing.onvif = preferDetailedOnvif(existing.onvif, next.onvif);
+    existing.rtsp = preferDetailedRtsp(existing.rtsp, next.rtsp);
+    existing.vendor ??= next.vendor;
+    existing.hostname ??= next.hostname;
+    existing.manufacturer ??= next.manufacturer;
+    existing.model ??= next.model;
+  }
+}
+
+function preferDetailedOnvif(
+  current: ScanResult["onvif"],
+  next: ScanResult["onvif"]
+): ScanResult["onvif"] {
+  if (!current) return next;
+  if (!next) return current;
+  if (next.ok && !current.ok) return next;
+  if ((next.rtspUris?.length ?? 0) > (current.rtspUris?.length ?? 0)) return next;
+  if ((next.snapshotUris?.length ?? 0) > (current.snapshotUris?.length ?? 0)) return next;
+  return {
+    ...current,
+    xaddrs: unique([...(current.xaddrs ?? []), ...(next.xaddrs ?? [])]),
+    log: unique([...(current.log ?? []), ...(next.log ?? [])])
+  };
+}
+
+function preferDetailedRtsp(
+  current: ScanResult["rtsp"],
+  next: ScanResult["rtsp"]
+): ScanResult["rtsp"] {
+  if (!current) return next;
+  if (!next) return current;
+  if (next.ok && !current.ok) return next;
+  return {
+    ...current,
+    uris: unique([...(current.uris ?? []), ...(next.uris ?? [])]),
+    candidates: unique([...(current.candidates ?? []), ...(next.candidates ?? [])]),
+    log: unique([...(current.log ?? []), ...(next.log ?? [])])
+  };
+}
+
 function finalizeCameraResult(result: ScanResult) {
   const info = result.onvif?.deviceInformation;
   const vendorProfile =
@@ -265,6 +324,11 @@ function finalizeCameraResult(result: ScanResult) {
 
 function unique(values: string[]): string[] | undefined {
   const out = Array.from(new Set(values.filter(Boolean)));
+  return out.length ? out : undefined;
+}
+
+function uniqueNumbers(values: number[]): number[] | undefined {
+  const out = Array.from(new Set(values.filter((n) => Number.isFinite(n)))).sort((a, b) => a - b);
   return out.length ? out : undefined;
 }
 

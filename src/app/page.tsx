@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import type {
-  ScanResult,
-  ScanRequest,
-  ScanResponse,
-  ScanTargetPreset
-} from "@/lib/types";
+import type { ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 function parsePorts(input: string): number[] {
@@ -47,7 +42,6 @@ function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
 }
 
 export default function HomePage() {
-  const [preset, setPreset] = useState<ScanTargetPreset>("cidr");
   const [cidr, setCidr] = useState("192.168.1.0/24");
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
@@ -298,9 +292,9 @@ export default function HomePage() {
 
   const request: ScanRequest = useMemo(
     () => ({
-      preset,
-      cidr: preset === "cidr" ? cidr : undefined,
-      ports: preset === "cidr" ? parsePorts(ports) : undefined,
+      preset: "auto",
+      cidr,
+      ports: parsePorts(ports),
       credentials:
         username.trim() || password.trim()
           ? { username: username.trim(), password }
@@ -319,7 +313,6 @@ export default function HomePage() {
       includeThumbnails,
       password,
       ports,
-      preset,
       timeoutMs,
       username
     ]
@@ -517,7 +510,7 @@ export default function HomePage() {
 	          <div>
 	            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
 	            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
-	              WS-Discovery ist am zuverlässigsten für ONVIF. Falls du RTSP/HTTP außerhalb des eigenen Subnetzes testen willst, wechsle auf den CIDR-Scan.
+	              Auto-Scan kombiniert ONVIF/WS-Discovery mit IP-/Port-Scan und versucht danach Hersteller, Modell, Stream-URLs und Snapshot-URLs zu ermitteln.
 	            </p>
 	          </div>
 	        </div>
@@ -528,21 +521,13 @@ export default function HomePage() {
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Modus</span>
-                <select
-                  className="glass-input rounded-lg px-3 py-1.5 text-sm select-none"
-                  value={preset}
-                  onChange={(e) => {
-                    const next = e.target.value as ScanTargetPreset;
-                    setPreset(next);
-                    setDeepProbe(true);
-                  }}
-                >
-                  <option value="ws-discovery" className="bg-slate-900 text-white">WS-Discovery</option>
-                  <option value="cidr" className="bg-slate-900 text-white">CIDR Scan</option>
-                </select>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Suchbereich</span>
+                <input
+                  className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                  value={cidr}
+                  onChange={(e) => setCidr(e.target.value)}
+                />
               </label>
-
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Timeout (ms)</span>
                 <input
@@ -557,36 +542,19 @@ export default function HomePage() {
               </label>
             </div>
 
-            {preset === "cidr" && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 mt-1">
-                <label className="flex flex-col gap-1.5 md:col-span-1">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">CIDR</span>
-                  <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={cidr}
-                    onChange={(e) => setCidr(e.target.value)}
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5 md:col-span-1">
+            <details className="mt-1 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <summary className="cursor-pointer select-none text-xs font-semibold text-slate-300">Erweiterte Scan-Einstellungen</summary>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+                <label className="flex flex-col gap-1.5 md:col-span-2">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Ports</span>
-                  <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={ports}
-                    onChange={(e) => setPorts(e.target.value)}
-                  />
+                  <input className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none" value={ports} onChange={(e) => setPorts(e.target.value)} />
                 </label>
-                <label className="flex flex-col gap-1.5 md:col-span-1">
+                <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Concurrency</span>
-                  <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    type="number"
-                    min={1}
-                    value={concurrency}
-                    onChange={(e) => setConcurrency(Number(e.target.value))}
-                  />
+                  <input className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none" type="number" min={1} value={concurrency} onChange={(e) => setConcurrency(Number(e.target.value))} />
                 </label>
               </div>
-            )}
+            </details>
           </div>
 
           <div className="md:col-span-7 flex flex-col gap-3">
