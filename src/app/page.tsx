@@ -535,7 +535,7 @@ export default function HomePage() {
                   onChange={(e) => {
                     const next = e.target.value as ScanTargetPreset;
                     setPreset(next);
-                    setDeepProbe(next === "cidr");
+                    setDeepProbe(true);
                   }}
                 >
                   <option value="ws-discovery" className="bg-slate-900 text-white">WS-Discovery</option>

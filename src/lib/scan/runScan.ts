@@ -45,8 +45,7 @@ export async function runScan(
     const found = await wsDiscoveryProbe({
       discoveryTimeoutMs,
       timeoutMs: req.timeoutMs,
-      // Keep the main scan short and reliable. Deep analysis should not block showing devices.
-      deepProbe: false,
+      deepProbe: req.deepProbe,
       credentials: req.credentials,
       signal,
       onProgress(done, total) {
@@ -69,12 +68,6 @@ export async function runScan(
         candidates: buildRtspCandidates({ ip: r.ip, port }),
         log: ["RTSP Probe: übersprungen (Fast Scan)."]
       };
-    }
-
-    if (req.deepProbe && results.length) {
-      warnings.push(
-        "WS-Discovery liefert zuerst schnelle Ergebnisse. ONVIF-SOAP-Tiefenanalyse wird im Web-Modus nicht blockierend ausgeführt, damit der Scan nicht hängt."
-      );
     }
   } else {
     onPhase?.({ type: "phase", phase: "cidr", status: "start" });
