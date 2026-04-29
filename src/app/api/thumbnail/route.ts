@@ -222,12 +222,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       { error: "No usable image from candidates.", log: attemptLog },
-      { status: attempts > 0 && authFailures === attempts ? 401 : 502 }
+      { status: 200 }
     );
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Thumbnail error" },
-      { status: 500 }
+      { status: 200 }
     );
   } finally {
     if (acquired) releaseSlot();

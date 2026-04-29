@@ -219,6 +219,18 @@ export default function HomePage() {
         return;
       }
 
+      const contentType = (thumbRes.headers.get("content-type") ?? "").toLowerCase();
+      if (contentType.includes("application/json")) {
+        const j = (await thumbRes.json().catch(() => null)) as any;
+        const lines = [String(j?.error ?? "Kein Vorschaubild."), ...(Array.isArray(j?.log) ? j.log : [])];
+        setThumbnailLog((prev) => ({
+          ...prev,
+          [ip]: lines.slice(0, verboseLog ? 60 : 12).join("\n")
+        }));
+        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
+        return;
+      }
+
       const blob = await thumbRes.blob();
       if (!blob.size) return;
       const objectUrl = URL.createObjectURL(blob);
@@ -353,7 +365,7 @@ export default function HomePage() {
 
     function enqueueInitialThumbs(json: ScanResponse) {
       if (!includeThumbnails) return;
-      const count = thumbnailsOnExpandOnly ? 4 : json.results.length;
+      const count = thumbnailsOnExpandOnly ? 4 : Math.min(8, json.results.length);
       const ips = json.results.map((r) => r.ip).slice(0, count);
       for (const ip of ips) {
         initialThumbIpsRef.current.add(ip);

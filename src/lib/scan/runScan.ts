@@ -140,7 +140,7 @@ export async function runScan(
               );
             }
           }
-        } else {
+        } else if (req.preset !== "auto") {
           result.onvif = {
             ok: false,
             discoveryOnly: true,
@@ -246,7 +246,11 @@ function isCameraCandidate(result: ScanResult): boolean {
 
 function isConfirmedCamera(result: ScanResult): boolean {
   const hasUrls = Boolean(result.streamUris?.length || result.snapshotUris?.length);
-  const hasOnvifDiscovery = Boolean(result.onvif?.ok || result.onvif?.discoveryOnly);
+  const hasOnvifDiscovery = Boolean(
+    result.onvif?.ok ||
+      (result.onvif?.discoveryOnly &&
+        result.onvif.log?.some((line) => line.toLowerCase().includes("ws-discovery")))
+  );
   const hasRtspPort = Boolean(result.openTcpPorts?.some((p) => [554, 8554, 10554, 8555].includes(p)));
   const hasRtspSuccess = Boolean(result.rtsp?.ok);
   return hasUrls || hasOnvifDiscovery || hasRtspPort || hasRtspSuccess;
