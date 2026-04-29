@@ -1,21 +1,39 @@
 # ONVIFscanner
 
-Local-first Web-App zum Finden von ONVIF- und RTSP-Kameras im eigenen Netzwerk (WS-Discovery + optionaler IP/Port-Scan).
+Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-Kameras im eigenen Netzwerk.
 
 > Hinweis zur Lizenz: Dieses Projekt ist **source-available** zur freien Nutzung **für nicht-kommerzielle Zwecke** (siehe `LICENSE`). Es ist damit **nicht** “Open Source” im OSI-Sinne, auch wenn der Quellcode öffentlich ist.
 
 ## Features
 
-- **Premium UI mit DaisyUI**: Hochwertiges, responsives und modernes Dark-Mode-Dashboard (Dracula Theme) mit sauberen Tabellen, Badges und Animationen.
+- **Ein-Klick Auto-Scan**: Kombiniert WS-Discovery, IP/CIDR-Portscan und Hersteller-Profile automatisch.
+- **Kamera-Identifikation**: Ermittelt Hersteller, Modell und Hostname per ONVIF, Vendor-API und Reverse-DNS soweit verfügbar.
+- **Stream- & Snapshot-URLs**: Sammelt bestätigte RTSP-, HTTP-Stream- und Snapshot-URLs und bietet Kopieren per Klick.
+- **Hersteller-Profile**: Unterstützt u. a. Hikvision/HiLook/Annke, Reolink, Dahua/Amcrest/Imou, Axis, Uniview, Geutebrück, Foscam/Instar und TP-Link Tapo/VIGI.
+- **False-Positive-Filter**: Reine HTTP-Geräte werden im Auto-Scan nicht automatisch als Kamera angezeigt.
+- **Responsive UI**: Desktop-Tabelle und Smartphone-Kartenlayout für bessere Bedienung unterwegs.
 - **Auto-Korrektur von Kamera-IPs**: Behebt das Problem falscher lokaler IPs, die von Kameras in RTSP-Links gemeldet werden.
-- **Verlängerte Snapshot-Timeouts**: Vorschaubilder (Thumbnails) laden nun zuverlässiger, auch bei längeren Antwortzeiten der Kameras (Content-Type Toleranz).
-- **WS-Discovery (ONVIF)**: Findet ONVIF-Devices per UDP Probe (ohne “/24 bruteforce”).
-- **IP/CIDR Scan** (optional): Prüft typische Ports (z. B. 80/443/554/8554/8000/8080).
-- **Credential-Test** (optional):
-  - RTSP `OPTIONS` mit Basic/Digest (sofern unterstützt).
-  - ONVIF `GetDeviceInformation` + Media (WS-Security UsernameToken; zusätzlich HTTP Basic/Digest, sofern verfügbar).
-- **Preview (optional)**: ONVIF Snapshot-URI wird abgefragt und als Thumbnail angezeigt (wenn Kamera das unterstützt).
+- **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
+- **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
+
+## Wie funktioniert der Auto-Scan?
+
+Der normale Workflow ist bewusst einfach:
+
+1. Suchbereich eintragen, z. B. `192.168.1.0/24`.
+2. Optional Benutzername/Passwort für die Kameras eintragen.
+3. `Scan Starten` klicken.
+
+Die App kombiniert danach automatisch:
+
+- **WS-Discovery** für ONVIF-Geräte.
+- **CIDR/Portscan** für typische Kamera-Ports wie `80`, `443`, `554`, `8554`, `8000`, `8080`, `8899`.
+- **ONVIF Media-Abfragen** für echte RTSP-/Snapshot-URLs.
+- **Hersteller-Profile** für Kameras, die proprietäre Pfade nutzen.
+- **Reverse-DNS / ONVIF Hostname / Vendor-Hostname** zur besseren Identifikation.
+
+Die erweiterten Scan-Einstellungen sind eingeklappt, weil sie im Normalfall nicht geändert werden müssen.
 
 ## Woher kommen die Streaming-URLs?
 
@@ -25,7 +43,14 @@ Zuverlässige RTSP-Streaming-URLs kommen **nicht** aus dem ONVIF Device-Service-
 - `GetStreamUri` → liefert die RTSP-URL pro Profil
 - `GetSnapshotUri` → liefert Snapshot-URL pro Profil
 
-In der UI sind RTSP-URLs deshalb als **RTSP (ONVIF)** markiert. Zusätzlich zeigt die App (optional) **Kandidaten** (typische Vendor-Pfade) als “Vermutung”, weil manche Geräte proprietäre Pfade nutzen.
+Zusätzlich prüft ONVIFscanner bekannte Herstellerpfade, z. B. Hikvision:
+
+- Snapshot Main: `/ISAPI/Streaming/channels/101/picture`
+- Snapshot Sub: `/ISAPI/Streaming/channels/102/picture`
+- RTSP Main: `/Streaming/Channels/101`
+- RTSP Sub: `/Streaming/Channels/102`
+
+Wenn eine Kamera Authentifizierung verlangt, können die Zugangsdaten im UI eingetragen werden. Beim Kopieren können Credentials optional direkt an die URL angehängt werden.
 
 ## Quickstart
 
@@ -44,6 +69,12 @@ Schritt-für-Schritt inkl. Requirements (Node 20+, Build-Tools, `libvips` für `
 
 Siehe: `docs/DEPLOY_DEBIAN_LXC.md`
 
+Schnellinstallation/Update:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+```
+
 ## Konfiguration (Environment)
 
 - `NEXT_PUBLIC_REPO_URL` (optional): URL, die im Header/Footer als “Repo/GitHub” verlinkt wird.
@@ -52,10 +83,13 @@ Siehe: `docs/DEPLOY_DEBIAN_LXC.md`
 - `SCAN_CONCURRENCY` (default `128`): Standard-Concurrency beim IP/Port-Scan.
 - `SCAN_TIMEOUT_MS` (default `1200`): Default-Timeout pro Socket/FETCH.
 - `WS_DISCOVERY_TIMEOUT_MS` (default `1800`): Wartezeit auf WS-Discovery Antworten.
-- `ENABLE_THUMBNAILS` (default `true`): Thumbnails via ONVIF Snapshot-URI laden.
-- `THUMBNAILS_MAX` (default `12`): Max. Anzahl Thumbnails pro Scan-Response.
+- `SCAN_VENDOR_MAX_DEVICES` (optional): Begrenzung der Vendor-/URL-Prüfung pro Scan.
+- `VENDOR_PROBE_CAMERA_BUDGET_MS` (default `2500`): Zeitbudget pro Kamera für Hersteller-/URL-Prüfung.
+- `THUMBNAIL_MAX_CONCURRENCY` (default `2`): Max. parallele Thumbnail-Requests.
+- `THUMBNAIL_SHARP_CONCURRENCY` (default `2`): `sharp`/libvips Parallelität.
+- `THUMBNAIL_CACHE_TTL_MS` (default `30000`): Kurzzeit-Cache für generierte Vorschaubilder.
 
-Hinweis: Thumbnails werden **nur** geladen, wenn du sie im UI aktivierst (sonst bleibt die Scan-Response klein und schnell).
+Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 
 ## Rechtliches
 
