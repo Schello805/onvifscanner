@@ -437,21 +437,57 @@ export default function HomePage() {
     }
   }
 
+  function PreviewThumb(props: { result: ScanResult; compact?: boolean }) {
+    const r = props.result;
+    const size = props.compact ? "h-20 w-28" : "h-14 w-24";
+    if (thumbnails[r.ip]) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbnails[r.ip]}
+          alt={`Preview ${r.ip}`}
+          className={`${size} rounded-xl border border-white/10 object-cover shadow-lg`}
+        />
+      );
+    }
+
+    const log = thumbnailLog[r.ip] ?? "";
+    const lower = log.toLowerCase();
+    let label = "Kein Bild";
+    if (thumbnailState[r.ip] === "loading") label = "Lädt…";
+    else if (lower.includes("digest") && lower.includes("401")) label = "Digest nötig";
+    else if (lower.includes("401")) label = "Auth nötig";
+    else if (
+      includeThumbnails &&
+      thumbnailsOnExpandOnly &&
+      !expandedIps[r.ip] &&
+      !initialThumbIpsRef.current.has(r.ip)
+    ) {
+      label = "Aufklappen";
+    }
+
+    return (
+      <div className={`${size} flex items-center justify-center rounded-xl border border-white/5 bg-white/5 text-center text-[10px] font-medium uppercase tracking-wider text-slate-600`}>
+        {label}
+      </div>
+    );
+  }
+
   function UrlRow(props: { label: string; url: string; isApi?: boolean }) {
     const effective = addCredsIfWanted(props.url);
     return (
-      <div className="flex items-center gap-2">
-        <div className="w-28 shrink-0 text-xs text-slate-400">{props.label}</div>
+      <div className="flex flex-col gap-1.5 rounded-lg border border-white/5 bg-white/[0.03] p-2 sm:flex-row sm:items-center sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0">
+        <div className="shrink-0 text-xs font-semibold text-slate-400 sm:w-28 sm:font-normal">{props.label}</div>
         {props.isApi ? (
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-500"
+            className="min-w-0 flex-1 break-all font-mono text-[11px] text-slate-500 sm:truncate"
             title={props.url}
           >
             {props.url}
           </span>
         ) : (
           <a
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-indigo-300 hover:text-indigo-200"
+            className="min-w-0 flex-1 break-all font-mono text-[11px] text-indigo-300 hover:text-indigo-200 sm:truncate"
             href={props.url}
             target="_blank"
             rel="noreferrer"
@@ -461,7 +497,7 @@ export default function HomePage() {
           </a>
         )}
         <button
-          className="rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 hover:bg-slate-900"
+          className="self-start rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 hover:bg-slate-900 sm:self-auto"
           onClick={() => copy(effective)}
           type="button"
         >
@@ -472,8 +508,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <section className="glass-panel relative overflow-visible rounded-2xl p-5 md:p-6">
+    <div className="flex flex-col gap-5 sm:gap-8">
+      <section className="glass-panel relative overflow-visible rounded-2xl p-4 sm:p-5 md:p-6">
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
         
@@ -490,7 +526,7 @@ export default function HomePage() {
           
           <div className="md:col-span-5 flex flex-col gap-3">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
-            <div className="grid gap-3 grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Modus</span>
                 <select
@@ -522,7 +558,7 @@ export default function HomePage() {
             </div>
 
             {preset === "cidr" && (
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 mt-1">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 mt-1">
                 <label className="flex flex-col gap-1.5 md:col-span-1">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">CIDR</span>
                   <input
@@ -555,7 +591,7 @@ export default function HomePage() {
 
           <div className="md:col-span-7 flex flex-col gap-3">
              <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Authentifizierung</h3>
-             <div className="grid gap-3 grid-cols-2">
+             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Benutzername</span>
                   <input
@@ -621,7 +657,7 @@ export default function HomePage() {
 
                <div className="mt-5 flex items-center gap-3">
                  <button
-                   className="w-full group relative inline-flex h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+                   className="w-full group relative inline-flex h-12 sm:h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
                    onClick={runScan}
                    disabled={loading || !ack}
                    title={!ack ? "Bitte zuerst dein Heimnetz/LAN bestätigen." : undefined}
@@ -679,12 +715,12 @@ export default function HomePage() {
         ) : null}
       </section>
 
-      <section className="glass-panel overflow-hidden relative rounded-3xl p-8 mt-4">
+      <section className="glass-panel overflow-hidden relative rounded-3xl p-4 sm:p-6 md:p-8 mt-4">
         <div className="relative z-10">
-          <div className="flex items-end justify-between border-b border-white/10 pb-4">
+          <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">Ergebnisse</h2>
             {data?.meta ? (
-              <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+              <div className="flex w-full flex-wrap items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)] sm:w-auto sm:rounded-full sm:py-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 {data.results.length} Gerät(e) • {data.meta.durationMs}ms
                 {includeThumbnails ? (
@@ -709,7 +745,105 @@ export default function HomePage() {
               <div className="text-sm text-slate-500 mt-1">Starte oben den Suchlauf, um Geräte zu finden.</div>
             </div>
           ) : (
-            <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md shadow-2xl">
+            <>
+            <div className="mt-4 flex flex-col gap-3 lg:hidden">
+              {data.results.map((r) => (
+                <article key={`mobile-${r.ip}`} className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-xl">
+                  <div className="flex gap-3">
+                    <PreviewThumb result={r} compact />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-base text-slate-100">{r.ip}</div>
+                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                        {r.hostname ?? "Hostname unbekannt"}
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-white">
+                        {[r.manufacturer, r.model].filter(Boolean).join(" ") || "Unbekannt"}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
+                          {r.streamUris?.length ?? 0} Stream
+                        </span>
+                        <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
+                          {r.snapshotUris?.length ?? 0} Snapshot
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <details
+                    className="group mt-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-all open:bg-black/35"
+                    onToggle={(e) =>
+                      handleDetailsToggle(
+                        r.ip,
+                        (e.currentTarget as HTMLDetailsElement).open
+                      )
+                    }
+                  >
+                    <summary className="flex cursor-pointer select-none items-center justify-between text-sm font-semibold text-slate-300">
+                      URLs & Log
+                      <span className="text-indigo-400 transition-transform group-open:rotate-180">▼</span>
+                    </summary>
+
+                    <div className="mt-4 flex flex-col gap-4 border-t border-white/5 pt-4">
+                      <div className="text-xs text-slate-400">
+                        {r.onvif
+                          ? r.onvif.ok
+                            ? "ONVIF: OK"
+                            : r.onvif.discoveryOnly
+                              ? "ONVIF: gefunden (ungetestet)"
+                              : `ONVIF: Fehler${r.onvif.error ? ` (${r.onvif.error})` : ""}`
+                          : "ONVIF: —"}
+                        {" • "}
+                        {r.rtsp
+                          ? r.rtsp.ok
+                            ? "RTSP: OK"
+                            : r.rtsp.discoveryOnly
+                              ? "RTSP: Kandidaten"
+                              : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
+                          : "RTSP: —"}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">Stream & Snapshot URLs</div>
+                        {r.streamUris?.length ? (
+                          r.streamUris.map((u, idx) => (
+                            <UrlRow key={`mobile-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} />
+                          ))
+                        ) : (
+                          <div className="text-xs text-slate-500">Keine Stream-URL erkannt.</div>
+                        )}
+                        {r.snapshotUris?.length ? (
+                          r.snapshotUris.map((u, idx) => (
+                            <UrlRow key={`mobile-snapshot-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} />
+                          ))
+                        ) : (
+                          <div className="text-xs text-slate-500">Keine Snapshot-URL erkannt.</div>
+                        )}
+                      </div>
+
+                      <pre className="max-h-44 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
+{[
+  "Kurzstatus:",
+  ...buildCameraSummary(r, thumbnailLog[r.ip]).map((line) => `- ${line}`),
+  ...(verboseLog
+    ? [
+        "",
+        "Technisches Log:",
+        ...(r.onvif?.log ?? []),
+        ...(r.rtsp?.log ?? []),
+        ...(r.vendor?.log ?? []),
+        ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
+      ]
+    : [])
+].join("\n")}
+                      </pre>
+                    </div>
+                  </details>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-6 hidden overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md shadow-2xl lg:block">
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
                   <tr className="bg-white/5 border-b border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400">
@@ -723,33 +857,7 @@ export default function HomePage() {
                   {data.results.map((r, i) => (
                     <tr key={r.ip} className={`align-top transition-colors hover:bg-white/[0.03] ${i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-transparent'}`}>
                       <td className="p-4 align-middle">
-                        {thumbnails[r.ip] ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={thumbnails[r.ip]}
-                            alt={`Preview ${r.ip}`}
-                            className="h-14 w-24 rounded-lg border border-white/10 object-cover shadow-lg"
-                          />
-                        ) : (
-                          <div className="flex h-14 w-24 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-[10px] font-medium uppercase tracking-wider text-slate-600">
-                            {(() => {
-                              const log = thumbnailLog[r.ip] ?? "";
-                              const lower = log.toLowerCase();
-                              if (thumbnailState[r.ip] === "loading") return "Lädt…";
-                              if (lower.includes("digest") && lower.includes("401")) return "Digest nötig";
-                              if (lower.includes("401")) return "Auth nötig";
-                              if (
-                                includeThumbnails &&
-                                thumbnailsOnExpandOnly &&
-                                !expandedIps[r.ip] &&
-                                !initialThumbIpsRef.current.has(r.ip)
-                              ) {
-                                return "Aufklappen";
-                              }
-                              return "Kein Bild";
-                            })()}
-                          </div>
-                        )}
+                        <PreviewThumb result={r} />
                       </td>
                       
                       <td className="p-4 align-middle">
@@ -880,6 +988,7 @@ export default function HomePage() {
                   ))}
                 </tbody>
             </table>
+            </div>
             {data.warnings?.length ? (
               <div className="mt-4 rounded-lg border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200">
                 <div className="font-medium">Hinweise</div>
@@ -890,7 +999,7 @@ export default function HomePage() {
                 </ul>
               </div>
             ) : null}
-          </div>
+            </>
         )}
         </div>
       </section>
