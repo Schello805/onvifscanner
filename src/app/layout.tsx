@@ -3,13 +3,15 @@ import Link from "next/link";
 import Image from "next/image";
 import "./globals.css";
 import pkg from "../../package.json";
+import { VersionStatus } from "./VersionStatus";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
   description: "Lokaler ONVIF/RTSP Scanner für dein Netzwerk."
 };
 
-const repoUrl = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/";
+const repoUrl =
+  process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/Schello805/onvifscanner";
 
 function Footer() {
   return (
@@ -17,7 +19,7 @@ function Footer() {
       <div className="mx-auto flex w-[90%] max-w-none flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
           <div className="font-medium text-slate-200">
-            ONVIFscanner <span className="text-slate-400">v{pkg.version}</span>
+            ONVIFscanner <VersionStatus currentVersion={pkg.version} />
           </div>
           <div className="text-slate-400">
             Local-first Scan von ONVIF/RTSP im eigenen Heimnetz/LAN.
