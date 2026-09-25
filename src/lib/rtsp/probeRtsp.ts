@@ -8,35 +8,61 @@ export async function probeRtsp(args: {
   port: number;
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  credentialsList?: Array<{ username: string; password: string }>;
   uri?: string;
 }): Promise<RtspResult> {
   const uri = args.uri ?? `rtsp://${args.ip}:${args.port}/`;
   const preferredMethod = "DESCRIBE";
   const log: string[] = [];
 
-  try {
-    log.push(`Probe: ${uri}`);
-    const res1 = await rtspRequestWithFallback({
-      ip: args.ip,
-      port: args.port,
-      timeoutMs: args.timeoutMs,
-      uri,
-      method: preferredMethod,
-      credentials: args.credentials,
-      log
-    });
+  const credCandidates: Array<{ username: string; password: string } | undefined> = [];
+  if (args.credentials?.username || args.credentials?.password) {
+    credCandidates.push(args.credentials);
+  }
+  if (args.credentialsList?.length) {
+    for (const c of args.credentialsList) {
+      if (!credCandidates.some((x) => x?.username === c.username && x?.password === c.password)) {
+        credCandidates.push(c);
+      }
+    }
+  }
+  if (credCandidates.length === 0) {
+    credCandidates.push(undefined);
+  }
 
-    return { ...res1, log: limitLog(res1.log ?? log) };
-  } catch (e) {
-    log.push(`Exception: ${e instanceof Error ? e.message : String(e)}`);
-    return {
+  log.push(`Probe: ${uri}`);
+  let lastRes: RtspResult | undefined;
+
+  for (let ci = 0; ci < credCandidates.length; ci += 1) {
+    const cred = credCandidates[ci];
+    try {
+      const res = await rtspRequestWithFallback({
+        ip: args.ip,
+        port: args.port,
+        timeoutMs: args.timeoutMs,
+        uri,
+        method: preferredMethod,
+        credentials: cred,
+        log
+      });
+      lastRes = res;
+      if (res.ok) {
+        return { ...res, log: limitLog(res.log ?? log) };
+      }
+    } catch (e) {
+      log.push(`Exception (${cred?.username || "unauth"}): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  return (
+    lastRes ?? {
       ok: false,
       port: args.port,
       uriTried: uri,
       log: limitLog(log),
-      error: e instanceof Error ? e.message : String(e)
-    };
-  }
+      error: "RTSP-Verbindung fehlgeschlagen"
+    }
+  );
 }
 
 function buildRtspRequest(args: {

@@ -29,6 +29,7 @@ export type ScanRequest = {
   cidr?: string;
   ports?: number[];
   credentials?: Credentials;
+  credentialsList?: Credentials[];
   timeoutMs?: number;
   concurrency?: number;
   deepProbe?: boolean;
@@ -43,6 +44,8 @@ export type OnvifResult = {
   deviceServiceUrl?: string;
   mediaServiceUrl?: string;
   mediaServiceUrl2?: string;
+  ptzServiceUrl?: string;
+  ptz?: boolean;
   rtspUris?: OnvifUri[];
   snapshotUris?: OnvifUri[];
   log?: string[];
@@ -94,6 +97,7 @@ export type ScanResult = {
   streamUris?: string[];
   snapshotUris?: string[];
   openTcpPorts?: number[];
+  ptz?: boolean;
   onvif?: OnvifResult;
   rtsp?: RtspResult;
   vendor?: VendorUrlResult;

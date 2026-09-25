@@ -8,6 +8,7 @@ export async function probeOnvifFromXaddr(args: {
   xaddrs: string[];
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  credentialsList?: Array<{ username: string; password: string }>;
 }): Promise<OnvifResult> {
   const log: string[] = [];
   const rawDeviceServiceUrl = args.xaddrs[0];
@@ -50,22 +51,52 @@ export async function probeOnvifFromXaddr(args: {
       // ignore, proceed with local time
     }
 
-    const devInfo = await onvifSoapCall({
-      url: deviceServiceUrl,
-      action: "http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation",
-      timeoutMs: args.timeoutMs,
-      credentials: args.credentials,
-      timeOffsetMs,
-      body: `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
-    });
-    log.push(`GetDeviceInformation: HTTP ${devInfo.status} (SOAP ${devInfo.soap})`);
-    if (!devInfo.ok) {
+    // Prepare credentials list to try
+    const credCandidates: Array<{ username: string; password: string } | undefined> = [];
+    if (args.credentials?.username || args.credentials?.password) {
+      credCandidates.push(args.credentials);
+    }
+    if (args.credentialsList?.length) {
+      for (const c of args.credentialsList) {
+        if (!credCandidates.some((x) => x?.username === c.username && x?.password === c.password)) {
+          credCandidates.push(c);
+        }
+      }
+    }
+    if (credCandidates.length === 0) {
+      credCandidates.push(undefined);
+    }
+
+    let workingCreds: { username: string; password: string } | undefined = credCandidates[0];
+    let devInfo: Awaited<ReturnType<typeof onvifSoapCall>> | undefined;
+
+    for (let ci = 0; ci < credCandidates.length; ci += 1) {
+      const cred = credCandidates[ci];
+      const res = await onvifSoapCall({
+        url: deviceServiceUrl,
+        action: "http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation",
+        timeoutMs: args.timeoutMs,
+        credentials: cred,
+        timeOffsetMs,
+        body: `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
+      });
+      log.push(
+        `GetDeviceInformation (${cred ? `${cred.username}:***` : "unauth"}): HTTP ${res.status} (SOAP ${res.soap})`
+      );
+      devInfo = res;
+      if (res.ok) {
+        workingCreds = cred;
+        break;
+      }
+    }
+
+    if (!devInfo || !devInfo.ok) {
       return {
         ok: false,
         xaddrs: args.xaddrs,
         deviceServiceUrl,
         log: limitLog(log),
-        error: `HTTP ${devInfo.status}`
+        error: `HTTP ${devInfo?.status ?? "unbekannt"}`
       };
     }
 
@@ -80,7 +111,7 @@ export async function probeOnvifFromXaddr(args: {
       url: deviceServiceUrl,
       action: "http://www.onvif.org/ver10/device/wsdl/GetHostname",
       timeoutMs: args.timeoutMs,
-      credentials: args.credentials,
+      credentials: workingCreds,
       timeOffsetMs,
       body: `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
     });
@@ -91,7 +122,7 @@ export async function probeOnvifFromXaddr(args: {
       url: deviceServiceUrl,
       action: "http://www.onvif.org/ver10/device/wsdl/GetCapabilities",
       timeoutMs: args.timeoutMs,
-      credentials: args.credentials,
+      credentials: workingCreds,
       timeOffsetMs,
       body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
     });
@@ -99,12 +130,15 @@ export async function probeOnvifFromXaddr(args: {
 
     const mediaServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media") : undefined;
     const media2ServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "Media2") : undefined;
+    const ptzServiceUrl = caps.ok ? extractCapabilityXAddr(caps.text, "PTZ") : undefined;
+    const isPtz = Boolean(ptzServiceUrl || (caps.ok && caps.text.toLowerCase().includes("ptz")));
+
     if (caps.ok) {
       log.push(
-        `Capabilities: Media=${mediaServiceUrl ? "yes" : "no"}, Media2=${media2ServiceUrl ? "yes" : "no"}`
+        `Capabilities: Media=${mediaServiceUrl ? "yes" : "no"}, Media2=${media2ServiceUrl ? "yes" : "no"}, PTZ=${isPtz ? "yes" : "no"}`
       );
     } else {
-      log.push("Capabilities call failed; cannot discover Media/Media2.");
+      log.push("Capabilities call failed; cannot discover Media/Media2/PTZ.");
     }
     const rtspUris: OnvifUri[] = [];
     const snapshotUris: OnvifUri[] = [];
@@ -121,7 +155,7 @@ export async function probeOnvifFromXaddr(args: {
           ? "http://www.onvif.org/ver20/media/wsdl/GetProfiles"
           : "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
         timeoutMs: args.timeoutMs,
-        credentials: args.credentials,
+        credentials: workingCreds,
         timeOffsetMs,
         body: isMedia2
           ? `<tr2:GetProfiles xmlns:tr2="http://www.onvif.org/ver20/media/wsdl" />`
@@ -224,6 +258,8 @@ export async function probeOnvifFromXaddr(args: {
       deviceServiceUrl,
       mediaServiceUrl: mediaServiceUrl ?? undefined,
       mediaServiceUrl2: media2ServiceUrl ?? undefined,
+      ptzServiceUrl: ptzServiceUrl ? normalizeUriHost(ptzServiceUrl, args.ip, log, "PTZ") : undefined,
+      ptz: isPtz,
       rtspUris: rtspUris.length ? rtspUris : undefined,
       snapshotUris: snapshotUris.length ? snapshotUris : undefined,
       log: limitLog(log),

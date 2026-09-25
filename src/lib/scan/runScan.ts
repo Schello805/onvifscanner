@@ -1,5 +1,5 @@
 import type { ParsedScanRequest } from "@/lib/scan/validation";
-import type { ScanResponse, ScanResult } from "@/lib/types";
+import type { Credentials, ScanResponse, ScanResult } from "@/lib/types";
 import { wsDiscoveryProbe } from "@/lib/wsdiscovery/wsDiscovery";
 import { expandCidr } from "@/lib/net/ip";
 import { mapLimit } from "@/lib/util/mapLimit";
@@ -38,6 +38,20 @@ export async function runScan(
     if (signal?.aborted) throw new Error("Scan abgebrochen.");
   }
 
+  const credsList: Credentials[] = [];
+  if (req.credentials?.username || req.credentials?.password) {
+    credsList.push(req.credentials);
+  }
+  if (req.credentialsList?.length) {
+    for (const c of req.credentialsList) {
+      if (c.username || c.password) {
+        if (!credsList.some((x) => x.username === c.username && x.password === c.password)) {
+          credsList.push(c);
+        }
+      }
+    }
+  }
+
   if (req.preset === "ws-discovery" || req.preset === "auto") {
     onPhase?.({ type: "phase", phase: "discovery", status: "start", message: "WS-Discovery im Netzwerk…" });
     const discoveryTimeoutMs = clampInt(
@@ -50,6 +64,7 @@ export async function runScan(
       timeoutMs: req.timeoutMs,
       deepProbe: req.deepProbe,
       credentials: req.credentials,
+      credentialsList: credsList.length ? credsList : undefined,
       signal,
       onProgress(done, total) {
         onPhase?.({ type: "progress", phase: "onvif", done, total, message: `ONVIF Analyse: ${done}/${total}` });
@@ -114,7 +129,8 @@ export async function runScan(
             ip,
             port: rtspPort,
             timeoutMs: req.timeoutMs,
-            credentials: req.credentials
+            credentials: req.credentials,
+            credentialsList: credsList.length ? credsList : undefined
           });
           rtsp.candidates = buildRtspCandidates({ ip, port: rtspPort });
           result.rtsp = rtsp;
@@ -142,7 +158,8 @@ export async function runScan(
             ip,
             xaddrs,
             timeoutMs: req.timeoutMs,
-            credentials: req.credentials
+            credentials: req.credentials,
+            credentialsList: credsList.length ? credsList : undefined
           });
 
           const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
@@ -443,6 +460,7 @@ function finalizeCameraResult(result: ScanResult) {
     result.manufacturer;
   result.model = info?.model ?? result.vendor?.deviceInformation?.model ?? result.model;
   result.hostname = info?.hostname ?? result.vendor?.deviceInformation?.hostname ?? result.hostname;
+  result.ptz = Boolean(result.onvif?.ptz);
   result.streamUris = unique([
     ...(result.onvif?.rtspUris?.map((u) => u.uri) ?? []),
     ...(result.vendor?.rtspUris ?? []),

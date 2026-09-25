@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import type { ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 function parsePorts(input: string): number[] {
@@ -19,6 +19,7 @@ function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
   if (r.mac) lines.push(`MAC-Adresse: ${r.mac}`);
   if (r.hostname) lines.push(`DNS/Hostname: ${r.hostname}`);
   if (r.primaryResolution) lines.push(`Auflösung: ${r.primaryResolution}`);
+  if (r.ptz) lines.push("PTZ: Pan/Tilt/Zoom unterstützt.");
   if (r.manufacturer || r.model) {
     lines.push(`Gerät: ${[r.manufacturer, r.model].filter(Boolean).join(" · ")}`);
   } else {
@@ -45,9 +46,16 @@ function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
 
 export default function HomePage() {
   const [cidr, setCidr] = useState("192.168.1.0/24");
+  const [detectedSubnets, setDetectedSubnets] = useState<
+    Array<{ interfaceName: string; ip: string; cidr: string }>
+  >([]);
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showMultiCreds, setShowMultiCreds] = useState(false);
+  const [multiCredsText, setMultiCredsText] = useState("");
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [autoRefreshSec, setAutoRefreshSec] = useState<number>(0);
   const [copyWithCreds, setCopyWithCreds] = useState(true);
   const [includeThumbnails, setIncludeThumbnails] = useState(true);
   const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(false);
@@ -316,6 +324,20 @@ export default function HomePage() {
     tick();
   }
 
+  useEffect(() => {
+    fetch("/api/network")
+      .then((r) => r.json())
+      .then((netData) => {
+        if (netData?.primaryCidr) {
+          setCidr((prev) => (prev === "192.168.1.0/24" ? netData.primaryCidr : prev));
+        }
+        if (Array.isArray(netData?.subnets)) {
+          setDetectedSubnets(netData.subnets);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   function enqueueThumb(ip: string) {
     if (!includeThumbnails) return;
     if (thumbStopRef.current) return;
@@ -326,6 +348,44 @@ export default function HomePage() {
     pumpThumbQueue();
   }
 
+  function refreshAllThumbnails() {
+    if (!data?.results?.length) return;
+    for (const r of data.results) {
+      thumbRequestedRef.current.delete(r.ip);
+      setThumbnailState((prev) => ({ ...prev, [r.ip]: "loading" }));
+      enqueueThumb(r.ip);
+    }
+  }
+
+  useEffect(() => {
+    if (!autoRefreshSec || autoRefreshSec <= 0) return;
+    if (!data?.results?.length || loading) return;
+    const interval = setInterval(() => {
+      refreshAllThumbnails();
+    }, autoRefreshSec * 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefreshSec, data?.results?.length, loading]);
+
+  const parsedCredsList: Credentials[] = useMemo(() => {
+    if (!multiCredsText.trim()) return [];
+    const lines = multiCredsText.split("\n");
+    const list: Credentials[] = [];
+    for (const l of lines) {
+      const trimmed = l.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const colon = trimmed.indexOf(":");
+      if (colon >= 0) {
+        const u = trimmed.slice(0, colon).trim();
+        const p = trimmed.slice(colon + 1);
+        if (u || p) list.push({ username: u, password: p });
+      } else {
+        list.push({ username: trimmed, password: "" });
+      }
+    }
+    return list;
+  }, [multiCredsText]);
+
   const request: ScanRequest = useMemo(
     () => ({
       preset: "auto",
@@ -335,6 +395,7 @@ export default function HomePage() {
         username.trim() || password.trim()
           ? { username: username.trim(), password }
           : undefined,
+      credentialsList: parsedCredsList.length ? parsedCredsList : undefined,
       timeoutMs,
       concurrency,
       deepProbe,
@@ -347,6 +408,7 @@ export default function HomePage() {
       concurrency,
       deepProbe,
       includeThumbnails,
+      parsedCredsList,
       password,
       ports,
       timeoutMs,
@@ -540,16 +602,16 @@ export default function HomePage() {
     }
   }
 
-  function PreviewThumb(props: { result: ScanResult; compact?: boolean }) {
+  function PreviewThumb(props: { result: ScanResult; compact?: boolean; large?: boolean }) {
     const r = props.result;
-    const size = props.compact ? "h-20 w-28" : "h-14 w-24";
+    const size = props.large ? "h-48 w-full aspect-video" : props.compact ? "h-20 w-28" : "h-14 w-24";
     if (thumbnails[r.ip]) {
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={thumbnails[r.ip]}
           alt={`Preview ${r.ip}`}
-          className={`${size} rounded-xl border border-white/10 object-cover shadow-lg`}
+          className={`${size} rounded-xl border border-white/10 object-cover shadow-lg transition-transform hover:scale-[1.01]`}
         />
       );
     }
@@ -570,7 +632,7 @@ export default function HomePage() {
     }
 
     return (
-      <div className={`${size} flex items-center justify-center rounded-xl border border-white/5 bg-white/5 text-center text-[10px] font-medium uppercase tracking-wider text-slate-600`}>
+      <div className={`${size} flex items-center justify-center rounded-xl border border-white/5 bg-white/5 text-center text-[10px] font-medium uppercase tracking-wider text-slate-500`}>
         {label}
       </div>
     );
@@ -630,14 +692,36 @@ export default function HomePage() {
           <div className="md:col-span-5 flex flex-col gap-3">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Suchbereich</span>
-                <input
-                  className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                  value={cidr}
-                  onChange={(e) => setCidr(e.target.value)}
-                />
-              </label>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Suchbereich</span>
+                  <input
+                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
+                    value={cidr}
+                    onChange={(e) => setCidr(e.target.value)}
+                  />
+                </label>
+                {detectedSubnets.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-slate-500 font-medium">Erkannt:</span>
+                    {detectedSubnets.map((sub) => (
+                      <button
+                        key={`${sub.interfaceName}-${sub.cidr}`}
+                        type="button"
+                        onClick={() => setCidr(sub.cidr)}
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition border ${
+                          cidr === sub.cidr
+                            ? "bg-indigo-500/30 text-indigo-200 border-indigo-500/50 font-bold shadow-sm"
+                            : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white"
+                        }`}
+                        title={`Interface ${sub.interfaceName} (${sub.ip})`}
+                      >
+                        {sub.cidr} ({sub.interfaceName})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Timeout (ms)</span>
                 <input
@@ -668,7 +752,21 @@ export default function HomePage() {
           </div>
 
           <div className="md:col-span-7 flex flex-col gap-3">
-             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Authentifizierung</h3>
+             <div className="flex items-center justify-between">
+               <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Authentifizierung</h3>
+               <button
+                 type="button"
+                 onClick={() => setShowMultiCreds(!showMultiCreds)}
+                 className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1"
+               >
+                 <span>{showMultiCreds ? "▲ Weniger" : "+ Passwort-Liste"}</span>
+                 {parsedCredsList.length > 0 && (
+                   <span className="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[9px] text-indigo-300 border border-indigo-500/30">
+                     {parsedCredsList.length} aktiv
+                   </span>
+                 )}
+               </button>
+             </div>
              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Benutzername</span>
@@ -692,6 +790,25 @@ export default function HomePage() {
                   />
                 </label>
              </div>
+
+             {showMultiCreds && (
+               <div className="rounded-xl border border-indigo-500/20 bg-black/40 p-3 flex flex-col gap-2">
+                 <div className="flex items-center justify-between">
+                   <span className="text-[10px] font-bold text-slate-300">Mehrere Logins / Passwort-Liste</span>
+                   <span className="text-[9px] text-slate-500">Format: user:pass</span>
+                 </div>
+                 <textarea
+                   rows={3}
+                   value={multiCredsText}
+                   onChange={(e) => setMultiCredsText(e.target.value)}
+                   placeholder={"admin:admin\nadmin:12345\nadmin:\nroot:root"}
+                   className="glass-input w-full font-mono text-xs rounded-lg p-2.5 resize-y outline-none"
+                 />
+                 <div className="text-[10px] text-slate-400 leading-tight">
+                   Wird nacheinander bei jeder Kamera getestet, falls der Standard-Login fehlschlägt.
+                 </div>
+               </div>
+             )}
              
              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                <OptionCheck
@@ -824,18 +941,66 @@ export default function HomePage() {
       <section className="glass-panel overflow-hidden relative rounded-3xl p-4 sm:p-6 md:p-8 mt-4">
         <div className="relative z-10">
           <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-            <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">Ergebnisse</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">
+                Ergebnisse
+              </h2>
+              {data?.results ? (
+                <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("table")}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      viewMode === "table" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <span>📋</span> Liste
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("grid")}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      viewMode === "grid" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <span>🖼️</span> Dashboard
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
             {data?.results ? (
-              <div className="flex w-full flex-wrap items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)] sm:w-auto sm:rounded-full sm:py-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"}`}></span>
-                {data.results.length} Gerät(e) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
-                {includeThumbnails ? (
-                  <span className="text-slate-300/80">
-                    • Preview{" "}
-	                    {Object.values(thumbnailState).filter((s) => s === "ok").length}/
-	                    {data.results.length}
-                  </span>
-                ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={refreshAllThumbnails}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
+                  title="Alle Vorschaubilder jetzt neu laden"
+                >
+                  <span className={Object.values(thumbnailState).some((s) => s === "loading") ? "animate-spin" : ""}>🔄</span>
+                  <span>Refresh</span>
+                </button>
+                <select
+                  value={autoRefreshSec}
+                  onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-2 py-1.5 text-xs font-semibold text-slate-300 outline-none hover:border-white/20"
+                >
+                  <option value={0}>Auto: Aus</option>
+                  <option value={10}>Auto: 10s</option>
+                  <option value={30}>Auto: 30s</option>
+                  <option value={60}>Auto: 60s</option>
+                </select>
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                  <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"}`}></span>
+                  {data.results.length} Gerät(e) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
+                  {includeThumbnails ? (
+                    <span className="text-slate-300/80">
+                      • Preview{" "}
+                      {Object.values(thumbnailState).filter((s) => s === "ok").length}/
+                      {data.results.length}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">{loading ? "Scan läuft…" : "Warte auf Eingabe"}</div>
@@ -852,6 +1017,115 @@ export default function HomePage() {
             </div>
           ) : (
             <>
+            {viewMode === "grid" ? (
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {data.results.map((r) => (
+                  <article
+                    key={`grid-${r.ip}`}
+                    className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md p-3.5 shadow-xl transition-all duration-200 hover:border-indigo-500/40 hover:bg-black/40"
+                  >
+                    <div className="relative overflow-hidden rounded-xl bg-slate-950/80">
+                      <PreviewThumb result={r} large />
+                      
+                      {/* Top Badges */}
+                      <div className="absolute top-2 left-2 flex flex-wrap gap-1 z-10">
+                        {r.primaryResolution && (
+                          <span className="rounded bg-black/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-400/30 shadow">
+                            📷 {r.primaryResolution}
+                          </span>
+                        )}
+                        {r.ptz && (
+                          <span className="rounded bg-black/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-400/30 shadow">
+                            🎮 PTZ
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bottom-right Quick Stream Copy */}
+                      {r.streamUris?.[0] && (
+                        <div className="absolute bottom-2 right-2 z-10">
+                          <button
+                            type="button"
+                            onClick={() => copy(addCredsIfWanted(r.streamUris![0]))}
+                            className="rounded-lg bg-black/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:text-white border border-white/20 transition shadow"
+                          >
+                            Stream kopieren
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex flex-1 flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-sm font-bold text-white">{r.ip}</span>
+                          {r.mac && <span className="font-mono text-[10px] text-slate-400">{r.mac}</span>}
+                        </div>
+                        <div className="mt-1 truncate text-xs font-semibold text-slate-200">
+                          {[r.manufacturer, r.model].filter(Boolean).join(" ") || "Kamera"}
+                        </div>
+                        <div className="truncate text-[11px] text-slate-500">
+                          {r.hostname ?? "Kein Hostname"}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 border-t border-white/5 pt-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-1.5">
+                            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
+                              {r.streamUris?.length ?? 0} Stream
+                            </span>
+                            <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
+                              {r.snapshotUris?.length ?? 0} Snap
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Collapsible details for streams & log */}
+                        <details
+                          className="group/details mt-2 rounded-lg border border-white/10 bg-white/5 p-2 transition-all open:bg-black/40"
+                          onToggle={(e) =>
+                            handleDetailsToggle(
+                              r.ip,
+                              (e.currentTarget as HTMLDetailsElement).open
+                            )
+                          }
+                        >
+                          <summary className="flex cursor-pointer select-none items-center justify-between text-[11px] font-semibold text-slate-300 hover:text-white">
+                            Details & URLs
+                            <span className="text-indigo-400 transition-transform group-open/details:rotate-180">▼</span>
+                          </summary>
+                          <div className="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2 text-xs">
+                            {r.resolutions?.length ? (
+                              <div className="flex flex-wrap gap-1">
+                                {r.resolutions.map((res, ridx) => (
+                                  <span key={`grid-res-${ridx}`} className="rounded bg-black/40 border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-slate-300">
+                                    {res.label ?? `${res.width}×${res.height}`}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            {r.streamUris?.map((u, idx) => (
+                              <UrlRow key={`grid-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} />
+                            ))}
+
+                            {r.snapshotUris?.map((u, idx) => (
+                              <UrlRow key={`grid-snap-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} />
+                            ))}
+
+                            <div className="mt-1 text-[10px] text-slate-400">
+                              {r.onvif?.ok ? "ONVIF: OK" : r.onvif ? "ONVIF: Fehler" : "ONVIF: —"} • {r.rtsp?.ok ? "RTSP: OK" : r.rtsp ? "RTSP: Fehler" : "RTSP: —"}
+                            </div>
+                          </div>
+                        </details>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <>
             <div className="mt-4 flex flex-col gap-3 lg:hidden">
               {data.results.map((r) => (
                 <article key={`mobile-${r.ip}`} className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-xl">
@@ -876,6 +1150,11 @@ export default function HomePage() {
                         {r.primaryResolution && (
                           <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
                             <span>📷</span> {r.primaryResolution}
+                          </span>
+                        )}
+                        {r.ptz && (
+                          <span className="rounded bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-500/30 flex items-center gap-1 shadow-sm">
+                            <span>🎮</span> PTZ
                           </span>
                         )}
                         <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
@@ -1023,6 +1302,11 @@ export default function HomePage() {
                                   <span>📷</span> {r.primaryResolution}
                                 </span>
                               )}
+                              {r.ptz && (
+                                <span className="rounded bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-500/30 flex items-center gap-1 shadow-sm">
+                                  <span>🎮</span> PTZ
+                                </span>
+                              )}
                               <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
                                 {r.streamUris?.length ?? 0} Stream
                               </span>
@@ -1154,8 +1438,10 @@ export default function HomePage() {
                     </tr>
                   ))}
                 </tbody>
-            </table>
+              </table>
             </div>
+            </>
+            )}
             {data.warnings?.length ? (
               <div className="mt-4 rounded-lg border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200">
                 <div className="font-medium">Hinweise</div>

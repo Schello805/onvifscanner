@@ -13,6 +13,7 @@ export type ParsedScanRequest = Required<
   cidr?: string;
   ports?: number[];
   credentials?: ScanRequest["credentials"];
+  credentialsList?: ScanRequest["credentialsList"];
   timeoutMs: number;
   concurrency: number;
   deepProbe: boolean;
@@ -49,7 +50,8 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
       deepProbe,
       includeThumbnails,
       acknowledgeAuthorizedNetwork: true,
-      credentials: sanitizeCredentials(body.credentials)
+      credentials: sanitizeCredentials(body.credentials),
+      credentialsList: sanitizeCredentialsList(body.credentialsList)
     };
   }
 
@@ -91,7 +93,8 @@ export function parseScanRequest(input: unknown): ParsedScanRequest {
     deepProbe,
     includeThumbnails,
     acknowledgeAuthorizedNetwork: true,
-    credentials: sanitizeCredentials(body.credentials)
+    credentials: sanitizeCredentials(body.credentials),
+    credentialsList: sanitizeCredentialsList(body.credentialsList)
   };
 }
 
@@ -106,4 +109,18 @@ function sanitizeCredentials(
   if (!username && !password) return undefined;
   if (!username) return undefined;
   return { username, password };
+}
+
+function sanitizeCredentialsList(
+  list: unknown
+): ScanRequest["credentialsList"] | undefined {
+  if (!Array.isArray(list)) return undefined;
+  const out: NonNullable<ScanRequest["credentialsList"]> = [];
+  for (const item of list) {
+    const s = sanitizeCredentials(item);
+    if (s && !out.some((x) => x.username === s.username && x.password === s.password)) {
+      out.push(s);
+    }
+  }
+  return out.length ? out : undefined;
 }

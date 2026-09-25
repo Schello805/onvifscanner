@@ -1,3 +1,5 @@
+import os from "node:os";
+
 function ipv4ToInt(ip: string): number {
   const parts = ip.split(".").map((p) => Number(p));
   if (parts.length !== 4) throw new Error("Invalid IPv4");
@@ -87,4 +89,53 @@ export function isPrivateIpv4(ip: string): boolean {
   } catch {
     return false;
   }
+}
+
+export type DetectedSubnet = {
+  interfaceName: string;
+  ip: string;
+  netmask: string;
+  cidr: string;
+};
+
+export function detectLocalSubnets(): DetectedSubnet[] {
+  const list: DetectedSubnet[] = [];
+  try {
+    const ifaces = os.networkInterfaces();
+    for (const [name, arr] of Object.entries(ifaces)) {
+      if (!arr) continue;
+      for (const info of arr) {
+        if (!info.internal && info.family === "IPv4" && info.address && info.netmask) {
+          try {
+            const ipInt = ipv4ToInt(info.address);
+            const maskInt = ipv4ToInt(info.netmask);
+            const networkInt = (ipInt & maskInt) >>> 0;
+            const networkIp = intToIpv4(networkInt);
+            // Count bits in netmask
+            let bits = 0;
+            let temp = maskInt;
+            while (temp > 0) {
+              bits += temp & 1;
+              temp = temp >>> 1;
+            }
+            const prefix = bits || 24;
+            const cidr = `${networkIp}/${prefix}`;
+            if (isPrivateOnly(cidr)) {
+              list.push({
+                interfaceName: name,
+                ip: info.address,
+                netmask: info.netmask,
+                cidr
+              });
+            }
+          } catch {
+            // ignore invalid parsing
+          }
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return list;
 }

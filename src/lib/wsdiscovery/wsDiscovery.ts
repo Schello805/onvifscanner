@@ -13,6 +13,7 @@ export async function wsDiscoveryProbe(args: {
   discoveryTimeoutMs?: number;
   deepProbe: boolean;
   credentials?: { username: string; password: string };
+  credentialsList?: Array<{ username: string; password: string }>;
   signal?: AbortSignal;
   onProgress?: (done: number, total: number) => void;
   onPhase?: (ev: { type: "phase"; phase: "discovery" | "onvif"; status: "start" | "done"; message?: string }) => void;
@@ -66,7 +67,8 @@ export async function wsDiscoveryProbe(args: {
       ip: item.ip,
       xaddrs: item.xaddrs,
       timeoutMs: args.timeoutMs,
-      credentials: args.credentials
+      credentials: args.credentials,
+      credentialsList: args.credentialsList
     });
     done += 1;
     args.onProgress?.(done, items.length);
