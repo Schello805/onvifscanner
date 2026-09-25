@@ -3,9 +3,11 @@ import crypto from "node:crypto";
 export function buildWsseSecurityHeader(args: {
   username: string;
   password: string;
+  timeOffsetMs?: number;
 }): string {
   const nonce = crypto.randomBytes(16);
-  const created = new Date().toISOString();
+  const now = Date.now() + (args.timeOffsetMs ?? 0);
+  const created = new Date(now).toISOString();
 
   const passwordDigest = crypto
     .createHash("sha1")

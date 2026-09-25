@@ -16,7 +16,9 @@ function parsePorts(input: string): number[] {
 
 function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
   const lines = [`Kamera gefunden: ${r.ip}`];
+  if (r.mac) lines.push(`MAC-Adresse: ${r.mac}`);
   if (r.hostname) lines.push(`DNS/Hostname: ${r.hostname}`);
+  if (r.primaryResolution) lines.push(`Auflösung: ${r.primaryResolution}`);
   if (r.manufacturer || r.model) {
     lines.push(`Gerät: ${[r.manufacturer, r.model].filter(Boolean).join(" · ")}`);
   } else {
@@ -56,6 +58,8 @@ export default function HomePage() {
   const [ack, setAck] = useState(true);
 
   const [loading, setLoading] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ScanResponse | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -255,6 +259,26 @@ export default function HomePage() {
       });
       const src = thumbRes.headers.get("x-thumbnail-source");
       if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
+
+      const imgW = parseInt(thumbRes.headers.get("x-image-width") ?? "0", 10);
+      const imgH = parseInt(thumbRes.headers.get("x-image-height") ?? "0", 10);
+      if (imgW > 0 && imgH > 0) {
+        setData((prev) => {
+          if (!prev?.results) return prev;
+          const updated = prev.results.map((item) => {
+            if (item.ip !== ip) return item;
+            if (item.primaryResolution) return item;
+            const resLabel = `${imgW}×${imgH}`;
+            return {
+              ...item,
+              primaryResolution: resLabel,
+              resolutions: item.resolutions ?? [{ width: imgW, height: imgH, label: resLabel }]
+            };
+          });
+          return { ...prev, results: updated };
+        });
+      }
+
       setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
       thumbSuccessRef.current += 1;
     } catch {
@@ -339,6 +363,8 @@ export default function HomePage() {
     abortRef.current = abortController;
     setError(null);
     setLoading(true);
+    setScanStatus("Scan startet…");
+    setScanProgress(null);
     setData(null);
     setExpandedIps({});
 
@@ -375,17 +401,87 @@ export default function HomePage() {
 
     try {
       resetThumbs();
-      const res = await fetch(apiUrl("/api/scan"), {
+      const res = await fetch(apiUrl("/api/scan/stream"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(request),
         signal: abortController.signal
       });
-      const json = (await res.json().catch(() => ({}))) as ScanResponse;
-      if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
-      setData(json);
-      indexResultsForThumbs(json);
-      enqueueInitialThumbs(json);
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error ?? `Scan fehlgeschlagen (HTTP ${res.status}).`);
+      }
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("text/event-stream") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.type === "item" && event.item?.ip) {
+                  const item: ScanResult = event.item;
+                  setData((prev) => {
+                    const existingResults = prev?.results ? [...prev.results] : [];
+                    const idx = existingResults.findIndex((x) => x.ip === item.ip);
+                    if (idx >= 0) {
+                      existingResults[idx] = { ...existingResults[idx], ...item };
+                    } else {
+                      existingResults.push(item);
+                    }
+                    const updatedResponse: ScanResponse = {
+                      meta: prev?.meta ?? { mode: "auto", startedAt: new Date().toISOString(), durationMs: 0 },
+                      results: existingResults,
+                      warnings: prev?.warnings
+                    };
+                    indexResultsForThumbs(updatedResponse);
+                    if (!thumbnailsOnExpandOnly) {
+                      enqueueThumb(item.ip);
+                    }
+                    return updatedResponse;
+                  });
+                } else if (event.type === "progress") {
+                  if (event.total > 0) {
+                    setScanProgress({ done: event.done, total: event.total, phase: event.phase });
+                  }
+                  if (event.message && event.message !== "ping") {
+                    setScanStatus(event.message);
+                  }
+                } else if (event.type === "phase") {
+                  if (event.message) {
+                    setScanStatus(event.message);
+                  }
+                } else if (event.type === "result") {
+                  setData(event.result);
+                  indexResultsForThumbs(event.result);
+                  enqueueInitialThumbs(event.result);
+                } else if (event.type === "error") {
+                  setError(event.error);
+                }
+              } catch {
+                // ignore partial JSON chunk
+              }
+            }
+          }
+        }
+      } else {
+        const json = (await res.json().catch(() => ({}))) as ScanResponse;
+        if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
+        setData(json);
+        indexResultsForThumbs(json);
+        enqueueInitialThumbs(json);
+      }
     } catch (e) {
       if (abortController.signal.aborted) {
         setError("Scan abgebrochen.");
@@ -394,6 +490,8 @@ export default function HomePage() {
       }
     } finally {
       setLoading(false);
+      setScanStatus(null);
+      setScanProgress(null);
     }
   }
 
@@ -680,8 +778,36 @@ export default function HomePage() {
                </div>
 
                {loading ? (
-                 <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs text-slate-300">
-                   Scan läuft… (Safari-kompatibler Modus ohne Live-Streaming)
+                 <div className="mt-4 overflow-hidden rounded-xl border border-indigo-500/30 bg-slate-950/60 p-4 shadow-xl backdrop-blur-md">
+                   <div className="flex items-center justify-between gap-3 text-xs">
+                     <div className="flex items-center gap-2 font-medium text-indigo-300">
+                       <span className="relative flex h-2.5 w-2.5">
+                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
+                         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                       </span>
+                       <span>{scanStatus ?? "Scan läuft…"}</span>
+                     </div>
+                     {scanProgress && scanProgress.total > 0 ? (
+                       <span className="font-mono text-[11px] font-bold text-slate-400">
+                         {Math.round((scanProgress.done / scanProgress.total) * 100)}% ({scanProgress.done}/{scanProgress.total})
+                       </span>
+                     ) : (
+                       <span className="text-[11px] text-slate-500">{data?.results.length ?? 0} Kamera(s) gefunden</span>
+                     )}
+                   </div>
+
+                   {scanProgress && scanProgress.total > 0 ? (
+                     <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                       <div
+                         className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 transition-all duration-300"
+                         style={{ width: `${Math.min(100, Math.max(3, (scanProgress.done / scanProgress.total) * 100))}%` }}
+                       />
+                     </div>
+                   ) : (
+                     <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                       <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" />
+                     </div>
+                   )}
                  </div>
                ) : null}
 	          </div>
@@ -699,10 +825,10 @@ export default function HomePage() {
         <div className="relative z-10">
           <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">Ergebnisse</h2>
-            {data?.meta ? (
+            {data?.results ? (
               <div className="flex w-full flex-wrap items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)] sm:w-auto sm:rounded-full sm:py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                {data.results.length} Gerät(e) • {data.meta.durationMs}ms
+                <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"}`}></span>
+                {data.results.length} Gerät(e) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
                 {includeThumbnails ? (
                   <span className="text-slate-300/80">
                     • Preview{" "}
@@ -712,7 +838,7 @@ export default function HomePage() {
                 ) : null}
               </div>
             ) : (
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">Warte auf Eingabe</div>
+              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">{loading ? "Scan läuft…" : "Warte auf Eingabe"}</div>
             )}
           </div>
 
@@ -732,14 +858,26 @@ export default function HomePage() {
                   <div className="flex gap-3">
                     <PreviewThumb result={r} compact />
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono text-base text-slate-100">{r.ip}</div>
+                      <div className="font-mono text-base text-slate-100 flex flex-wrap items-center gap-2">
+                        <span>{r.ip}</span>
+                        {r.mac && (
+                          <span className="rounded bg-slate-800/80 px-1.5 py-0.2 font-mono text-[10px] text-slate-400 border border-slate-700/50">
+                            {r.mac}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 truncate text-xs text-slate-500">
                         {r.hostname ?? "Hostname unbekannt"}
                       </div>
                       <div className="mt-2 text-sm font-semibold text-white">
                         {[r.manufacturer, r.model].filter(Boolean).join(" ") || "Unbekannt"}
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {r.primaryResolution && (
+                          <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                            <span>📷</span> {r.primaryResolution}
+                          </span>
+                        )}
                         <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
                           {r.streamUris?.length ?? 0} Stream
                         </span>
@@ -782,6 +920,24 @@ export default function HomePage() {
                               : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
                           : "RTSP: —"}
                       </div>
+
+                      {r.resolutions?.length ? (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-300">Profile & Auflösungen</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {r.resolutions.map((res, ridx) => (
+                              <span
+                                key={`mob-res-${ridx}-${res.width}x${res.height}`}
+                                className="rounded bg-black/40 border border-white/10 px-2 py-0.5 text-[11px] font-mono text-slate-300 flex items-center gap-1.5"
+                              >
+                                <span className="font-semibold text-white">{res.label ?? `${res.width}×${res.height}`}</span>
+                                {res.encoding && <span className="text-[9px] text-amber-300 uppercase">{res.encoding}</span>}
+                                {res.fps ? <span className="text-[9px] text-slate-400">{res.fps}fps</span> : null}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="flex flex-col gap-2">
                         <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">Stream & Snapshot URLs</div>
@@ -845,6 +1001,11 @@ export default function HomePage() {
                         <div className="mt-1 text-xs text-slate-500 font-medium">
                           {r.hostname ?? "Hostname unbekannt"}
                         </div>
+                        {r.mac && (
+                          <div className="mt-1 font-mono text-[11px] text-slate-400">
+                            MAC: {r.mac}
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-4 align-middle">
@@ -856,7 +1017,12 @@ export default function HomePage() {
 	                          ) : (
 	                            <span className="text-sm font-medium text-slate-500">Unbekannt</span>
 	                          )}
-	                          <div className="flex items-center gap-2">
+	                          <div className="flex flex-wrap items-center gap-2">
+                              {r.primaryResolution && (
+                                <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 shadow-sm">
+                                  <span>📷</span> {r.primaryResolution}
+                                </span>
+                              )}
                               <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
                                 {r.streamUris?.length ?? 0} Stream
                               </span>
@@ -904,6 +1070,27 @@ export default function HomePage() {
                                   : "RTSP: —"}
                               </div>
                             </div>
+
+                            {/* Resolutions / Profiles */}
+                            {r.resolutions?.length ? (
+                              <div className="flex flex-col gap-2">
+                                <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-300 pb-0.5">
+                                  Erkannte Auflösungen & Profile
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {r.resolutions.map((res, ridx) => (
+                                    <span
+                                      key={`desk-res-${ridx}-${res.width}x${res.height}`}
+                                      className="rounded-lg bg-black/40 border border-white/10 px-2.5 py-1 text-xs font-mono text-slate-300 flex items-center gap-2"
+                                    >
+                                      <span className="font-semibold text-white">{res.label ?? `${res.width}×${res.height}`}</span>
+                                      {res.encoding && <span className="text-[10px] text-amber-300 uppercase">{res.encoding}</span>}
+                                      {res.fps ? <span className="text-[10px] text-slate-400">{res.fps} fps</span> : null}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
 
                             {/* Media / Streams */}
                             <div className="flex flex-col gap-2.5">

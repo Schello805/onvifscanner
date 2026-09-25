@@ -1,5 +1,6 @@
 import dgram from "node:dgram";
 import crypto from "node:crypto";
+import os from "node:os";
 import type { ScanResult } from "@/lib/types";
 import { mapLimit } from "@/lib/util/mapLimit";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
@@ -123,15 +124,32 @@ async function wsDiscoveryRaw(
     });
 
     socket.bind(0, () => {
-      socket.setBroadcast(true);
-      socket.setMulticastTTL(2);
-      socket.send(probe, WS_DISCOVERY_PORT, WS_DISCOVERY_ADDRESS, (err) => {
-        if (err) {
-          clearTimeout(t);
-          socket.close();
-          reject(err);
+      try {
+        socket.setBroadcast(true);
+        socket.setMulticastTTL(2);
+      } catch {
+        // ignore
+      }
+
+      // Default route multicast + broadcast
+      socket.send(probe, WS_DISCOVERY_PORT, WS_DISCOVERY_ADDRESS, () => {});
+      socket.send(probe, WS_DISCOVERY_PORT, "255.255.255.255", () => {});
+
+      // Probe explicitly on every local non-internal IPv4 interface (VLANs, multi-NIC)
+      const ifaces = getLocalIpv4Interfaces();
+      for (const iface of ifaces) {
+        try {
+          socket.setMulticastInterface(iface.address);
+          socket.send(probe, WS_DISCOVERY_PORT, WS_DISCOVERY_ADDRESS, () => {});
+        } catch {
+          // ignore interfaces that do not support multicast
         }
-      });
+        try {
+          socket.addMembership(WS_DISCOVERY_ADDRESS, iface.address);
+        } catch {
+          // ignore
+        }
+      }
     });
   });
 
@@ -197,4 +215,22 @@ function cryptoRandomUuid(): string {
     16,
     20
   )}-${hex.slice(20)}`;
+}
+
+function getLocalIpv4Interfaces(): Array<{ address: string }> {
+  const list: Array<{ address: string }> = [];
+  try {
+    const ifaces = os.networkInterfaces();
+    for (const arr of Object.values(ifaces)) {
+      if (!arr) continue;
+      for (const info of arr) {
+        if (!info.internal && info.family === "IPv4" && info.address) {
+          list.push({ address: info.address });
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return list;
 }

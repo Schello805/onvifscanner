@@ -5,10 +5,23 @@ export type Credentials = {
   password: string;
 };
 
+export type CameraResolution = {
+  width: number;
+  height: number;
+  label?: string;
+  encoding?: string;
+  fps?: number;
+};
+
 export type OnvifUri = {
   profileToken?: string;
   profileName?: string;
   uri: string;
+  resolution?: string;
+  width?: number;
+  height?: number;
+  encoding?: string;
+  fps?: number;
 };
 
 export type ScanRequest = {
@@ -72,9 +85,12 @@ export type VendorUrlResult = {
 
 export type ScanResult = {
   ip: string;
+  mac?: string;
   hostname?: string;
   manufacturer?: string;
   model?: string;
+  resolutions?: CameraResolution[];
+  primaryResolution?: string;
   streamUris?: string[];
   snapshotUris?: string[];
   openTcpPorts?: number[];

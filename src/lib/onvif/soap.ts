@@ -8,12 +8,14 @@ export async function onvifSoapCall(args: {
   body: string;
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  timeOffsetMs?: number;
 }): Promise<{ ok: boolean; status: number; text: string; soap: "1.2" | "1.1" }> {
   const wsse =
     args.credentials?.username
       ? buildWsseSecurityHeader({
           username: args.credentials.username,
-          password: args.credentials.password
+          password: args.credentials.password,
+          timeOffsetMs: args.timeOffsetMs
         })
       : undefined;
   const wsa = buildWsAddressingHeader({ action: args.action, to: args.url });

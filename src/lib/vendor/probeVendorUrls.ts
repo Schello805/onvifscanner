@@ -66,7 +66,10 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (probe.ok || (profile.id !== "generic" && probe.exists)) {
+      const isMatched =
+        probe.ok ||
+        (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
+      if (isMatched) {
         snapshotUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
         log.push(`${probe.ok ? "Snapshot OK" : "Snapshot-Endpunkt erkannt (Login nötig)"}: ${url}`);
@@ -85,7 +88,10 @@ export async function probeVendorUrls(args: {
         signal: args.signal,
         log
       });
-      if (probe.ok || (profile.id !== "generic" && probe.exists)) {
+      const isMatchedStream =
+        probe.ok ||
+        (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
+      if (isMatchedStream) {
         httpStreamUris.push(withReolinkQueryCredentials(url, args.credentials));
         profileHit = true;
         log.push(`${probe.ok ? "HTTP stream OK" : "HTTP-Stream-Endpunkt erkannt (Login nötig)"}: ${url}`);
@@ -192,7 +198,7 @@ async function probeHttpUrl(args: {
   credentials?: { username: string; password: string };
   signal?: AbortSignal;
   log: string[];
-}): Promise<{ ok: boolean; exists: boolean; status?: number }> {
+}): Promise<{ ok: boolean; exists: boolean; vendorVerified?: boolean; status?: number }> {
   let res: Response;
   try {
     res = await fetchWithDigestAuth({
@@ -216,29 +222,45 @@ async function probeHttpUrl(args: {
 
   args.log.push(`HTTP ${res.status}: ${args.url}`);
   const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+  const server = (res.headers.get("server") ?? "").toLowerCase();
+  const www = (res.headers.get("www-authenticate") ?? "").toLowerCase();
+
+  // Signature check: does the HTTP response show evidence of being an IP camera daemon?
+  const vendorVerified =
+    server.includes("webs") ||
+    server.includes("hikvision") ||
+    server.includes("dh_web") ||
+    server.includes("dahua") ||
+    server.includes("reolink") ||
+    server.includes("axis") ||
+    server.includes("foscam") ||
+    server.includes("ipc") ||
+    server.includes("uc-httpd") ||
+    www.includes("ip camera") ||
+    www.includes("isapi") ||
+    www.includes("dahua") ||
+    www.includes("axis");
+
   try {
     await res.body?.cancel();
   } catch {
     // ignore
   }
-  const exists = res.ok || res.status === 401 || res.status === 403;
-  if (!res.ok) return { ok: false, exists, status: res.status };
-  if (args.purpose === "snapshot") {
-    return {
-      ok: contentType.startsWith("image/") || contentType.includes("jpeg"),
-      exists,
-      status: res.status
-    };
+
+  const isImage = contentType.startsWith("image/") || contentType.includes("jpeg");
+  const isStream =
+    contentType.startsWith("image/") ||
+    contentType.includes("multipart") ||
+    contentType.includes("mjpeg") ||
+    contentType.includes("octet-stream");
+
+  const mediaOk = args.purpose === "snapshot" ? isImage : isStream;
+  if (res.ok && mediaOk) {
+    return { ok: true, exists: true, vendorVerified: true, status: res.status };
   }
-  return {
-    ok:
-      contentType.startsWith("image/") ||
-      contentType.includes("multipart") ||
-      contentType.includes("mjpeg") ||
-      contentType.includes("octet-stream"),
-    exists,
-    status: res.status
-  };
+
+  const exists = res.status === 401 || res.status === 403;
+  return { ok: false, exists, vendorVerified, status: res.status };
 }
 
 function vendorManufacturer(label: string): string {
@@ -268,14 +290,47 @@ async function probeHikvisionDeviceInfo(args: {
       }
     });
     args.log.push(`DeviceInfo HTTP ${res.status}: ${url}`);
-    const exists = res.ok || res.status === 401 || res.status === 403;
-    if (!res.ok) return { exists };
-    const text = await res.text();
-    return {
-      exists,
-      model: extractXmlText(text, "model") ?? extractXmlText(text, "deviceModel"),
-      hostname: extractXmlText(text, "deviceName") ?? extractXmlText(text, "hostName")
-    };
+    const server = (res.headers.get("server") ?? "").toLowerCase();
+    const www = (res.headers.get("www-authenticate") ?? "").toLowerCase();
+    const isHikSignature =
+      server.includes("webs") ||
+      server.includes("hikvision") ||
+      server.includes("app-webs") ||
+      www.includes("ip camera") ||
+      www.includes("hikvision") ||
+      www.includes("isapi");
+
+    if (res.ok) {
+      const text = await res.text();
+      const hasXml =
+        text.includes("<DeviceInfo") ||
+        text.includes("<model") ||
+        text.includes("<deviceModel") ||
+        text.includes("<serialNumber");
+      if (hasXml) {
+        return {
+          exists: true,
+          model: extractXmlText(text, "model") ?? extractXmlText(text, "deviceModel"),
+          hostname: extractXmlText(text, "deviceName") ?? extractXmlText(text, "hostName")
+        };
+      }
+      return { exists: isHikSignature };
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      if (isHikSignature) {
+        return { exists: true };
+      }
+      try {
+        const text = await res.text();
+        if (text.includes("ResponseStatus") || text.includes("subStatusCode")) {
+          return { exists: true };
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return { exists: false };
   } catch (e) {
     args.log.push(`DeviceInfo failed: ${e instanceof Error ? e.message : String(e)}`);
     return { exists: false };

@@ -57,7 +57,7 @@ function releaseSlot() {
   if (next) next();
 }
 
-type CacheEntry = { ts: number; bytes: Buffer; contentType: string };
+type CacheEntry = { ts: number; bytes: Buffer; contentType: string; width?: number; height?: number };
 const cache = new Map<string, CacheEntry>();
 const CACHE_MAX_ENTRIES = clampInt(process.env.THUMBNAIL_CACHE_MAX_ENTRIES ?? 256, 0, 2048);
 
@@ -139,7 +139,9 @@ export async function POST(req: Request) {
           headers: {
             "content-type": cached.contentType,
             "cache-control": "no-store",
-            "x-thumbnail-source": url.toString()
+            "x-thumbnail-source": url.toString(),
+            "x-image-width": String(cached.width ?? 0),
+            "x-image-height": String(cached.height ?? 0)
           }
         });
       }
@@ -197,13 +199,29 @@ export async function POST(req: Request) {
       const sharp = await getSharp();
       configureSharpOnce(sharp);
 
+      let origWidth = 0;
+      let origHeight = 0;
+      try {
+        const meta = await sharp(input).metadata();
+        origWidth = meta.width ?? 0;
+        origHeight = meta.height ?? 0;
+      } catch {
+        // ignore
+      }
+
       const output = await sharp(input, { limitInputPixels: 32_000_000 })
         .rotate()
         .resize(size, size, { fit: "cover" })
         .jpeg({ quality: 65, mozjpeg: true })
         .toBuffer();
 
-      cache.set(cacheKey, { ts: Date.now(), bytes: output, contentType: "image/jpeg" });
+      cache.set(cacheKey, {
+        ts: Date.now(),
+        bytes: output,
+        contentType: "image/jpeg",
+        width: origWidth,
+        height: origHeight
+      });
       if (CACHE_MAX_ENTRIES > 0 && cache.size > CACHE_MAX_ENTRIES) {
         // Drop the oldest entry (in insertion order) to keep memory bounded.
         const firstKey = cache.keys().next().value as string | undefined;
@@ -215,7 +233,9 @@ export async function POST(req: Request) {
         headers: {
           "content-type": "image/jpeg",
           "cache-control": "no-store",
-          "x-thumbnail-source": url.toString()
+          "x-thumbnail-source": url.toString(),
+          "x-image-width": String(origWidth),
+          "x-image-height": String(origHeight)
         }
       });
     }
