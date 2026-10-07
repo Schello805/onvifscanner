@@ -300,7 +300,10 @@ export default function CameraWallPage() {
                   {image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all ${image.state === "error" ? "opacity-30 grayscale" : ""}`} />
+                      <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all duration-500 ${
+                        image.state === "error" ? "opacity-30 grayscale" : 
+                        image.state === "loading" ? "opacity-60 contrast-75 saturate-50" : ""
+                      }`} />
                       {image.state === "error" && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
                            {image.message === "AUTH_REQUIRED" ? (
