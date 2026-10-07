@@ -1,5 +1,11 @@
 const { createServer } = require("http");
 const next = require("next");
+
+// Force absolute path for Prisma to avoid Next.js bundling path issues
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = "file:" + require("path").join(__dirname, "data", "onvifscanner.db");
+}
+
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");

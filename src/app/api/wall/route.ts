@@ -13,7 +13,7 @@ export async function GET() {
   try {
     const dbCameras = await prisma.camera.findMany({
       include: { status: true },
-      orderBy: { savedAt: "asc" }
+      orderBy: { sortOrder: "asc" }
     });
 
     const settings = await prisma.settings.findUnique({
@@ -121,8 +121,6 @@ export async function POST(req: Request) {
       // 3. Upsert incoming cameras
       for (let i = 0; i < body.cameras.length; i++) {
         const cam = body.cameras[i];
-        // Ensure order is preserved by updating savedAt
-        const sortDate = new Date(Date.now() + i * 1000);
         await prisma.camera.upsert({
           where: { id: cam.id },
           update: {
@@ -136,7 +134,7 @@ export async function POST(req: Request) {
             username: cam.credentials?.username,
             password: cam.credentials?.password,
             overlayPosition: cam.overlayPosition,
-            savedAt: sortDate,
+            sortOrder: i,
           },
           create: {
             id: cam.id,
@@ -150,7 +148,7 @@ export async function POST(req: Request) {
             username: cam.credentials?.username,
             password: cam.credentials?.password,
             overlayPosition: cam.overlayPosition,
-            savedAt: sortDate,
+            sortOrder: i,
             status: {
               create: {
                 isOnline: true

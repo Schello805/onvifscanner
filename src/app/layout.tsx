@@ -4,6 +4,7 @@ import Image from "next/image";
 import "./globals.css";
 import pkg from "../../package.json";
 import { VersionStatus } from "./VersionStatus";
+import { SplashScreen } from "@/components/SplashScreen";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="de" data-theme="dracula">
       <body>
+        <SplashScreen />
         <div className="min-h-screen">
           <header className="border-b border-slate-800/70">
             <div className="mx-auto flex w-[90%] max-w-none items-center justify-between px-5 py-4">

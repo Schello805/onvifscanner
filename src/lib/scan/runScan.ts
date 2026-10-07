@@ -461,8 +461,27 @@ function finalizeCameraResult(result: ScanResult) {
   result.model = info?.model ?? result.vendor?.deviceInformation?.model ?? result.model;
   result.hostname = info?.hostname ?? result.vendor?.deviceInformation?.hostname ?? result.hostname;
   result.ptz = Boolean(result.onvif?.ptz);
+  const sortedOnvifRtspUris = [...(result.onvif?.rtspUris ?? [])].sort((a, b) => {
+    // MediaMTX WebRTC doesn't support H265 natively, so we prefer H264.
+    const encA = (a.encoding || "").toUpperCase();
+    const encB = (b.encoding || "").toUpperCase();
+    
+    // Higher score means higher priority
+    const scoreA = encA === "H264" ? 2 : encA === "H265" ? 0 : 1;
+    const scoreB = encB === "H264" ? 2 : encB === "H265" ? 0 : 1;
+    
+    if (scoreA !== scoreB) {
+      return scoreB - scoreA;
+    }
+    
+    // Fallback: prefer higher resolution if same encoding
+    const pixelsA = (a.width || 0) * (a.height || 0);
+    const pixelsB = (b.width || 0) * (b.height || 0);
+    return pixelsB - pixelsA;
+  });
+
   result.streamUris = unique([
-    ...(result.onvif?.rtspUris?.map((u) => u.uri) ?? []),
+    ...sortedOnvifRtspUris.map((u) => u.uri),
     ...(result.vendor?.rtspUris ?? []),
     ...(result.vendor?.httpStreamUris ?? []),
     ...(result.rtsp?.uris ?? [])

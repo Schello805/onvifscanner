@@ -20,6 +20,7 @@ model Camera {
   password        String?
   overlayPosition String?
   savedAt         DateTime @default(now())
+  sortOrder       Int      @default(0)
   
   status          DeviceStatus?
   alarms          AlarmLog[]
