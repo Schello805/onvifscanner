@@ -39,6 +39,11 @@ export default function CameraWallPage() {
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
+  const liveCamerasRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    liveCamerasRef.current = liveCameras;
+  }, [liveCameras]);
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
@@ -80,12 +85,20 @@ export default function CameraWallPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editingCameraId]);
 
-  const loadCamera = useCallback(async (camera: WallCamera, isLive = false) => {
+  const loadCamera = useCallback(async (camera: WallCamera) => {
     if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
-    runningRef.current.add(camera.id);
-    if (!isLive) {
-      setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
+    
+    // Don't hammer the API if the background ping detected it as offline
+    if (camera.status?.isOnline === false) {
+       setImages((current) => ({
+         ...current,
+         [camera.id]: { ...current[camera.id], state: "error", message: "Kamera ist offline" }
+       }));
+       return;
     }
+
+    runningRef.current.add(camera.id);
+    setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
 
     try {
       const controller = new AbortController();
@@ -141,14 +154,20 @@ export default function CameraWallPage() {
     }
   }, []);
 
-  const refreshAll = useCallback(() => {
-    loadWallData().then(data => setCameras(data.cameras));
-    cameras.forEach((camera, index) => {
-      // Verzögere jeden Aufruf um 400ms * Index, um den Server (v.a. Raspberry Pi)
-      // nicht mit z.B. 16 gleichzeitigen RTSP/Snapshot-Verbindungen zu überlasten.
-      window.setTimeout(() => void loadCamera(camera), index * 400);
-    });
-  }, [cameras, loadCamera]);
+  const refreshAll = useCallback(async () => {
+    try {
+      const data = await loadWallData();
+      setCameras(data.cameras);
+      data.cameras.forEach((camera, index) => {
+        // Skip snapshot refresh if WebRTC stream is active
+        if (liveCamerasRef.current.has(camera.id)) return;
+        
+        window.setTimeout(() => void loadCamera(camera), index * 400);
+      });
+    } catch (e) {
+      console.error("Failed to refresh wall data", e);
+    }
+  }, [loadCamera]);
 
   useEffect(() => {
     // In Phase 3 (MediaMTX), we no longer need to poll snapshots at 1fps
