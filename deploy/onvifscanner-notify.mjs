@@ -64,7 +64,7 @@ async function waitForHealth(timeoutMs = 60_000) {
 
 const child = spawn(
   "/usr/bin/node",
-  ["node_modules/next/dist/bin/next", "start", "-H", HOST, "-p", String(PORT)],
+  ["server.js"],
   {
     cwd: APP_DIR,
     env: process.env,
@@ -121,4 +121,3 @@ child.on("exit", (code, signal) => {
   if (!shuttingDown) notify(`STATUS=Exited (${signal ?? code ?? 0})\n`);
   process.exitCode = code ?? (signal ? 1 : 0);
 });
-

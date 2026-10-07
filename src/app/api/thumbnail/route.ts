@@ -15,6 +15,7 @@ type Body = {
   size?: number;
   timeoutMs?: number;
   fastAuth?: boolean;
+  fresh?: boolean;
   credentials?: { username: string; password: string };
 };
 
@@ -153,7 +154,7 @@ export async function POST(req: Request) {
     for (const url of parsedCandidates) {
       const cacheKey = `${url.toString()}|s=${size}|u=${body.credentials?.username ?? ""}`;
       const cached = cache.get(cacheKey);
-      if (cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
+      if (!body.fresh && cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
         return new NextResponse(cached.bytes as unknown as BodyInit, {
           status: 200,
           headers: {
@@ -181,8 +182,8 @@ export async function POST(req: Request) {
           let rtspUrl = url.toString();
           if (body.credentials?.username) {
             const authUrl = new URL(rtspUrl);
-            authUrl.username = encodeURIComponent(body.credentials.username);
-            authUrl.password = encodeURIComponent(body.credentials.password ?? "");
+            authUrl.username = body.credentials.username;
+            authUrl.password = body.credentials.password ?? "";
             rtspUrl = authUrl.toString();
           }
           const args = [

@@ -1011,7 +1011,7 @@ export default function HomePage() {
                   type="button"
                   onClick={() => saveToWall(data.results)}
                   className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
-                  title="Alle gefundenen Kameras in diesem Browser speichern"
+                  title="Alle gefundenen Kameras in der lokalen Kamera-Wall speichern"
                 >
                   <span>＋</span>
                   <span>Alle zur Wall</span>

@@ -1,5 +1,4 @@
 const { createServer } = require("http");
-const { parse } = require("url");
 const next = require("next");
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -13,30 +12,36 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
-  createServer(async (req, res) => {
+  let mediaMtx = null;
+  const server = createServer(async (req, res) => {
     try {
-      const parsedUrl = parse(req.url, true);
-      await handle(req, res, parsedUrl);
+      await handle(req, res);
     } catch (err) {
       console.error("Error occurred handling", req.url, err);
       res.statusCode = 500;
       res.end("internal server error");
     }
-  })
+  });
+
+  server
     .once("error", (err) => {
       console.error(err);
       process.exit(1);
     })
-    .listen(port, () => {
+    .listen(port, hostname, () => {
       console.log(`> Ready on http://${hostname}:${port}`);
       
       // Start MediaMTX if it exists
       const mediamtxPath = path.join(__dirname, "mediamtx");
       if (fs.existsSync(mediamtxPath)) {
         console.log("🚀 Starting MediaMTX...");
-        const mtx = spawn(mediamtxPath, [], { stdio: "ignore" });
-        mtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
-        mtx.on("exit", (code) => console.log("MediaMTX exited with code", code));
+        const configPath = path.join(__dirname, "mediamtx.yml");
+        mediaMtx = spawn(mediamtxPath, fs.existsSync(configPath) ? [configPath] : [], {
+          cwd: __dirname,
+          stdio: "inherit"
+        });
+        mediaMtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
+        mediaMtx.on("exit", (code) => console.log("MediaMTX exited with code", code));
       }
 
       // Start Background Services
@@ -47,4 +52,16 @@ app.prepare().then(() => {
         console.error("Failed to start background monitor:", err);
       }
     });
+
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`Shutting down (${signal})...`);
+    if (mediaMtx && !mediaMtx.killed) mediaMtx.kill("SIGTERM");
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 });

@@ -36,12 +36,16 @@ export default function CameraWallPage() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
+  const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
+  const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
+  const [liveLoading, setLiveLoading] = useState<Set<string>>(new Set());
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
   const liveCamerasRef = useRef<Set<string>>(new Set());
+  const initialRefreshDoneRef = useRef(false);
 
   useEffect(() => {
     liveCamerasRef.current = liveCameras;
@@ -114,6 +118,7 @@ export default function CameraWallPage() {
           size: 512,
           timeoutMs: 3000,
           fastAuth: true,
+          fresh: true,
           credentials: camera.credentials
         }),
         signal: controller.signal
@@ -172,14 +177,12 @@ export default function CameraWallPage() {
   }, [loadCamera]);
 
   useEffect(() => {
-    // In Phase 3 (MediaMTX), we no longer need to poll snapshots at 1fps
-    // The WebRTC iframe handles real-time streaming directly.
-  }, [cameras, liveCameras, loadCamera]);
-
-  useEffect(() => {
-    if (!cameras.length) return;
-    refreshAll();
-  }, [cameras, refreshAll]);
+    if (!cameras.length || initialRefreshDoneRef.current) return;
+    initialRefreshDoneRef.current = true;
+    cameras.forEach((camera, index) => {
+      window.setTimeout(() => void loadCamera(camera), index * 400);
+    });
+  }, [cameras, loadCamera]);
 
   useEffect(() => {
     if (refreshSeconds <= 0 || !cameras.length) return;
@@ -264,13 +267,42 @@ export default function CameraWallPage() {
     if (document.fullscreenElement) await document.exitFullscreen();
   }
 
-  function toggleLive(cameraId: string) {
-    setLiveCameras((current) => {
-      const next = new Set(current);
-      if (next.has(cameraId)) next.delete(cameraId);
-      else next.add(cameraId);
-      return next;
-    });
+  async function toggleLive(cameraId: string) {
+    if (liveCameras.has(cameraId)) {
+      setLiveCameras((current) => {
+        const next = new Set(current);
+        next.delete(cameraId);
+        return next;
+      });
+      return;
+    }
+
+    setLiveErrors((current) => ({ ...current, [cameraId]: "" }));
+    setLiveLoading((current) => new Set(current).add(cameraId));
+    try {
+      const response = await fetch(apiUrl("/api/stream/prepare"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cameraId })
+      });
+      const result = (await response.json().catch(() => null)) as { playbackUrl?: string; error?: string } | null;
+      if (!response.ok || !result?.playbackUrl) {
+        throw new Error(result?.error ?? `Live-Stream konnte nicht gestartet werden (HTTP ${response.status}).`);
+      }
+      setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
+      setLiveCameras((current) => new Set(current).add(cameraId));
+    } catch (error) {
+      setLiveErrors((current) => ({
+        ...current,
+        [cameraId]: error instanceof Error ? error.message : "Live-Stream konnte nicht gestartet werden."
+      }));
+    } finally {
+      setLiveLoading((current) => {
+        const next = new Set(current);
+        next.delete(cameraId);
+        return next;
+      });
+    }
   }
 
   return (
@@ -314,7 +346,7 @@ export default function CameraWallPage() {
           </div>
         </div>
         {cameras.some((camera) => camera.credentials) ? (
-          <p className="mt-3 text-[11px] text-amber-200/70">Zugangsdaten für geschützte Snapshots sind ausschließlich in diesem Browser gespeichert.</p>
+          <p className="mt-3 text-[11px] text-amber-200/70">Zugangsdaten werden ausschließlich lokal auf diesem ONVIFscanner-Server gespeichert.</p>
         ) : null}
       </div>
 
@@ -372,9 +404,10 @@ export default function CameraWallPage() {
                 <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
                   {isLive ? (
                      <iframe 
-                        src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8889/${camera.id}`}
+                        src={livePlaybackUrls[camera.id]}
+                        title={`Live-Stream ${camera.name}`}
                         className="w-full h-full border-0 aspect-video object-cover"
-                        allow="autoplay; fullscreen; microphone; camera"
+                        allow="autoplay; fullscreen"
                      />
                   ) : image?.src ? (
                     <>
@@ -433,11 +466,12 @@ export default function CameraWallPage() {
 
                 {!isFullscreen || controlsVisible ? (
                   <div className="bg-slate-950 p-2 sm:p-3 flex items-center justify-between border-t border-white/10">
-                    <div>
-                      <button type="button" onClick={() => toggleLive(camera.id)} className={`rounded px-2 py-1 text-xs font-semibold transition-colors ${isLive ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Live-Stream an/aus">
-                        <span className="sm:hidden">{isLive ? "■" : "▶"}</span>
-                        <span className="hidden sm:inline">{isLive ? "■ Stop" : "▶ Live"}</span>
+                    <div className="min-w-0">
+                      <button type="button" disabled={liveLoading.has(camera.id)} onClick={() => void toggleLive(camera.id)} className={`rounded px-2 py-1 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${isLive ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Live-Stream an/aus">
+                        <span className="sm:hidden">{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
+                        <span className="hidden sm:inline">{liveLoading.has(camera.id) ? "Wird vorbereitet…" : isLive ? "■ Stop" : "▶ Live"}</span>
                       </button>
+                      {liveErrors[camera.id] ? <div className="mt-1 max-w-72 truncate text-[10px] text-red-300" title={liveErrors[camera.id]}>{liveErrors[camera.id]}</div> : null}
                     </div>
                     <div className="flex gap-1">
                       <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-900/50 px-2 py-1 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
@@ -490,7 +524,7 @@ export default function CameraWallPage() {
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                 <div className="mb-3">
                   <div className="text-xs font-semibold text-slate-200">Zugangsdaten</div>
-                  <div className="mt-0.5 text-[11px] text-amber-200/70">Werden ausschließlich im lokalen Speicher dieses Browsers abgelegt.</div>
+                  <div className="mt-0.5 text-[11px] text-amber-200/70">Werden ausschließlich lokal auf diesem ONVIFscanner-Server abgelegt.</div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="grid gap-1.5">

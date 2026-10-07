@@ -23,7 +23,7 @@ ensure_packages() {
     ca-certificates curl git gnupg \
     build-essential python3 make g++ pkg-config \
     libvips libvips-dev \
-    libc6
+    libc6 ffmpeg
 }
 
 install_node20() {
@@ -99,6 +99,8 @@ EOF
 
 build_app() {
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  APP_DIR="$APP_DIR" APP_USER="$APP_USER" bash "$APP_DIR/scripts/debian-lxc/setup-media.sh"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm run build"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
   if [[ "$RUN_NPM_AUDIT" == "true" ]]; then

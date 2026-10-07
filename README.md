@@ -14,7 +14,8 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Responsive UI**: Desktop-Tabelle und Smartphone-Kartenlayout für bessere Bedienung unterwegs.
 - **Auto-Korrektur von Kamera-IPs**: Behebt das Problem falscher lokaler IPs, die von Kameras in RTSP-Links gemeldet werden.
 - **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
-- **Kamera-Wall**: Speichert Scan-Ergebnisse lokal im Browser und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
+- **Kamera-Wall**: Speichert Scan-Ergebnisse lokal auf dem ONVIFscanner-Server und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
+- **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 
@@ -46,7 +47,9 @@ Nach einem Scan können einzelne Kameras oder alle Ergebnisse über `+ Wall` bzw
 - Bearbeiten von Anzeigename, Snapshot-/Stream-URLs und lokal gespeicherten Zugangsdaten
 - Sortieren und Entfernen gespeicherter Kameras
 
-Die Konfiguration wird ausschließlich im lokalen Browser-Speicher abgelegt. Falls ein Snapshot eine Anmeldung benötigt, werden die beim Speichern verwendeten Zugangsdaten ebenfalls nur dort gespeichert. RTSP kann ein Browser nicht direkt darstellen; die Kamera-Wall nutzt daher die erkannten HTTP-Snapshot-URLs.
+Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Datenbank gespeichert. Falls ein Snapshot oder Stream eine Anmeldung benötigt, werden die Zugangsdaten ebenfalls dort gespeichert und nicht an externe Dienste übertragen. RTSP kann ein Browser nicht direkt darstellen; die normale Wall-Ansicht nutzt daher HTTP-Snapshots.
+
+Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
 ## Woher kommen die Streaming-URLs?
 

@@ -10,6 +10,7 @@ Diese Anleitung installiert ONVIFscanner in einem Debian-LXC-Container als syste
 - Für **WS-Discovery** (ONVIF) muss Multicast im Netz/Container funktionieren:
   - UDP 3702 / Multicast `239.255.255.250`
   - Oft funktioniert Discovery nur im gleichen L2 Segment (LAN/VLAN)
+- Für die WebRTC-Liveansicht der Kamera-Wall muss UDP-Port `8189` vom Anzeigegerät zum LXC erreichbar sein.
 
 ## Requirements (Pakete)
 
@@ -57,6 +58,7 @@ RUN_NPM_AUDIT=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvif
 - cloned nach `/opt/onvifscanner`
 - `npm ci` → `npm run build` → `npm prune --omit=dev`
 - installiert systemd service `onvifscanner.service`
+- installiert `ffmpeg` und MediaMTX für die RTSP-zu-WebRTC-Liveansicht
 - legt eine Env-Datei an: `/etc/onvifscanner/onvifscanner.env`
 
 ## Konfiguration

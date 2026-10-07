@@ -3,6 +3,8 @@ const net = require('net');
 const { Jimp } = require('jimp');
 
 const prisma = new PrismaClient();
+const appPort = process.env.PORT || '3000';
+const appBaseUrl = `http://127.0.0.1:${appPort}`;
 let isMonitoring = false;
 let lastFrames = {};
 
@@ -83,7 +85,7 @@ async function runMotionDetection(cameras) {
      
      try {
        // Wir nutzen unsere interne Thumbnail-API für einen zuverlässigen Snapshot
-       const res = await fetch('http://127.0.0.1:3000/api/thumbnail', {
+       const res = await fetch(`${appBaseUrl}/api/thumbnail`, {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({
@@ -126,7 +128,7 @@ async function runMotionDetection(cameras) {
 async function runAutoDiscovery() {
   console.log("🔍 Running silent background auto-discovery...");
   try {
-     const res = await fetch('http://127.0.0.1:3000/api/scan', {
+     const res = await fetch(`${appBaseUrl}/api/scan`, {
        method: 'POST',
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ preset: 'ws-discovery', acknowledgeAuthorizedNetwork: true, timeoutMs: 3000, fast: true })
@@ -139,23 +141,35 @@ async function runAutoDiscovery() {
      const existingIps = new Set(existingCameras.map(c => c.ip));
      
      for (const dev of data.results) {
+        const deviceId = dev.id || dev.ip;
+        if (!deviceId || !dev.ip) continue;
         // ignore if already in our wall
-        if (existingIds.has(dev.id) || existingIps.has(dev.ip)) continue;
+        if (existingIds.has(deviceId) || existingIps.has(dev.ip)) continue;
+
+        const deviceName = dev.hostname || [dev.manufacturer, dev.model].filter(Boolean).join(' ') || "Unbekannte Kamera";
+        const snapshotUris = Array.isArray(dev.snapshotUris) ? dev.snapshotUris.filter(Boolean) : [];
+        const streamUris = Array.isArray(dev.streamUris) ? dev.streamUris.filter(Boolean) : [];
         
         await prisma.discoveredDevice.upsert({
-           where: { id: dev.id },
+           where: { id: deviceId },
            update: {
               ip: dev.ip,
-              name: dev.deviceInformation?.model || "Unbekannte Kamera",
-              snapshotUris: JSON.stringify(dev.snapshotUris?.map(u => u.uri) || []),
-              streamUris: JSON.stringify(dev.rtspUris?.map(u => u.uri) || [])
+              name: deviceName,
+              hostname: dev.hostname,
+              manufacturer: dev.manufacturer,
+              model: dev.model,
+              snapshotUris: JSON.stringify(snapshotUris),
+              streamUris: JSON.stringify(streamUris)
            },
            create: {
-              id: dev.id,
+              id: deviceId,
               ip: dev.ip,
-              name: dev.deviceInformation?.model || "Unbekannte Kamera",
-              snapshotUris: JSON.stringify(dev.snapshotUris?.map(u => u.uri) || []),
-              streamUris: JSON.stringify(dev.rtspUris?.map(u => u.uri) || [])
+              name: deviceName,
+              hostname: dev.hostname,
+              manufacturer: dev.manufacturer,
+              model: dev.model,
+              snapshotUris: JSON.stringify(snapshotUris),
+              streamUris: JSON.stringify(streamUris)
            }
         });
      }
@@ -182,8 +196,8 @@ async function syncMediaMtxPaths(cameras) {
         if (cam.username) {
            try {
               let parsed = new URL(uri);
-              parsed.username = encodeURIComponent(cam.username);
-              parsed.password = encodeURIComponent(cam.password || "");
+              parsed.username = cam.username;
+              parsed.password = cam.password || "";
               uri = parsed.toString();
            } catch(e) {}
         }
@@ -194,14 +208,14 @@ async function syncMediaMtxPaths(cameras) {
     for (const [id, source] of Object.entries(desiredPaths)) {
       const existing = currentPaths.find(p => p.name === id);
       if (!existing) {
-        await fetch(`http://127.0.0.1:9997/v3/config/paths/add/${id}`, {
+        await fetch(`http://127.0.0.1:9997/v3/config/paths/add/${encodeURIComponent(id)}`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ source, sourceOnDemand: true })
         }).catch(()=>null);
       } else if (existing.source !== source) {
-        await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${id}`, {
-          method: 'POST',
+        await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ source, sourceOnDemand: true })
         }).catch(()=>null);
@@ -210,7 +224,7 @@ async function syncMediaMtxPaths(cameras) {
     
     for (const p of currentPaths) {
        if (p.name !== 'all_others' && p.name !== '~^.*$' && !desiredPaths[p.name]) {
-          await fetch(`http://127.0.0.1:9997/v3/config/paths/remove/${p.name}`, { method: 'POST' }).catch(()=>null);
+          await fetch(`http://127.0.0.1:9997/v3/config/paths/delete/${encodeURIComponent(p.name)}`, { method: 'DELETE' }).catch(()=>null);
        }
     }
   } catch (e) {
