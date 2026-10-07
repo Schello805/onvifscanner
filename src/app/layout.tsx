@@ -26,15 +26,6 @@ function Footer() {
           </div>
         </div>
         <nav className="flex flex-wrap gap-x-4 gap-y-2">
-          <Link className="hover:text-white" href="/impressum">
-            Impressum
-          </Link>
-          <Link className="hover:text-white" href="/datenschutz">
-            Datenschutz
-          </Link>
-          <Link className="hover:text-white" href="/cookies">
-            Cookiehinweis
-          </Link>
           <a
             className="hover:text-white"
             href={repoUrl}
