@@ -29,7 +29,7 @@ async function getSharp(): Promise<any> {
 function configureSharpOnce(sharp: any) {
   if (sharpConfigured) return;
   sharpConfigured = true;
-  const concurrency = clampInt(process.env.THUMBNAIL_SHARP_CONCURRENCY ?? 2, 1, 8);
+  const concurrency = clampInt(process.env.THUMBNAIL_SHARP_CONCURRENCY ?? 1, 1, 8);
   try {
     sharp.cache(false);
     sharp.concurrency(concurrency);
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
 
   let acquired = false;
   try {
-    const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 2, 1, 8);
+    const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 1, 1, 8);
     const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 30_000, 0, 300_000);
     const attemptLog: string[] = [];
     let attempts = 0;
