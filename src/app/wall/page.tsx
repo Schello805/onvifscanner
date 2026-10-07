@@ -151,11 +151,8 @@ export default function CameraWallPage() {
   }, [cameras, loadCamera]);
 
   useEffect(() => {
-    if (!liveCameras.size) return;
-    const timer = window.setInterval(() => {
-      cameras.filter((c) => liveCameras.has(c.id)).forEach((camera) => void loadCamera(camera, true));
-    }, 1000);
-    return () => window.clearInterval(timer);
+    // In Phase 3 (MediaMTX), we no longer need to poll snapshots at 1fps
+    // The WebRTC iframe handles real-time streaming directly.
   }, [cameras, liveCameras, loadCamera]);
 
   useEffect(() => {
@@ -322,7 +319,13 @@ export default function CameraWallPage() {
             return (
               <article key={camera.id} className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all`}>
                 <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative">
-                  {image?.src ? (
+                  {isLive ? (
+                     <iframe 
+                        src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8889/${camera.id}`}
+                        className="w-full h-full border-0 aspect-video object-cover"
+                        allow="autoplay; fullscreen; microphone; camera"
+                     />
+                  ) : image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all duration-500 ${

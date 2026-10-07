@@ -1,6 +1,9 @@
 const { createServer } = require("http");
 const { parse } = require("url");
 const next = require("next");
+const { spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST || "0.0.0.0";
@@ -27,6 +30,15 @@ app.prepare().then(() => {
     .listen(port, () => {
       console.log(`> Ready on http://${hostname}:${port}`);
       
+      // Start MediaMTX if it exists
+      const mediamtxPath = path.join(__dirname, "mediamtx");
+      if (fs.existsSync(mediamtxPath)) {
+        console.log("🚀 Starting MediaMTX...");
+        const mtx = spawn(mediamtxPath, [], { stdio: "ignore" });
+        mtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
+        mtx.on("exit", (code) => console.log("MediaMTX exited with code", code));
+      }
+
       // Start Background Services
       try {
         const monitor = require("./scripts/monitor.js");

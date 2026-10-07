@@ -57,6 +57,32 @@ echo "Stopping onvifscanner.service for rebuild..."
 systemctl stop onvifscanner.service || true
 
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+
+# Download MediaMTX if missing
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then M_ARCH="amd64"; elif [ "$ARCH" = "aarch64" ]; then M_ARCH="arm64v8"; elif [[ "$ARCH" == armv7* ]]; then M_ARCH="armv7"; else M_ARCH="amd64"; fi
+MEDIAMTX_VERSION="1.9.0"
+if [ ! -f "$APP_DIR/mediamtx" ]; then
+  echo "Downloading MediaMTX v${MEDIAMTX_VERSION} for ${M_ARCH}..."
+  curl -L -s "https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_${M_ARCH}.tar.gz" -o "$APP_DIR/mediamtx.tar.gz"
+  tar -xzf "$APP_DIR/mediamtx.tar.gz" -C "$APP_DIR" mediamtx
+  rm "$APP_DIR/mediamtx.tar.gz"
+  chown "$APP_USER:$APP_USER" "$APP_DIR/mediamtx"
+fi
+if [ ! -f "$APP_DIR/mediamtx.yml" ]; then
+  echo "Creating default mediamtx.yml..."
+  cat << 'EOF' > "$APP_DIR/mediamtx.yml"
+api: yes
+apiAddress: 127.0.0.1:9997
+webrtc: yes
+webrtcAddress: :8889
+rtsp: no
+rtmp: no
+hls: no
+EOF
+  chown "$APP_USER:$APP_USER" "$APP_DIR/mediamtx.yml"
+fi
+
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=512'; cd '$APP_DIR' && npm run build"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
 if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
