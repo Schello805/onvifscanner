@@ -129,7 +129,7 @@ async function runAutoDiscovery() {
      const res = await fetch('http://127.0.0.1:3000/api/scan', {
        method: 'POST',
        headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ timeoutMs: 3000, fast: true })
+       body: JSON.stringify({ preset: 'ws-discovery', acknowledgeAuthorizedNetwork: true, timeoutMs: 3000, fast: true })
      });
      const data = await res.json();
      if (!data.results) return;

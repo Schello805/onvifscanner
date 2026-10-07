@@ -90,7 +90,13 @@ else
 fi
 log_ok "Abhängigkeiten erfolgreich aktualisiert."
 
-# 7. Build Next.js Application
+# 7. Update Database Schema
+log_step "Aktualisiere Datenbank-Schema..."
+npx prisma generate
+npx prisma db push --accept-data-loss || true
+log_ok "Datenbank-Schema aktualisiert."
+
+# 8. Build Next.js Application
 log_step "Erstelle Next.js Production Build…"
 npm run build
 log_ok "Build erfolgreich abgeschlossen."
