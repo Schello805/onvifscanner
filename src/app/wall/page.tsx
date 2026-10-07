@@ -35,6 +35,7 @@ export default function CameraWallPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
@@ -78,10 +79,12 @@ export default function CameraWallPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editingCameraId]);
 
-  const loadCamera = useCallback(async (camera: WallCamera) => {
+  const loadCamera = useCallback(async (camera: WallCamera, isLive = false) => {
     if (!camera.snapshotUris.length || runningRef.current.has(camera.id)) return;
     runningRef.current.add(camera.id);
-    setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
+    if (!isLive) {
+      setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
+    }
 
     try {
       const controller = new AbortController();
@@ -143,6 +146,14 @@ export default function CameraWallPage() {
       window.setTimeout(() => void loadCamera(camera), index * 400);
     });
   }, [cameras, loadCamera]);
+
+  useEffect(() => {
+    if (!liveCameras.size) return;
+    const timer = window.setInterval(() => {
+      cameras.filter((c) => liveCameras.has(c.id)).forEach((camera) => void loadCamera(camera, true));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cameras, liveCameras, loadCamera]);
 
   useEffect(() => {
     if (!cameras.length) return;
@@ -232,6 +243,15 @@ export default function CameraWallPage() {
     if (document.fullscreenElement) await document.exitFullscreen();
   }
 
+  function toggleLive(cameraId: string) {
+    setLiveCameras((current) => {
+      const next = new Set(current);
+      if (next.has(cameraId)) next.delete(cameraId);
+      else next.add(cameraId);
+      return next;
+    });
+  }
+
   return (
     <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-4 sm:p-6">
       <div className={`mb-5 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
@@ -294,15 +314,16 @@ export default function CameraWallPage() {
         <div className="wall-grid" style={{ "--wall-columns": columns } as CSSProperties}>
           {cameras.map((camera, index) => {
             const image = images[camera.id];
+            const isLive = liveCameras.has(camera.id);
             return (
-              <article key={camera.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl flex flex-col justify-center">
+              <article key={camera.id} className={`group relative overflow-hidden rounded-2xl border ${isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all`}>
                 <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative">
                   {image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all duration-500 ${
                         image.state === "error" ? "opacity-30 grayscale" : 
-                        image.state === "loading" ? "opacity-60 contrast-75 saturate-50" : ""
+                        (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
                       }`} />
                       {image.state === "error" && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
@@ -346,12 +367,16 @@ export default function CameraWallPage() {
                       ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
                     `}>
                       {camera.name}
+                      {isLive ? <span className="ml-2 inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
                     </div>
                   )}
                 </div>
 
                 {!isFullscreen || controlsVisible ? (
-                  <div className="absolute inset-x-0 bottom-0 p-3 flex items-center justify-end opacity-0 transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 pointer-events-none">
+                  <div className="absolute inset-x-0 bottom-0 p-3 flex items-center justify-between opacity-0 transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 pointer-events-none">
+                    <div className="pointer-events-auto">
+                      <button type="button" onClick={() => toggleLive(camera.id)} className={`rounded px-2.5 py-1 text-xs font-semibold backdrop-blur-sm transition-colors ${isLive ? 'bg-sky-500 text-white' : 'bg-black/70 text-slate-300 hover:bg-black/90'}`} title="Live-Stream an/aus">{isLive ? "■ Stop" : "▶ Live"}</button>
+                    </div>
                     <div className="flex gap-1 pointer-events-auto">
                       <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-950/90 px-2 py-1 text-xs text-indigo-100 backdrop-blur-sm" title="Kamera bearbeiten">✎</button>
                       <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30 backdrop-blur-sm" title="Nach vorne">←</button>

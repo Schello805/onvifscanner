@@ -1,0 +1,25 @@
+--- src/app/wall/page.tsx
++++ src/app/wall/page.tsx
+@@ -40,6 +40,7 @@
+   const wallRef = useRef<HTMLDivElement>(null);
+   const objectUrlsRef = useRef<Record<string, string>>({});
+   const runningRef = useRef<Set<string>>(new Set());
++  const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
+ 
+   useEffect(() => {
+     const objectUrls = objectUrlsRef.current;
+@@ -143,6 +144,14 @@
+   }, [cameras, loadCamera]);
+ 
+   useEffect(() => {
++    if (!liveCameras.size) return;
++    const timer = window.setInterval(() => {
++      cameras.filter((c) => liveCameras.has(c.id)).forEach((camera) => void loadCamera(camera));
++    }, 1000); // 1 FPS live stream
++    return () => window.clearInterval(timer);
++  }, [cameras, liveCameras, loadCamera]);
++
++  useEffect(() => {
+     if (!cameras.length) return;
+     refreshAll();
+   }, [cameras, refreshAll]);
