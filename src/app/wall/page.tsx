@@ -88,7 +88,7 @@ export default function CameraWallPage() {
 
     try {
       const controller = new AbortController();
-      const timer = window.setTimeout(() => controller.abort(), 8000);
+      const timer = window.setTimeout(() => controller.abort(), 25000);
       const urls = [...camera.snapshotUris, ...camera.streamUris].filter(Boolean).slice(0, 4);
       const response = await fetch(apiUrl("/api/thumbnail"), {
         method: "POST",

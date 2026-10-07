@@ -46,12 +46,28 @@ function configureSharpOnce(sharp: any) {
 let inFlight = 0;
 const waiters: Array<() => void> = [];
 
-async function acquireSlot(max: number): Promise<void> {
+async function acquireSlot(max: number, signal?: AbortSignal): Promise<void> {
   if (inFlight < max) {
     inFlight += 1;
     return;
   }
-  await new Promise<void>((resolve) => waiters.push(resolve));
+  await new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("Aborted before acquire"));
+      return;
+    }
+    const onAbort = () => {
+      const idx = waiters.indexOf(resolve);
+      if (idx !== -1) waiters.splice(idx, 1);
+      reject(new Error("Aborted while waiting"));
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    
+    waiters.push(() => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve();
+    });
+  });
   inFlight += 1;
 }
 
@@ -131,7 +147,7 @@ export async function POST(req: Request) {
     let attempts = 0;
     let authFailures = 0;
 
-    await acquireSlot(maxConcurrency);
+    await acquireSlot(maxConcurrency, req.signal);
     acquired = true;
 
     for (const url of parsedCandidates) {
@@ -181,7 +197,8 @@ export async function POST(req: Request) {
           ];
           const { stdout } = await execFileAsync("ffmpeg", args, {
             encoding: "buffer",
-            timeout: timeoutMs + 2000
+            timeout: timeoutMs + 2000,
+            signal: req.signal as any
           });
           if (stdout.length === 0) throw new Error("ffmpeg returned empty output");
           ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength);
