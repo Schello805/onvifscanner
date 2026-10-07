@@ -101,6 +101,14 @@ export default function CameraWallPage() {
       const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
       if (!response.ok || contentType.includes("application/json")) {
         const detail = await response.json().catch(() => null);
+        const isAuthError = detail?.log?.some((line: string) => 
+          line.includes("Status: 401") || 
+          line.includes("Hinweis: Authentifizierung") || 
+          line.includes("Hinweis: Digest auth nötig")
+        );
+        if (isAuthError) {
+          throw new Error("AUTH_REQUIRED");
+        }
         throw new Error(detail?.error ?? `Bild nicht verfügbar (HTTP ${response.status})`);
       }
 
@@ -281,14 +289,42 @@ export default function CameraWallPage() {
             const image = images[camera.id];
             return (
               <article key={camera.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl flex flex-col justify-center">
-                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900">
+                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative">
                   {image?.src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={image.src} alt={camera.name} className="w-full h-auto block" />
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all ${image.state === "error" ? "opacity-30 grayscale" : ""}`} />
+                      {image.state === "error" && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+                           {image.message === "AUTH_REQUIRED" ? (
+                             <>
+                               <span className="text-4xl">🔒</span>
+                               <span className="text-xs font-semibold text-white bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">Zugangsdaten benötigt</span>
+                             </>
+                           ) : (
+                             <>
+                               <span className="text-4xl text-amber-500 drop-shadow-md">⚠️</span>
+                               <span className="text-xs font-semibold text-white bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">Verbindung verloren</span>
+                             </>
+                           )}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-slate-500">
-                      <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>◉</span>
-                      <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.message ?? (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
+                      {image?.message === "AUTH_REQUIRED" ? (
+                        <>
+                          <span className="text-4xl">🔒</span>
+                          <span className="px-4 text-center text-xs font-semibold">Zugangsdaten benötigt</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>
+                            {image?.state === "error" ? "⚠️" : "◉"}
+                          </span>
+                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? "Verbindung fehlgeschlagen" : (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
