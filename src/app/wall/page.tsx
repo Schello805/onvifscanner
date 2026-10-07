@@ -441,8 +441,8 @@ export default function CameraWallPage() {
                     </div>
                     <div className="flex gap-1">
                       <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-900/50 px-2 py-1 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
-                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="hidden sm:inline-block rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
-                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="hidden sm:inline-block rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
+                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
+                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
                       <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300 hover:bg-red-900/70" title="Entfernen">×</button>
                     </div>
                   </div>
