@@ -172,8 +172,10 @@ async function syncMediaMtxPaths(cameras) {
     
     const desiredPaths = {};
     for (const cam of cameras) {
-      let uris = [];
-      try { uris = JSON.parse(cam.streamUris); } catch(e) {}
+      let uris = Array.isArray(cam.streamUris) ? cam.streamUris : [];
+      if (!Array.isArray(cam.streamUris) && typeof cam.streamUris === 'string') {
+        try { uris = JSON.parse(cam.streamUris); } catch(e) {}
+      }
       
       if (uris && uris.length > 0) {
         let uri = uris[0];
