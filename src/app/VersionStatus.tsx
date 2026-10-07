@@ -58,6 +58,29 @@ export function VersionStatus(props: { currentVersion: string }) {
     info?.updateCommand ??
     "curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash";
 
+  const [updating, setUpdating] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState("");
+
+  async function handleUpdate(e: React.MouseEvent) {
+    e.stopPropagation();
+    setUpdating(true);
+    setUpdateMessage("Update startet...");
+    try {
+      const res = await fetch("/api/update", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setUpdateMessage("Update läuft (App lädt in Kürze neu)...");
+        setTimeout(() => window.location.reload(), 15000);
+      } else {
+        setUpdateMessage("Fehler: " + data.error);
+        setUpdating(false);
+      }
+    } catch (err) {
+      setUpdateMessage("Fehler beim Update-Start.");
+      setUpdating(false);
+    }
+  }
+
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
     try {
@@ -115,15 +138,26 @@ export function VersionStatus(props: { currentVersion: string }) {
                 Update
               </span>
             </div>
-            <span className="mt-1.5 block text-slate-300">
-              Auf dem Debian-LXC aktualisieren:
+            
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={handleUpdate}
+                disabled={updating}
+                className="w-full rounded-lg bg-amber-500 hover:bg-amber-400 text-amber-950 font-bold py-2 px-3 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {updating ? updateMessage : "1-Klick Update starten"}
+              </button>
+            </div>
+
+            <span className="mt-4 block text-slate-400 text-[10px] uppercase tracking-wide font-semibold">
+              Oder manuell im Terminal:
             </span>
-            <div className="mt-2 flex flex-col gap-1.5">
+            <div className="mt-1 flex flex-col gap-1.5">
               <code className="block select-all break-all rounded-lg border border-white/10 bg-black/60 p-2 font-mono text-[11px] text-cyan-200">
                 {updateCommand}
               </code>
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[10px] text-slate-400">Befehl im Terminal ausführen</span>
+              <div className="flex items-center justify-end pt-1">
                 <button
                   type="button"
                   onClick={handleCopy}

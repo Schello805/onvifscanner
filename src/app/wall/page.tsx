@@ -281,12 +281,12 @@ export default function CameraWallPage() {
             const image = images[camera.id];
             return (
               <article key={camera.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-                <div className="aspect-video w-full bg-slate-900">
+                <div className="w-full bg-slate-900">
                   {image?.src ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={image.src} alt={camera.name} className="h-full w-full object-cover" />
+                    <img src={image.src} alt={camera.name} className="w-full h-auto object-contain" />
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
+                    <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-slate-500">
                       <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>◉</span>
                       <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.message ?? (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
                     </div>
