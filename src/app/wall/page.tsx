@@ -18,6 +18,7 @@ type CameraEditDraft = {
   streamUris: string;
   username: string;
   password: string;
+  overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
 };
 
 function apiUrl(path: string): string {
@@ -180,7 +181,8 @@ export default function CameraWallPage() {
       snapshotUris: camera.snapshotUris.join("\n"),
       streamUris: camera.streamUris.join("\n"),
       username: camera.credentials?.username ?? "",
-      password: camera.credentials?.password ?? ""
+      password: camera.credentials?.password ?? "",
+      overlayPosition: camera.overlayPosition ?? "top-left"
     });
     setShowPassword(false);
   }
@@ -201,7 +203,8 @@ export default function CameraWallPage() {
       streamUris: lines(editDraft.streamUris),
       credentials: editDraft.username.trim()
         ? { username: editDraft.username.trim(), password: editDraft.password }
-        : undefined
+        : undefined,
+      overlayPosition: editDraft.overlayPosition
     } : camera);
 
     const previousSrc = objectUrlsRef.current[editingCameraId];
@@ -327,23 +330,29 @@ export default function CameraWallPage() {
                       )}
                     </div>
                   )}
+
+                  {image?.src && camera.overlayPosition && (
+                    <div className={`absolute m-3 px-2.5 py-1 text-xs font-bold text-white bg-black/60 rounded-md backdrop-blur-md border border-white/10 shadow-lg
+                      ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
+                      ${camera.overlayPosition === "top-right" ? "top-0 right-0" : ""}
+                      ${camera.overlayPosition === "bottom-left" ? "bottom-0 left-0" : ""}
+                      ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
+                    `}>
+                      {camera.name}
+                    </div>
+                  )}
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black via-black/75 to-transparent px-3 pb-3 pt-10">
-                  <div className="min-w-0">
-                    <div className="block max-w-full truncate text-left text-sm font-bold text-white">{camera.name}</div>
-                    <div className="truncate font-mono text-[11px] text-slate-300">{camera.ip}{camera.model ? ` · ${camera.model}` : ""}</div>
-                    {image?.updatedAt ? <div className="text-[10px] text-slate-500">Stand {image.updatedAt.toLocaleTimeString("de-DE")}</div> : null}
-                  </div>
-                  {!isFullscreen || controlsVisible ? (
-                    <div className="flex shrink-0 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-950/90 px-2 py-1 text-xs text-indigo-100" title="Kamera bearbeiten">✎</button>
-                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach vorne">←</button>
-                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach hinten">→</button>
-                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-950/80 px-2 py-1 text-xs text-red-200" title="Entfernen">×</button>
+                {!isFullscreen || controlsVisible ? (
+                  <div className="absolute inset-x-0 bottom-0 p-3 flex items-center justify-end opacity-0 transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 pointer-events-none">
+                    <div className="flex gap-1 pointer-events-auto">
+                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-950/90 px-2 py-1 text-xs text-indigo-100 backdrop-blur-sm" title="Kamera bearbeiten">✎</button>
+                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30 backdrop-blur-sm" title="Nach vorne">←</button>
+                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30 backdrop-blur-sm" title="Nach hinten">→</button>
+                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-950/80 px-2 py-1 text-xs text-red-200 backdrop-blur-sm" title="Entfernen">×</button>
                     </div>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </article>
             );
           })}
@@ -403,6 +412,20 @@ export default function CameraWallPage() {
                   </label>
                 </div>
               </div>
+
+              <label className="grid gap-1.5 mt-2">
+                <span className="text-xs font-semibold text-slate-300">Name im Bild anzeigen (Overlay)</span>
+                <select 
+                  value={editDraft.overlayPosition} 
+                  onChange={(event) => setEditDraft({ ...editDraft, overlayPosition: event.target.value as CameraEditDraft["overlayPosition"] })} 
+                  className="glass-input rounded-lg px-3 py-2 text-sm outline-none bg-slate-900"
+                >
+                  <option value="top-left">Oben Links</option>
+                  <option value="top-right">Oben Rechts</option>
+                  <option value="bottom-left">Unten Links</option>
+                  <option value="bottom-right">Unten Rechts</option>
+                </select>
+              </label>
             </div>
 
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

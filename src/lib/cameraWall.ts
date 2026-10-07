@@ -12,6 +12,7 @@ export type WallCamera = {
   snapshotUris: string[];
   streamUris: string[];
   credentials?: Credentials;
+  overlayPosition?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   savedAt: string;
 };
 
@@ -73,7 +74,8 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         name: existing.name || camera.name,
         snapshotUris: camera.snapshotUris.length ? camera.snapshotUris : existing.snapshotUris,
         streamUris: camera.streamUris.length ? camera.streamUris : existing.streamUris,
-        credentials: camera.credentials ?? existing.credentials
+        credentials: camera.credentials ?? existing.credentials,
+        overlayPosition: camera.overlayPosition ?? existing.overlayPosition
       };
     } else {
       merged.push(camera);
