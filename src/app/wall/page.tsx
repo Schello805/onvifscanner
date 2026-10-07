@@ -36,6 +36,8 @@ export default function CameraWallPage() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
@@ -336,8 +338,38 @@ export default function CameraWallPage() {
             const isLive = liveCameras.has(camera.id);
             const isOffline = camera.status && camera.status.isOnline === false;
             return (
-              <article key={camera.id} className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all`}>
-                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative">
+              <article 
+                key={camera.id} 
+                draggable={!isFullscreen}
+                onDragStart={(e) => {
+                  setDraggedIndex(index);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedIndex === null || draggedIndex === index) return;
+                  setDragOverIndex(index);
+                }}
+                onDragLeave={() => {
+                  if (dragOverIndex === index) setDragOverIndex(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverIndex(null);
+                  if (draggedIndex === null || draggedIndex === index) return;
+                  const next = [...cameras];
+                  const [moved] = next.splice(draggedIndex, 1);
+                  next.splice(index, 0, moved);
+                  persist(next);
+                  setDraggedIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`}
+              >
+                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
                   {isLive ? (
                      <iframe 
                         src={`http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8889/${camera.id}`}

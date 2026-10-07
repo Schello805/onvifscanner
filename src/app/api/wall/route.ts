@@ -118,7 +118,10 @@ export async function POST(req: Request) {
       }
 
       // 3. Upsert incoming cameras
-      for (const cam of body.cameras) {
+      for (let i = 0; i < body.cameras.length; i++) {
+        const cam = body.cameras[i];
+        // Ensure order is preserved by updating savedAt
+        const sortDate = new Date(Date.now() + i * 1000);
         await prisma.camera.upsert({
           where: { id: cam.id },
           update: {
@@ -132,6 +135,7 @@ export async function POST(req: Request) {
             username: cam.credentials?.username,
             password: cam.credentials?.password,
             overlayPosition: cam.overlayPosition,
+            savedAt: sortDate,
           },
           create: {
             id: cam.id,
@@ -145,7 +149,7 @@ export async function POST(req: Request) {
             username: cam.credentials?.username,
             password: cam.credentials?.password,
             overlayPosition: cam.overlayPosition,
-            savedAt: cam.savedAt ? new Date(cam.savedAt) : new Date(),
+            savedAt: sortDate,
             status: {
               create: {
                 isOnline: true
