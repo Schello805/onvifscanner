@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 APP_USER="${APP_USER:-onvifscanner}"
 REPO_URL="${REPO_URL:-https://github.com/Schello805/onvifscanner.git}"
 RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
+NPM_CACHE_DIR="${NPM_CACHE_DIR:-/var/cache/onvifscanner/npm}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Please run as root (sudo)." >&2
@@ -50,18 +51,19 @@ else
 fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
 
 if systemctl is-active --quiet onvifscanner.service; then
   echo "Stopping onvifscanner.service for rebuild..."
   systemctl stop onvifscanner.service || true
 fi
 
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm run build"
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
 if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   echo "Running runtime dependency audit (omit=dev)..."
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm audit --omit=dev || true"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"
 fi
 
 systemctl restart --no-block onvifscanner.service

@@ -7,6 +7,7 @@ APP_USER="${APP_USER:-onvifscanner}"
 ENV_FILE="${ENV_FILE:-/etc/onvifscanner/onvifscanner.env}"
 INSTALL_NGINX="${INSTALL_NGINX:-false}"
 RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
+NPM_CACHE_DIR="${NPM_CACHE_DIR:-/var/cache/onvifscanner/npm}"
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -50,6 +51,7 @@ ensure_user() {
     useradd --system --create-home --home-dir "/home/${APP_USER}" --shell /usr/sbin/nologin "$APP_USER"
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
+  install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
   install -d -o root -g root /etc/onvifscanner
 }
 
@@ -96,12 +98,12 @@ EOF
 }
 
 build_app() {
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm run build"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm prune --omit=dev"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm run build"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
   if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
     echo "Running runtime dependency audit (omit=dev)..."
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && npm audit --omit=dev || true"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"
   fi
 }
 

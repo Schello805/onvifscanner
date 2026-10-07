@@ -20,6 +20,7 @@ APP_USER="${APP_USER:-onvifscanner}"
 ENV_FILE="${ENV_FILE:-/etc/onvifscanner/onvifscanner.env}"
 INSTALL_NGINX="${INSTALL_NGINX:-false}"
 RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
+NPM_CACHE_DIR="${NPM_CACHE_DIR:-/var/cache/onvifscanner/npm}"
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -70,13 +71,14 @@ ensure_user() {
     useradd --system --create-home --home-dir "/home/${APP_USER}" --shell /usr/sbin/nologin "$APP_USER"
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
+  install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
   install -d -o root -g root /etc/onvifscanner
 }
 
 as_app_user() {
   local cmd="$1"
   # runuser is provided by util-linux (present on Debian minimal).
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; ${cmd}"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; ${cmd}"
 }
 
 checkout_repo() {

@@ -137,3 +137,4 @@ journalctl -u onvifscanner -f
 - **WS-Discovery findet nichts:** Multicast/UDP 3702 kommt im Container nicht an (häufig bei VLAN/Bridges/Firewall). Workaround: in der App auf **CIDR Scan** wechseln.
 - **Port 3000 nicht erreichbar:** Prüfe `HOST` in `/etc/onvifscanner/onvifscanner.env` (für LAN: `0.0.0.0`).
 - **Build bricht bei `sharp` ab:** installiere `build-essential` + `libvips` (siehe Requirements oben) und starte `update.sh`/Build erneut.
+- **npm meldet `EACCES` für `/root/.npm`:** Aktuelle Installationsskripte verwenden automatisch den getrennten Cache `/var/cache/onvifscanner/npm`. Starte den Installations-One-Liner erneut; der alte Root-Cache muss nicht verändert oder gelöscht werden.
