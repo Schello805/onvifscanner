@@ -18,7 +18,7 @@ apt-get install -y --no-install-recommends \
   ca-certificates curl git gnupg \
   build-essential python3 make g++ pkg-config \
   libvips libvips-dev \
-  libc6
+  libc6 ffmpeg
 
 if command -v node >/dev/null 2>&1; then
   major="$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)"

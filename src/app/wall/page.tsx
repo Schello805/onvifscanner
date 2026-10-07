@@ -80,7 +80,7 @@ export default function CameraWallPage() {
   }, [editingCameraId]);
 
   const loadCamera = useCallback(async (camera: WallCamera, isLive = false) => {
-    if (!camera.snapshotUris.length || runningRef.current.has(camera.id)) return;
+    if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
     runningRef.current.add(camera.id);
     if (!isLive) {
       setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
@@ -89,11 +89,12 @@ export default function CameraWallPage() {
     try {
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), 8000);
+      const urls = [...camera.snapshotUris, ...camera.streamUris].filter(Boolean).slice(0, 4);
       const response = await fetch(apiUrl("/api/thumbnail"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          urls: camera.snapshotUris.slice(0, 4),
+          urls,
           size: 512,
           timeoutMs: 3000,
           fastAuth: true,
@@ -353,7 +354,7 @@ export default function CameraWallPage() {
                           <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>
                             {image?.state === "error" ? "⚠️" : "◉"}
                           </span>
-                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? (image?.message || "Verbindung fehlgeschlagen") : (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
+                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? (image?.message || "Verbindung fehlgeschlagen") : ((camera.snapshotUris.length || camera.streamUris.length) ? "Noch kein Bild" : "Keine Bild- oder Stream-URL vorhanden")}</span>
                         </>
                       )}
                     </div>

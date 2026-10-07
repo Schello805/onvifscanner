@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
 import { sanitizeUrlString } from "@/lib/util/url";
 import { isPrivateIpv4 } from "@/lib/net/ip";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
@@ -97,8 +101,8 @@ export async function POST(req: Request) {
   }
 
   for (const url of parsedCandidates) {
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return NextResponse.json({ error: "Only http/https allowed." }, { status: 400 });
+    if (url.protocol !== "http:" && url.protocol !== "https:" && url.protocol !== "rtsp:") {
+      return NextResponse.json({ error: "Only http/https/rtsp allowed." }, { status: 400 });
     }
   }
 
@@ -153,46 +157,83 @@ export async function POST(req: Request) {
         attemptLog.push("Creds: none");
       }
       const debugLog: string[] = [];
-      const res = await fetchWithDigestAuth({
-        url: url.toString(),
-        method: "GET",
-        timeoutMs,
-        credentials: body.credentials,
-        signal: req.signal,
-        fastMode: fastAuth,
-        headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
-        debugLog
-      });
+      let ab: ArrayBuffer;
+      let contentType = "";
+      if (url.protocol === "rtsp:") {
+        attemptLog.push("Protocol: RTSP (using ffmpeg)");
+        try {
+          let rtspUrl = url.toString();
+          if (body.credentials?.username) {
+            const authUrl = new URL(rtspUrl);
+            authUrl.username = encodeURIComponent(body.credentials.username);
+            authUrl.password = encodeURIComponent(body.credentials.password ?? "");
+            rtspUrl = authUrl.toString();
+          }
+          const args = [
+            "-y",
+            "-rtsp_transport", "tcp",
+            "-t", String(Math.ceil(timeoutMs / 1000) + 1),
+            "-i", rtspUrl,
+            "-vframes", "1",
+            "-q:v", "4",
+            "-f", "image2",
+            "-"
+          ];
+          const { stdout } = await execFileAsync("ffmpeg", args, {
+            encoding: "buffer",
+            timeout: timeoutMs + 2000
+          });
+          if (stdout.length === 0) throw new Error("ffmpeg returned empty output");
+          ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength);
+          contentType = "image/jpeg";
+          attemptLog.push("Status: ffmpeg success");
+        } catch (e) {
+          attemptLog.push(`ffmpeg error: ${e instanceof Error ? e.message : "Unknown"}`);
+          continue;
+        }
+      } else {
+        const res = await fetchWithDigestAuth({
+          url: url.toString(),
+          method: "GET",
+          timeoutMs,
+          credentials: body.credentials,
+          signal: req.signal,
+          fastMode: fastAuth,
+          headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
+          debugLog
+        });
 
-      attemptLog.push(`Status: ${res.status}`);
-      attempts += 1;
-      if (res.status === 401) authFailures += 1;
-      const www = res.headers.get("www-authenticate");
-      if (res.status === 401 && www && /digest/i.test(www) && !body.credentials?.username) {
-        attemptLog.push("Hinweis: Digest auth nötig (Credentials fehlen).");
-      } else if (res.status === 401 && body.credentials?.username) {
-        attemptLog.push("Hinweis: Authentifizierung fehlgeschlagen (Credentials wurden von der Kamera abgelehnt).");
-      }
-      for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
-      if (!res.ok) continue;
+        attemptLog.push(`Status: ${res.status}`);
+        attempts += 1;
+        if (res.status === 401) authFailures += 1;
+        const www = res.headers.get("www-authenticate");
+        if (res.status === 401 && www && /digest/i.test(www) && !body.credentials?.username) {
+          attemptLog.push("Hinweis: Digest auth nötig (Credentials fehlen).");
+        } else if (res.status === 401 && body.credentials?.username) {
+          attemptLog.push("Hinweis: Authentifizierung fehlgeschlagen (Credentials wurden von der Kamera abgelehnt).");
+        }
+        for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
+        if (!res.ok) continue;
 
-      const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-      if (!contentType.startsWith("image/")) {
-        attemptLog.push("Not an image");
-        continue;
-      }
+        contentType = (res.headers.get("content-type") ?? "").toLowerCase();
+        if (!contentType.startsWith("image/")) {
+          attemptLog.push("Not an image");
+          continue;
+        }
 
-      const maxBytes = 6_000_000;
-      const contentLength = Number(res.headers.get("content-length") ?? "0");
-      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-        attemptLog.push("Too large (content-length)");
-        continue;
-      }
+        const maxBytes = 6_000_000;
+        const contentLength = Number(res.headers.get("content-length") ?? "0");
+        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+          attemptLog.push("Too large (content-length)");
+          continue;
+        }
 
-      const ab = await res.arrayBuffer();
-      if (ab.byteLength <= 0 || ab.byteLength > maxBytes) {
-        attemptLog.push("Too large (body)");
-        continue;
+        const resBuf = await res.arrayBuffer();
+        if (resBuf.byteLength <= 0 || resBuf.byteLength > maxBytes) {
+          attemptLog.push("Too large (body)");
+          continue;
+        }
+        ab = resBuf;
       }
 
       const input = Buffer.from(ab);
