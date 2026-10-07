@@ -137,7 +137,11 @@ export default function CameraWallPage() {
   }, []);
 
   const refreshAll = useCallback(() => {
-    for (const camera of cameras) void loadCamera(camera);
+    cameras.forEach((camera, index) => {
+      // Verzögere jeden Aufruf um 400ms * Index, um den Server (v.a. Raspberry Pi)
+      // nicht mit z.B. 16 gleichzeitigen RTSP/Snapshot-Verbindungen zu überlasten.
+      window.setTimeout(() => void loadCamera(camera), index * 400);
+    });
   }, [cameras, loadCamera]);
 
   useEffect(() => {
