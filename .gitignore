@@ -13,3 +13,4 @@ yarn-error.log*
 pnpm-debug.log*
 *.tsbuildinfo
 scanner_debug.log
+data/

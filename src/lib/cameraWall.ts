@@ -16,7 +16,7 @@ export type WallCamera = {
   savedAt: string;
 };
 
-export function readWallCameras(): WallCamera[] {
+function getLegacyLocalCameras(): WallCamera[] {
   if (typeof window === "undefined") return [];
   try {
     const parsed = JSON.parse(window.localStorage.getItem(CAMERA_WALL_STORAGE_KEY) ?? "[]");
@@ -33,8 +33,50 @@ export function readWallCameras(): WallCamera[] {
   }
 }
 
-export function writeWallCameras(cameras: WallCamera[]): void {
-  window.localStorage.setItem(CAMERA_WALL_STORAGE_KEY, JSON.stringify(cameras));
+export async function loadWallData(): Promise<{ cameras: WallCamera[], columns: number | null, refresh: number | null }> {
+  try {
+    const res = await fetch("/api/wall", { cache: "no-store" });
+    const data = await res.json();
+    if (data && data.cameras && data.cameras.length > 0) {
+      return data;
+    }
+  } catch {
+    // Ignore fetch error, fallback to local
+  }
+
+  // Migrate from local storage if server is empty
+  const localCameras = getLegacyLocalCameras();
+  let columns = null;
+  let refresh = null;
+  
+  if (typeof window !== "undefined") {
+    const rawCol = window.localStorage.getItem("onvifscanner.wall.columns");
+    const rawRef = window.localStorage.getItem("onvifscanner.wall.refresh");
+    if (rawCol !== null) columns = Number(rawCol);
+    if (rawRef !== null) refresh = Number(rawRef);
+  }
+
+  if (localCameras.length > 0 || columns !== null || refresh !== null) {
+    try {
+      await fetch("/api/wall", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cameras: localCameras, columns, refresh })
+      });
+    } catch {
+      // Ignore
+    }
+  }
+  
+  return { cameras: localCameras, columns, refresh };
+}
+
+export async function saveWallData(data: { cameras: WallCamera[], columns: number | null, refresh: number | null }): Promise<void> {
+  await fetch("/api/wall", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
   window.dispatchEvent(new CustomEvent("onvifscanner:wall-updated"));
 }
 

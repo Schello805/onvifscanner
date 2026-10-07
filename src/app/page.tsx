@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
-import { readWallCameras, upsertWallCameras, wallCameraFromScan, writeWallCameras } from "@/lib/cameraWall";
+import { loadWallData, saveWallData, upsertWallCameras, wallCameraFromScan } from "@/lib/cameraWall";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 function parsePorts(input: string): number[] {
@@ -328,7 +328,9 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    setSavedCameraIps(new Set(readWallCameras().map((camera) => camera.ip)));
+    loadWallData().then(data => {
+      setSavedCameraIps(new Set(data.cameras.map((camera) => camera.ip)));
+    });
     fetch("/api/network")
       .then((r) => r.json())
       .then((netData) => {
@@ -342,11 +344,12 @@ export default function HomePage() {
       .catch(() => {});
   }, []);
 
-  function saveToWall(results: ScanResult[]) {
+  async function saveToWall(results: ScanResult[]) {
     const credentials = username.trim() ? { username: username.trim(), password } : undefined;
     const additions = results.map((result) => wallCameraFromScan(result, credentials));
-    const next = upsertWallCameras(readWallCameras(), additions);
-    writeWallCameras(next);
+    const current = await loadWallData();
+    const next = upsertWallCameras(current.cameras, additions);
+    await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
     setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
   }
 

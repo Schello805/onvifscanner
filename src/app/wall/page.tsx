@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { readWallCameras, writeWallCameras, type WallCamera } from "@/lib/cameraWall";
+import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
 
 type CameraImageState = {
   src?: string;
@@ -42,19 +42,20 @@ export default function CameraWallPage() {
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
-    setCameras(readWallCameras());
-    const rawColumns = window.localStorage.getItem("onvifscanner.wall.columns");
-    const rawRefresh = window.localStorage.getItem("onvifscanner.wall.refresh");
-    const storedColumns = rawColumns === null ? Number.NaN : Number(rawColumns);
-    const storedRefresh = rawRefresh === null ? Number.NaN : Number(rawRefresh);
-    if (storedColumns >= 1 && storedColumns <= 6) setColumns(storedColumns);
-    if ([0, 5, 10, 30, 60].includes(storedRefresh)) setRefreshSeconds(storedRefresh);
+    
+    loadWallData().then((data) => {
+      setCameras(data.cameras);
+      if (data.columns !== null && data.columns >= 1 && data.columns <= 6) setColumns(data.columns);
+      if (data.refresh !== null && [0, 5, 10, 30, 60].includes(data.refresh)) setRefreshSeconds(data.refresh);
+    });
 
-    const sync = () => setCameras(readWallCameras());
-    window.addEventListener("storage", sync);
+    const sync = () => {
+      loadWallData().then(data => {
+        setCameras(data.cameras);
+      });
+    };
     window.addEventListener("onvifscanner:wall-updated", sync);
     return () => {
-      window.removeEventListener("storage", sync);
       window.removeEventListener("onvifscanner:wall-updated", sync);
       for (const src of Object.values(objectUrls)) URL.revokeObjectURL(src);
     };
@@ -169,17 +170,17 @@ export default function CameraWallPage() {
 
   function persist(next: WallCamera[]) {
     setCameras(next);
-    writeWallCameras(next);
+    saveWallData({ cameras: next, columns, refresh: refreshSeconds });
   }
 
   function changeColumns(value: number) {
     setColumns(value);
-    window.localStorage.setItem("onvifscanner.wall.columns", String(value));
+    saveWallData({ cameras, columns: value, refresh: refreshSeconds });
   }
 
   function changeRefresh(value: number) {
     setRefreshSeconds(value);
-    window.localStorage.setItem("onvifscanner.wall.refresh", String(value));
+    saveWallData({ cameras, columns, refresh: value });
   }
 
   function moveCamera(index: number, direction: -1 | 1) {
