@@ -56,7 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="min-h-screen">
           <header className="border-b border-slate-800/70">
             <div className="mx-auto flex w-[90%] max-w-none items-center justify-between px-5 py-4">
-              <div className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-3">
                 <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
                   <Image
                     src="/logo.png"
@@ -75,15 +75,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     WS-Discovery + optionaler IP/Port-Scan
                   </div>
                 </div>
-              </div>
-              <a
-                className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
-                href={repoUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Repo
-              </a>
+              </Link>
+              <nav className="flex items-center gap-2">
+                <Link className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20" href="/wall">
+                  Kamera-Wall
+                </Link>
+                <a
+                  className="hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 sm:block"
+                  href={repoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Repo
+                </a>
+              </nav>
             </div>
           </header>
           <main className="mx-auto w-[90%] max-w-none px-5 py-10">

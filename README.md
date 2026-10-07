@@ -14,6 +14,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Responsive UI**: Desktop-Tabelle und Smartphone-Kartenlayout für bessere Bedienung unterwegs.
 - **Auto-Korrektur von Kamera-IPs**: Behebt das Problem falscher lokaler IPs, die von Kameras in RTSP-Links gemeldet werden.
 - **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
+- **Kamera-Wall**: Speichert Scan-Ergebnisse lokal im Browser und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 
@@ -34,6 +35,17 @@ Die App kombiniert danach automatisch:
 - **Reverse-DNS / ONVIF Hostname / Vendor-Hostname** zur besseren Identifikation.
 
 Die erweiterten Scan-Einstellungen sind eingeklappt, weil sie im Normalfall nicht geändert werden müssen.
+
+## Kamera-Wall
+
+Nach einem Scan können einzelne Kameras oder alle Ergebnisse über `+ Wall` bzw. `Alle zur Wall` gespeichert werden. Unter `/wall` stehen anschließend zur Verfügung:
+
+- Raster mit 1 bis 6 Spalten (auf Smartphones automatisch einspaltig)
+- Vollbildmodus für einen separaten Monitor
+- automatische Snapshot-Aktualisierung oder manuelles Neuladen
+- Umbenennen, Sortieren und Entfernen gespeicherter Kameras
+
+Die Konfiguration wird ausschließlich im lokalen Browser-Speicher abgelegt. Falls ein Snapshot eine Anmeldung benötigt, werden die beim Speichern verwendeten Zugangsdaten ebenfalls nur dort gespeichert. RTSP kann ein Browser nicht direkt darstellen; die Kamera-Wall nutzt daher die erkannten HTTP-Snapshot-URLs.
 
 ## Woher kommen die Streaming-URLs?
 

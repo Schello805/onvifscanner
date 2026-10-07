@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
+import { readWallCameras, upsertWallCameras, wallCameraFromScan, writeWallCameras } from "@/lib/cameraWall";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 function parsePorts(input: string): number[] {
@@ -64,6 +66,7 @@ export default function HomePage() {
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(true);
+  const [savedCameraIps, setSavedCameraIps] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -325,6 +328,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
+    setSavedCameraIps(new Set(readWallCameras().map((camera) => camera.ip)));
     fetch("/api/network")
       .then((r) => r.json())
       .then((netData) => {
@@ -337,6 +341,28 @@ export default function HomePage() {
       })
       .catch(() => {});
   }, []);
+
+  function saveToWall(results: ScanResult[]) {
+    const credentials = username.trim() ? { username: username.trim(), password } : undefined;
+    const additions = results.map((result) => wallCameraFromScan(result, credentials));
+    const next = upsertWallCameras(readWallCameras(), additions);
+    writeWallCameras(next);
+    setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+  }
+
+  function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
+    const saved = savedCameraIps.has(result.ip);
+    return (
+      <button
+        type="button"
+        onClick={() => saveToWall([result])}
+        className={`${compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-xs"} rounded-lg border font-semibold transition ${saved ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"}`}
+        title={saved ? "Gespeicherte Daten aktualisieren" : "Kamera zur Kamera-Wall hinzufügen"}
+      >
+        {saved ? "✓ Wall" : "+ Wall"}
+      </button>
+    );
+  }
 
   function enqueueThumb(ip: string) {
     if (!includeThumbnails) return;
@@ -973,6 +999,21 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => saveToWall(data.results)}
+                  className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
+                  title="Alle gefundenen Kameras in diesem Browser speichern"
+                >
+                  <span>＋</span>
+                  <span>Alle zur Wall</span>
+                </button>
+                <Link
+                  href="/wall"
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  Wall öffnen
+                </Link>
+                <button
+                  type="button"
                   onClick={refreshAllThumbnails}
                   className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
                   title="Alle Vorschaubilder jetzt neu laden"
@@ -1039,6 +1080,10 @@ export default function HomePage() {
                             🎮 PTZ
                           </span>
                         )}
+                      </div>
+
+                      <div className="absolute right-2 top-2 z-10">
+                        <WallSaveButton result={r} compact />
                       </div>
 
                       {/* Bottom-right Quick Stream Copy */}
@@ -1163,6 +1208,7 @@ export default function HomePage() {
                         <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
                           {r.snapshotUris?.length ?? 0} Snapshot
                         </span>
+                        <WallSaveButton result={r} compact />
                       </div>
                     </div>
                   </div>
@@ -1313,6 +1359,7 @@ export default function HomePage() {
                               <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
                                 {r.snapshotUris?.length ?? 0} Snapshot
                               </span>
+	                              <WallSaveButton result={r} compact />
 	                          </div>
                         </div>
                       </td>
