@@ -69,8 +69,8 @@ export function VersionStatus(props: { currentVersion: string }) {
       const res = await fetch("/api/update", { method: "POST" });
       const data = await res.json();
       if (data.success) {
-        setUpdateMessage("Update läuft (App lädt in Kürze neu)...");
-        setTimeout(() => window.location.reload(), 15000);
+        setUpdateMessage("Leite um...");
+        window.location.href = "/update-status.html";
       } else {
         setUpdateMessage("Fehler: " + data.error);
         setUpdating(false);
