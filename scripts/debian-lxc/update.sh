@@ -53,13 +53,11 @@ fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
 
-if systemctl is-active --quiet onvifscanner.service; then
-  echo "Stopping onvifscanner.service for rebuild..."
-  systemctl stop onvifscanner.service || true
-fi
+echo "Stopping onvifscanner.service for rebuild..."
+systemctl stop onvifscanner.service || true
 
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm run build"
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=512'; cd '$APP_DIR' && npm run build"
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
 if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   echo "Running runtime dependency audit (omit=dev)..."
