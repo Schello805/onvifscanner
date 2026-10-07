@@ -211,7 +211,7 @@ export async function POST(req: Request) {
 
       const output = await sharp(input, { limitInputPixels: 32_000_000 })
         .rotate()
-        .resize(size, size, { fit: "cover" })
+        .resize({ width: size })
         .jpeg({ quality: 65, mozjpeg: true })
         .toBuffer();
 
