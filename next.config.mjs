@@ -3,6 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   // Use separate build dirs to avoid dev/build cache corruption.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  outputFileTracing: false,
   async headers() {
     return [
       // Keep long-term caching for build artifacts.
