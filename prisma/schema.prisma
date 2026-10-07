@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/onvifscanner.db"
+}
+
+model Camera {
+  id              String   @id
+  ip              String   @unique
+  name            String
+  hostname        String?
+  manufacturer    String?
+  model           String?
+  snapshotUris    String   // JSON array
+  streamUris      String   // JSON array
+  username        String?
+  password        String?
+  overlayPosition String?
+  savedAt         DateTime @default(now())
+  
+  status          DeviceStatus?
+}
+
+model DeviceStatus {
+  id         String   @id @default(cuid())
+  cameraId   String   @unique
+  camera     Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  isOnline   Boolean  @default(true)
+  lastSeen   DateTime @default(now())
+  pingFailures Int    @default(0)
+}
+
+model Settings {
+  id      String @id @default("default")
+  columns Int?
+  refresh Int?
+}

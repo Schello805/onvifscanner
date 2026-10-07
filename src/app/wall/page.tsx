@@ -142,6 +142,7 @@ export default function CameraWallPage() {
   }, []);
 
   const refreshAll = useCallback(() => {
+    loadWallData().then(data => setCameras(data.cameras));
     cameras.forEach((camera, index) => {
       // Verzögere jeden Aufruf um 400ms * Index, um den Server (v.a. Raspberry Pi)
       // nicht mit z.B. 16 gleichzeitigen RTSP/Snapshot-Verbindungen zu überlasten.
@@ -317,8 +318,9 @@ export default function CameraWallPage() {
           {cameras.map((camera, index) => {
             const image = images[camera.id];
             const isLive = liveCameras.has(camera.id);
+            const isOffline = camera.status && camera.status.isOnline === false;
             return (
-              <article key={camera.id} className={`group relative overflow-hidden rounded-2xl border ${isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all`}>
+              <article key={camera.id} className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all`}>
                 <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative">
                   {image?.src ? (
                     <>
@@ -369,7 +371,8 @@ export default function CameraWallPage() {
                       ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
                     `}>
                       {camera.name}
-                      {isLive ? <span className="ml-2 inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
+                      {isOffline ? <span className="ml-2 inline-block rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider">Offline</span> : null}
+                      {isLive && !isOffline ? <span className="ml-2 inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
                     </div>
                   )}
                 </div>
