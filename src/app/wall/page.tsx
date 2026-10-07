@@ -325,7 +325,7 @@ export default function CameraWallPage() {
                           <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>
                             {image?.state === "error" ? "⚠️" : "◉"}
                           </span>
-                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? "Verbindung fehlgeschlagen" : (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
+                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? (image?.message || "Verbindung fehlgeschlagen") : (camera.snapshotUris.length ? "Noch kein Bild" : "Keine Snapshot-URL")}</span>
                         </>
                       )}
                     </div>
