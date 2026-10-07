@@ -381,15 +381,15 @@ export default function CameraWallPage() {
                 </div>
 
                 {!isFullscreen || controlsVisible ? (
-                  <div className="absolute inset-x-0 bottom-0 p-3 flex items-center justify-between opacity-0 transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 pointer-events-none">
-                    <div className="pointer-events-auto">
-                      <button type="button" onClick={() => toggleLive(camera.id)} className={`rounded px-2.5 py-1 text-xs font-semibold backdrop-blur-sm transition-colors ${isLive ? 'bg-sky-500 text-white' : 'bg-black/70 text-slate-300 hover:bg-black/90'}`} title="Live-Stream an/aus">{isLive ? "■ Stop" : "▶ Live"}</button>
+                  <div className="bg-slate-950 p-3 flex items-center justify-between border-t border-white/10">
+                    <div>
+                      <button type="button" onClick={() => toggleLive(camera.id)} className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${isLive ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Live-Stream an/aus">{isLive ? "■ Stop" : "▶ Live"}</button>
                     </div>
-                    <div className="flex gap-1 pointer-events-auto">
-                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-950/90 px-2 py-1 text-xs text-indigo-100 backdrop-blur-sm" title="Kamera bearbeiten">✎</button>
-                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30 backdrop-blur-sm" title="Nach vorne">←</button>
-                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30 backdrop-blur-sm" title="Nach hinten">→</button>
-                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-950/80 px-2 py-1 text-xs text-red-200 backdrop-blur-sm" title="Entfernen">×</button>
+                    <div className="flex gap-1">
+                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-900/50 px-2 py-1 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
+                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
+                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
+                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300 hover:bg-red-900/70" title="Entfernen">×</button>
                     </div>
                   </div>
                 ) : null}
