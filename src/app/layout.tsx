@@ -7,7 +7,13 @@ import { VersionStatus } from "./VersionStatus";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
-  description: "Lokaler ONVIF/RTSP Scanner für dein Netzwerk."
+  description: "Lokaler ONVIF/RTSP Scanner für dein Netzwerk.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Scanner",
+    statusBarStyle: "black-translucent"
+  },
 };
 
 const repoUrl =

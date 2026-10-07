@@ -22,6 +22,7 @@ model Camera {
   savedAt         DateTime @default(now())
   
   status          DeviceStatus?
+  alarms          AlarmLog[]
 }
 
 model DeviceStatus {
@@ -37,4 +38,27 @@ model Settings {
   id      String @id @default("default")
   columns Int?
   refresh Int?
+}
+
+model DiscoveredDevice {
+  id              String   @id
+  ip              String
+  name            String
+  hostname        String?
+  manufacturer    String?
+  model           String?
+  snapshotUris    String   // JSON array
+  streamUris      String   // JSON array
+  username        String?
+  password        String?
+  discoveredAt    DateTime @default(now())
+}
+
+model AlarmLog {
+  id         String   @id @default(cuid())
+  cameraId   String
+  camera     Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  timestamp  DateTime @default(now())
+  imageUrl   String?  // base64 or path
+  message    String?
 }
