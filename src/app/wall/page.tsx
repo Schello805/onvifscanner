@@ -280,11 +280,11 @@ export default function CameraWallPage() {
           {cameras.map((camera, index) => {
             const image = images[camera.id];
             return (
-              <article key={camera.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-                <div className="w-full bg-slate-900">
+              <article key={camera.id} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl flex flex-col justify-center">
+                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900">
                   {image?.src ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={image.src} alt={camera.name} className="w-full h-auto object-contain" />
+                    <img src={image.src} alt={camera.name} className="w-full h-auto block" />
                   ) : (
                     <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-slate-500">
                       <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>◉</span>
