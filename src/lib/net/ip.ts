@@ -25,8 +25,8 @@ function intToIpv4(n: number): string {
 export function parseCidr(cidr: string): { baseIp: string; prefix: number } {
   const trimmed = cidr.trim();
   const [ip, prefixStr] = trimmed.split("/");
-  if (!ip || prefixStr === undefined) throw new Error("Invalid CIDR");
-  const prefix = Number(prefixStr);
+  if (!ip) throw new Error("Invalid CIDR");
+  const prefix = prefixStr === undefined ? 32 : Number(prefixStr);
   if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) throw new Error("Invalid CIDR");
   ipv4ToInt(ip); // validate
   return { baseIp: ip, prefix };

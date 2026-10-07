@@ -720,10 +720,11 @@ export default function HomePage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Suchbereich</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">IP oder Suchbereich</span>
                   <input
                     className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
                     value={cidr}
+                    placeholder="z.B. 192.168.1.100 oder 192.168.1.0/24"
                     onChange={(e) => setCidr(e.target.value)}
                   />
                 </label>
