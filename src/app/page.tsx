@@ -415,9 +415,14 @@ export default function HomePage() {
     return list;
   }, [multiCredsText]);
 
+  const isSingleIp = useMemo(() => {
+    const pfx = cidr.trim().split("/")[1];
+    return !pfx || parseInt(pfx, 10) === 32;
+  }, [cidr]);
+
   const request: ScanRequest = useMemo(
     () => ({
-      preset: "auto",
+      preset: isSingleIp ? "cidr" : "auto",
       cidr,
       ports: parsePorts(ports),
       credentials:
@@ -437,6 +442,7 @@ export default function HomePage() {
       concurrency,
       deepProbe,
       includeThumbnails,
+      isSingleIp,
       parsedCredsList,
       password,
       ports,
