@@ -6,9 +6,18 @@ import { readWallCameras, writeWallCameras, type WallCamera } from "@/lib/camera
 
 type CameraImageState = {
   src?: string;
+  sourceUri?: string;
   state: "idle" | "loading" | "ok" | "error";
   message?: string;
   updatedAt?: Date;
+};
+
+type CameraEditDraft = {
+  name: string;
+  snapshotUris: string;
+  streamUris: string;
+  username: string;
+  password: string;
 };
 
 function apiUrl(path: string): string {
@@ -20,8 +29,9 @@ export default function CameraWallPage() {
   const [images, setImages] = useState<Record<string, CameraImageState>>({});
   const [columns, setColumns] = useState(3);
   const [refreshSeconds, setRefreshSeconds] = useState(10);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<CameraEditDraft | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const wallRef = useRef<HTMLDivElement>(null);
@@ -49,10 +59,23 @@ export default function CameraWallPage() {
   }, []);
 
   useEffect(() => {
-    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const onFullscreenChange = () => {
+      const fullscreen = Boolean(document.fullscreenElement);
+      setIsFullscreen(fullscreen);
+      if (!fullscreen) setControlsVisible(true);
+    };
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!editingCameraId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeEditor();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [editingCameraId]);
 
   const loadCamera = useCallback(async (camera: WallCamera) => {
     if (!camera.snapshotUris.length || runningRef.current.has(camera.id)) return;
@@ -86,9 +109,10 @@ export default function CameraWallPage() {
       const previous = objectUrlsRef.current[camera.id];
       if (previous) URL.revokeObjectURL(previous);
       objectUrlsRef.current[camera.id] = src;
+      const sourceUri = response.headers.get("x-thumbnail-source") ?? camera.snapshotUris[0];
       setImages((current) => ({
         ...current,
-        [camera.id]: { src, state: "ok", updatedAt: new Date() }
+        [camera.id]: { src, sourceUri, state: "ok", updatedAt: new Date() }
       }));
     } catch (error) {
       const message = error instanceof DOMException && error.name === "AbortError"
@@ -141,18 +165,56 @@ export default function CameraWallPage() {
     persist(next);
   }
 
-  function saveName(id: string) {
-    const value = editingName.trim();
-    if (value) persist(cameras.map((camera) => camera.id === id ? { ...camera, name: value } : camera));
-    setEditingId(null);
+  function openEditor(camera: WallCamera) {
+    setEditingCameraId(camera.id);
+    setEditDraft({
+      name: camera.name,
+      snapshotUris: camera.snapshotUris.join("\n"),
+      streamUris: camera.streamUris.join("\n"),
+      username: camera.credentials?.username ?? "",
+      password: camera.credentials?.password ?? ""
+    });
+    setShowPassword(false);
   }
 
-  async function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    } else {
-      await wallRef.current?.requestFullscreen();
-    }
+  function closeEditor() {
+    setEditingCameraId(null);
+    setEditDraft(null);
+    setShowPassword(false);
+  }
+
+  function saveCameraDetails() {
+    if (!editingCameraId || !editDraft) return;
+    const lines = (value: string) => Array.from(new Set(value.split("\n").map((line) => line.trim()).filter(Boolean)));
+    const next = cameras.map((camera) => camera.id === editingCameraId ? {
+      ...camera,
+      name: editDraft.name.trim() || `Kamera ${camera.ip}`,
+      snapshotUris: lines(editDraft.snapshotUris),
+      streamUris: lines(editDraft.streamUris),
+      credentials: editDraft.username.trim()
+        ? { username: editDraft.username.trim(), password: editDraft.password }
+        : undefined
+    } : camera);
+
+    const previousSrc = objectUrlsRef.current[editingCameraId];
+    if (previousSrc) URL.revokeObjectURL(previousSrc);
+    delete objectUrlsRef.current[editingCameraId];
+    setImages((current) => {
+      const updated = { ...current };
+      delete updated[editingCameraId];
+      return updated;
+    });
+    persist(next);
+    closeEditor();
+  }
+
+  async function enterMonitorMode() {
+    setControlsVisible(false);
+    await wallRef.current?.requestFullscreen();
+  }
+
+  async function leaveFullscreen() {
+    if (document.fullscreenElement) await document.exitFullscreen();
   }
 
   return (
@@ -187,7 +249,11 @@ export default function CameraWallPage() {
               </select>
             </label>
             <button type="button" onClick={refreshAll} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">↻ Jetzt laden</button>
-            <button type="button" onClick={toggleFullscreen} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">{isFullscreen ? "Vollbild verlassen" : "Vollbild"}</button>
+            {isFullscreen ? (
+              <button type="button" onClick={leaveFullscreen} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Vollbild verlassen</button>
+            ) : (
+              <button type="button" onClick={enterMonitorMode} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">▣ Überwachungsmodus</button>
+            )}
             <Link href="/" className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5">Zum Scanner</Link>
           </div>
         </div>
@@ -197,8 +263,8 @@ export default function CameraWallPage() {
       </div>
 
       {isFullscreen ? (
-        <button type="button" onClick={() => setControlsVisible((value) => !value)} className="fixed right-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur-md">
-          {controlsVisible ? "Bedienung ausblenden" : "Bedienung anzeigen"}
+        <button type="button" onClick={() => setControlsVisible((value) => !value)} className={`fixed right-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur-md transition-opacity ${controlsVisible ? "opacity-100" : "opacity-0 hover:opacity-100 focus:opacity-100"}`}>
+          {controlsVisible ? "Bedienung ausblenden" : "Bedienung"}
         </button>
       ) : null}
 
@@ -229,27 +295,87 @@ export default function CameraWallPage() {
 
                 <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 bg-gradient-to-t from-black via-black/75 to-transparent px-3 pb-3 pt-10">
                   <div className="min-w-0">
-                    {editingId === camera.id ? (
-                      <form onSubmit={(event) => { event.preventDefault(); saveName(camera.id); }} className="flex gap-1">
-                        <input autoFocus value={editingName} onChange={(event) => setEditingName(event.target.value)} onBlur={() => saveName(camera.id)} className="min-w-0 rounded bg-black/80 px-2 py-1 text-sm text-white outline-none ring-1 ring-indigo-400" />
-                      </form>
-                    ) : (
-                      <button type="button" onClick={() => { setEditingId(camera.id); setEditingName(camera.name); }} className="block max-w-full truncate text-left text-sm font-bold text-white" title="Namen ändern">{camera.name}</button>
-                    )}
+                    <div className="block max-w-full truncate text-left text-sm font-bold text-white">{camera.name}</div>
                     <div className="truncate font-mono text-[11px] text-slate-300">{camera.ip}{camera.model ? ` · ${camera.model}` : ""}</div>
                     {image?.updatedAt ? <div className="text-[10px] text-slate-500">Stand {image.updatedAt.toLocaleTimeString("de-DE")}</div> : null}
                   </div>
-                  <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-                    <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach vorne">←</button>
-                    <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach hinten">→</button>
-                    <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-950/80 px-2 py-1 text-xs text-red-200" title="Entfernen">×</button>
-                  </div>
+                  {!isFullscreen || controlsVisible ? (
+                    <div className="flex shrink-0 gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-950/90 px-2 py-1 text-xs text-indigo-100" title="Kamera bearbeiten">✎</button>
+                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach vorne">←</button>
+                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-black/70 px-2 py-1 text-xs text-white disabled:opacity-30" title="Nach hinten">→</button>
+                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-950/80 px-2 py-1 text-xs text-red-200" title="Entfernen">×</button>
+                    </div>
+                  ) : null}
                 </div>
               </article>
             );
           })}
         </div>
       )}
+
+      {editingCameraId && editDraft ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="camera-edit-title" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
+          <form onSubmit={(event) => { event.preventDefault(); saveCameraDetails(); }} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-slate-950 p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="camera-edit-title" className="text-xl font-bold text-white">Kamera bearbeiten</h2>
+                <p className="mt-1 font-mono text-xs text-slate-400">{cameras.find((camera) => camera.id === editingCameraId)?.ip}</p>
+              </div>
+              <button type="button" onClick={closeEditor} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-sm text-slate-300 hover:bg-white/5" aria-label="Schließen">×</button>
+            </div>
+
+            <div className="mt-5 grid gap-4">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold text-slate-300">Anzeigename</span>
+                <input value={editDraft.name} onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })} className="glass-input rounded-lg px-3 py-2 text-sm outline-none" />
+              </label>
+
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold text-slate-300">Snapshot-URLs <span className="font-normal text-slate-500">(erste funktionierende URL wird verwendet)</span></span>
+                <textarea value={editDraft.snapshotUris} onChange={(event) => setEditDraft({ ...editDraft, snapshotUris: event.target.value })} rows={3} spellCheck={false} className="glass-input resize-y rounded-lg px-3 py-2 font-mono text-xs outline-none" placeholder="http://192.168.1.10/snapshot.jpg" />
+              </label>
+
+              {images[editingCameraId]?.sourceUri ? (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Aktuell verwendete Bild-URL</div>
+                  <div className="mt-1 break-all font-mono text-xs text-slate-300">{images[editingCameraId].sourceUri}</div>
+                </div>
+              ) : null}
+
+              <label className="grid gap-1.5">
+                <span className="text-xs font-semibold text-slate-300">Stream-URLs <span className="font-normal text-slate-500">(eine URL pro Zeile)</span></span>
+                <textarea value={editDraft.streamUris} onChange={(event) => setEditDraft({ ...editDraft, streamUris: event.target.value })} rows={3} spellCheck={false} className="glass-input resize-y rounded-lg px-3 py-2 font-mono text-xs outline-none" placeholder="rtsp://192.168.1.10/stream" />
+              </label>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="mb-3">
+                  <div className="text-xs font-semibold text-slate-200">Zugangsdaten</div>
+                  <div className="mt-0.5 text-[11px] text-amber-200/70">Werden ausschließlich im lokalen Speicher dieses Browsers abgelegt.</div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1.5">
+                    <span className="text-xs text-slate-400">Benutzername</span>
+                    <input value={editDraft.username} onChange={(event) => setEditDraft({ ...editDraft, username: event.target.value })} autoComplete="username" className="glass-input rounded-lg px-3 py-2 text-sm outline-none" />
+                  </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs text-slate-400">Passwort</span>
+                    <div className="flex rounded-lg border border-white/10 bg-white/5 focus-within:border-indigo-500/50">
+                      <input type={showPassword ? "text" : "password"} value={editDraft.password} onChange={(event) => setEditDraft({ ...editDraft, password: event.target.value })} autoComplete="current-password" className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-white outline-none" />
+                      <button type="button" onClick={() => setShowPassword((value) => !value)} className="px-3 text-[11px] font-semibold text-indigo-300 hover:text-white">{showPassword ? "Verbergen" : "Anzeigen"}</button>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={closeEditor} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-white/5">Abbrechen</button>
+              <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Speichern & Bild testen</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -41,9 +41,10 @@ Die erweiterten Scan-Einstellungen sind eingeklappt, weil sie im Normalfall nich
 Nach einem Scan können einzelne Kameras oder alle Ergebnisse über `+ Wall` bzw. `Alle zur Wall` gespeichert werden. Unter `/wall` stehen anschließend zur Verfügung:
 
 - Raster mit 1 bis 6 Spalten (auf Smartphones automatisch einspaltig)
-- Vollbildmodus für einen separaten Monitor
+- Überwachungsmodus im echten Browser-Vollbild ohne App-Header, Footer oder dauerhaft sichtbare Bedienelemente
 - automatische Snapshot-Aktualisierung oder manuelles Neuladen
-- Umbenennen, Sortieren und Entfernen gespeicherter Kameras
+- Bearbeiten von Anzeigename, Snapshot-/Stream-URLs und lokal gespeicherten Zugangsdaten
+- Sortieren und Entfernen gespeicherter Kameras
 
 Die Konfiguration wird ausschließlich im lokalen Browser-Speicher abgelegt. Falls ein Snapshot eine Anmeldung benötigt, werden die beim Speichern verwendeten Zugangsdaten ebenfalls nur dort gespeichert. RTSP kann ein Browser nicht direkt darstellen; die Kamera-Wall nutzt daher die erkannten HTTP-Snapshot-URLs.
 
