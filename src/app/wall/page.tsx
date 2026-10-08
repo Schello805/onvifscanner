@@ -49,6 +49,7 @@ export default function CameraWallPage() {
   const refreshRunningRef = useRef(false);
   const liveCamerasRef = useRef<Set<string>>(new Set());
   const initialRefreshDoneRef = useRef(false);
+  const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
 
   useEffect(() => {
     liveCamerasRef.current = liveCameras;
@@ -460,11 +461,15 @@ export default function CameraWallPage() {
                 }`}
               >
                 <div 
-                  onDoubleClick={() => {
-                    if (expandedCameraId === camera.id) {
-                      setExpandedCameraId(null);
+                  onClick={() => {
+                    const now = Date.now();
+                    const last = lastClickRef.current;
+                    if (last.id === camera.id && now - last.time < 350) {
+                      // Double click detected!
+                      setExpandedCameraId(expandedCameraId === camera.id ? null : camera.id);
+                      lastClickRef.current = { id: "", time: 0 };
                     } else {
-                      setExpandedCameraId(camera.id);
+                      lastClickRef.current = { id: camera.id, time: now };
                     }
                   }}
                   className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
