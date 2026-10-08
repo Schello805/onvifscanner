@@ -29,6 +29,7 @@ export default function CameraWallPage() {
   const [cameras, setCameras] = useState<WallCamera[]>([]);
   const [images, setImages] = useState<Record<string, CameraImageState>>({});
   const [columns, setColumns] = useState(3);
+  const [mobileColumns, setMobileColumns] = useState(2);
   const [refreshSeconds, setRefreshSeconds] = useState(10);
   const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<CameraEditDraft | null>(null);
@@ -60,6 +61,11 @@ export default function CameraWallPage() {
       if (data.columns !== null && data.columns >= 1 && data.columns <= 6) setColumns(data.columns);
       if (data.refresh !== null && [0, 5, 10, 30, 60].includes(data.refresh)) setRefreshSeconds(data.refresh);
     });
+    
+    if (typeof window !== "undefined") {
+      const storedMobileCol = localStorage.getItem("wall_mobile_columns");
+      if (storedMobileCol) setMobileColumns(Number(storedMobileCol));
+    }
 
     const sync = () => {
       loadWallData().then(data => {
@@ -216,6 +222,13 @@ export default function CameraWallPage() {
     saveWallData({ cameras, columns, refresh: value });
   }
 
+  function changeMobileColumns(value: number) {
+    setMobileColumns(value);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("wall_mobile_columns", value.toString());
+    }
+  }
+
   function moveCamera(index: number, direction: -1 | 1) {
     const target = index + direction;
     if (target < 0 || target >= cameras.length) return;
@@ -348,10 +361,16 @@ export default function CameraWallPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <label className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
-              Spalten
-              <select aria-label="Anzahl der Spalten" value={columns} onChange={(event) => changeColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
+            <label className="hidden sm:flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
+              Spalten (Desktop)
+              <select aria-label="Anzahl der Spalten Desktop" value={columns} onChange={(event) => changeColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
                 {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+            <label className="flex sm:hidden min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
+              Spalten (Mobil)
+              <select aria-label="Anzahl der Spalten Mobile" value={mobileColumns} onChange={(event) => changeMobileColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
+                {[1, 2].map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
             <label className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
@@ -395,7 +414,7 @@ export default function CameraWallPage() {
           <Link href="/" className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Scanner öffnen</Link>
         </div>
       ) : (
-        <div className="wall-grid" style={{ "--wall-columns": columns } as CSSProperties}>
+        <div className="wall-grid" style={{ "--wall-columns": columns, "--wall-columns-mobile": mobileColumns } as CSSProperties}>
           {cameras.map((camera, index) => {
             const image = images[camera.id];
             const isLive = liveCameras.has(camera.id);
