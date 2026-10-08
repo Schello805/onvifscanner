@@ -1,6 +1,7 @@
 import pkg from "../../../../package.json";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   return Response.json(
@@ -8,6 +9,7 @@ export async function GET() {
       ok: true,
       name: pkg.name,
       version: pkg.version,
+      uptimeSeconds: Math.round(process.uptime()),
       time: new Date().toISOString()
     },
     {
@@ -20,4 +22,3 @@ export async function GET() {
 export async function HEAD() {
   return new Response(null, { status: 200, headers: { "cache-control": "no-store" } });
 }
-

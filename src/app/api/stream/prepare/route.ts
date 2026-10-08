@@ -23,10 +23,12 @@ export async function POST(request: Request) {
       streamUris = [];
     }
     const streamUri = Array.isArray(streamUris)
-      ? streamUris.find((value): value is string => typeof value === "string" && value.trim().length > 0)
+      ? streamUris.find((value): value is string =>
+          typeof value === "string" && /^rtsps?:\/\//i.test(value.trim())
+        )
       : undefined;
     if (!streamUri) {
-      return NextResponse.json({ error: "Für diese Kamera ist keine Stream-URL gespeichert." }, { status: 400 });
+      return NextResponse.json({ error: "Für diese Kamera ist keine RTSP-Stream-URL gespeichert." }, { status: 400 });
     }
 
     let source: URL;

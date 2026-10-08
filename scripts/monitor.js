@@ -1,12 +1,29 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
-const { Jimp } = require('jimp');
 
 const prisma = new PrismaClient();
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
+const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION === 'true';
+const autoDiscoveryEnabled = process.env.ENABLE_AUTO_DISCOVERY === 'true';
+const monitorIntervalMs = Math.max(30_000, Number(process.env.MONITOR_INTERVAL_MS) || 60_000);
 let isMonitoring = false;
+let cycleRunning = false;
 let lastFrames = {};
+const monitorTimers = [];
+
+async function mapWithConcurrency(items, concurrency, task) {
+  let nextIndex = 0;
+  const results = new Array(items.length);
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await task(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 async function pingCamera(ip, port = 554) {
   return new Promise((resolve) => {
@@ -28,15 +45,23 @@ async function pingCamera(ip, port = 554) {
 }
 
 async function runMonitorCycle() {
+  if (cycleRunning) {
+    console.warn('Monitor cycle skipped because the previous cycle is still running.');
+    return;
+  }
+  cycleRunning = true;
   try {
     const cameras = await prisma.camera.findMany();
-    for (const cam of cameras) {
+    const cameraChecks = await mapWithConcurrency(cameras, 8, async (cam) => {
       // First try RTSP port, fallback to HTTP port 80 if needed
       let isOnline = await pingCamera(cam.ip, 554);
       if (!isOnline) {
         isOnline = await pingCamera(cam.ip, 80);
       }
-      
+      return { cam, isOnline };
+    });
+
+    for (const { cam, isOnline } of cameraChecks) {
       const status = await prisma.deviceStatus.findUnique({ where: { cameraId: cam.id } });
       
       let failures = status ? status.pingFailures : 0;
@@ -67,14 +92,16 @@ async function runMonitorCycle() {
     // Phase 3: Sync to MediaMTX
     await syncMediaMtxPaths(cameras);
 
-    // Phase 4: Motion Detection
-    await runMotionDetection(cameras);
+    if (motionDetectionEnabled) await runMotionDetection(cameras);
   } catch (e) {
     console.error("Monitor Cycle Error:", e);
+  } finally {
+    cycleRunning = false;
   }
 }
 
 async function runMotionDetection(cameras) {
+  const { Jimp } = require('jimp');
   for (const cam of cameras) {
      const status = await prisma.deviceStatus.findUnique({ where: { cameraId: cam.id } });
      if (!status || !status.isOnline) continue;
@@ -84,18 +111,21 @@ async function runMotionDetection(cameras) {
      if (!uris.length) continue;
      
      try {
+       const controller = new AbortController();
+       const timer = setTimeout(() => controller.abort(), 8_000);
        // Wir nutzen unsere interne Thumbnail-API für einen zuverlässigen Snapshot
        const res = await fetch(`${appBaseUrl}/api/thumbnail`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           urls: uris,
-           size: 256, // small image is enough for motion
-           timeoutMs: 3000,
-           fastAuth: true,
-           credentials: cam.username ? { username: cam.username, password: cam.password } : undefined
-         })
-       });
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: uris,
+            size: 256,
+            timeoutMs: 3000,
+            fastAuth: true,
+            credentials: cam.username ? { username: cam.username, password: cam.password } : undefined
+          }),
+          signal: controller.signal
+       }).finally(() => clearTimeout(timer));
        
        if (!res.ok) continue;
        const buffer = await res.arrayBuffer();
@@ -110,12 +140,18 @@ async function runMotionDetection(cameras) {
             await prisma.alarmLog.create({
                data: {
                   cameraId: cam.id,
-                  message: "Bewegung erkannt",
-                  // Wir könnten das Bild als base64 speichern, aber um die DB klein zu halten, 
-                  // speichern wir nur das event (oder ein mini base64)
-                  imageUrl: `data:image/jpeg;base64,${Buffer.from(buffer).toString('base64')}`
+                  message: "Bewegung erkannt"
                }
             });
+            const oldEvents = await prisma.alarmLog.findMany({
+              where: { cameraId: cam.id },
+              orderBy: { timestamp: 'desc' },
+              skip: 500,
+              select: { id: true }
+            });
+            if (oldEvents.length) {
+              await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
+            }
          }
        }
        lastFrames[cam.id] = img;
@@ -192,7 +228,8 @@ async function syncMediaMtxPaths(cameras) {
       }
       
       if (uris && uris.length > 0) {
-        let uri = uris[0];
+        let uri = uris.find((value) => typeof value === 'string' && /^rtsps?:\/\//i.test(value));
+        if (!uri) continue;
         if (cam.username) {
            try {
               let parsed = new URL(uri);
@@ -236,18 +273,27 @@ function startMonitor() {
   if (isMonitoring) return;
   isMonitoring = true;
   
-  console.log("🚀 Starting background liveness monitor...");
+  console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
+  if (!motionDetectionEnabled) console.log('Motion detection is disabled.');
   
   // Run immediately, then every 60 seconds
-  runMonitorCycle();
-  setInterval(runMonitorCycle, 30000); // 30s instead of 60s for faster motion detection (can be tweaked)
+  void runMonitorCycle();
+  monitorTimers.push(setInterval(() => void runMonitorCycle(), monitorIntervalMs));
   
-  // Run Auto-Discovery every 4 hours
-  setInterval(runAutoDiscovery, 4 * 60 * 60 * 1000);
-  // and run it once 15 seconds after start
-  setTimeout(runAutoDiscovery, 15000);
+  if (autoDiscoveryEnabled) {
+    monitorTimers.push(setInterval(() => void runAutoDiscovery(), 4 * 60 * 60 * 1000));
+    monitorTimers.push(setTimeout(() => void runAutoDiscovery(), 15_000));
+  }
+}
+
+async function stopMonitor() {
+  for (const timer of monitorTimers) clearTimeout(timer);
+  monitorTimers.length = 0;
+  isMonitoring = false;
+  await prisma.$disconnect().catch(() => undefined);
 }
 
 module.exports = {
-  startMonitor
+  startMonitor,
+  stopMonitor
 };

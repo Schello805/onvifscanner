@@ -306,11 +306,11 @@ export default function CameraWallPage() {
   }
 
   return (
-    <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-4 sm:p-6">
-      <div className={`mb-5 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
+    <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6">
+      <div className={`mb-4 sm:mb-5 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <h1 className="text-2xl font-bold text-white sm:text-3xl">Kamera-Wall</h1>
               <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
                 {cameras.length} Kameras
@@ -319,16 +319,16 @@ export default function CameraWallPage() {
             <p className="mt-1 text-sm text-slate-400">Gespeicherte Kameras als automatisch aktualisiertes Monitor-Dashboard.</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <label className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
               Spalten
-              <select value={columns} onChange={(event) => changeColumns(Number(event.target.value))} className="bg-slate-900 text-white outline-none">
+              <select aria-label="Anzahl der Spalten" value={columns} onChange={(event) => changeColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
                 {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
+            <label className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
               Aktualisieren
-              <select value={refreshSeconds} onChange={(event) => changeRefresh(Number(event.target.value))} className="bg-slate-900 text-white outline-none">
+              <select aria-label="Aktualisierungsintervall" value={refreshSeconds} onChange={(event) => changeRefresh(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
                 <option value={0}>Manuell</option>
                 <option value={5}>5 Sek.</option>
                 <option value={10}>10 Sek.</option>
@@ -336,13 +336,13 @@ export default function CameraWallPage() {
                 <option value={60}>60 Sek.</option>
               </select>
             </label>
-            <button type="button" onClick={refreshAll} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">↻ Jetzt laden</button>
+            <button type="button" onClick={refreshAll} className="touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 sm:py-2">↻ Jetzt laden</button>
             {isFullscreen ? (
-              <button type="button" onClick={leaveFullscreen} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">Vollbild verlassen</button>
+              <button type="button" onClick={leaveFullscreen} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">Vollbild verlassen</button>
             ) : (
-              <button type="button" onClick={enterMonitorMode} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500">▣ Überwachungsmodus</button>
+              <button type="button" onClick={enterMonitorMode} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">▣ <span className="sm:hidden">Monitor</span><span className="hidden sm:inline">Überwachungsmodus</span></button>
             )}
-            <Link href="/" className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5">Zum Scanner</Link>
+            <Link href="/" className="col-span-2 touch-manipulation rounded-xl border border-white/10 px-3 py-2.5 text-center text-xs font-semibold text-slate-300 hover:bg-white/5 sm:py-2">Zum Scanner</Link>
           </div>
         </div>
         {cameras.some((camera) => camera.credentials) ? (
@@ -467,17 +467,17 @@ export default function CameraWallPage() {
                 {!isFullscreen || controlsVisible ? (
                   <div className="bg-slate-950 p-2 sm:p-3 flex items-center justify-between border-t border-white/10">
                     <div className="min-w-0">
-                      <button type="button" disabled={liveLoading.has(camera.id)} onClick={() => void toggleLive(camera.id)} className={`rounded px-2 py-1 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${isLive ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Live-Stream an/aus">
+                      <button type="button" disabled={liveLoading.has(camera.id)} onClick={() => void toggleLive(camera.id)} className={`touch-manipulation rounded px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${isLive ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Live-Stream an/aus">
                         <span className="sm:hidden">{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
                         <span className="hidden sm:inline">{liveLoading.has(camera.id) ? "Wird vorbereitet…" : isLive ? "■ Stop" : "▶ Live"}</span>
                       </button>
                       {liveErrors[camera.id] ? <div className="mt-1 max-w-72 truncate text-[10px] text-red-300" title={liveErrors[camera.id]}>{liveErrors[camera.id]}</div> : null}
                     </div>
                     <div className="flex gap-1">
-                      <button type="button" onClick={() => openEditor(camera)} className="rounded bg-indigo-900/50 px-2 py-1 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
-                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
-                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="rounded bg-white/5 px-2 py-1 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
-                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300 hover:bg-red-900/70" title="Entfernen">×</button>
+                      <button type="button" onClick={() => openEditor(camera)} className="touch-manipulation rounded bg-indigo-900/50 px-2.5 py-1.5 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
+                      <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
+                      <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
+                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="touch-manipulation rounded bg-red-900/40 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-900/70" title="Entfernen">×</button>
                     </div>
                   </div>
                 ) : null}

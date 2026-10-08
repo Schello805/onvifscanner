@@ -51,6 +51,8 @@ Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Da
 
 Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
+Der systemd-Dienst überwacht die Anwendung über `/api/health` und startet sie bei Fehlern automatisch neu. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. Automatische Netzwerksuche und Bewegungserkennung sind standardmäßig deaktiviert und können bei Bedarf in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
+
 ## Woher kommen die Streaming-URLs?
 
 Zuverlässige RTSP-Streaming-URLs kommen **nicht** aus dem ONVIF Device-Service-Endpunkt (`/onvif/device_service`), sondern aus dem ONVIF **Media** bzw. **Media2** Service:

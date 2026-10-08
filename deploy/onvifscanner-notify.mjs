@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import dgram from "node:dgram";
+import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import process from "node:process";
 
@@ -7,29 +6,13 @@ const APP_DIR = process.env.APP_DIR ?? "/opt/onvifscanner";
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? "3000");
 
-function getNotifySocket() {
-  const raw = process.env.NOTIFY_SOCKET;
-  if (!raw) return null;
-  // Abstract namespace is passed as "@name" (systemd) but must be "\0name" for Node.
-  if (raw.startsWith("@")) return `\0${raw.slice(1)}`;
-  return raw;
-}
-
-function notify(message) {
-  const sockPath = getNotifySocket();
-  if (!sockPath) return;
-  try {
-    const client = dgram.createSocket("unix_dgram");
-    client.send(Buffer.from(message), sockPath, () => {
-      try {
-        client.close();
-      } catch {
-        // ignore
-      }
-    });
-  } catch {
-    // ignore
-  }
+function notify(...args) {
+  if (!process.env.NOTIFY_SOCKET) return false;
+  const result = spawnSync("/usr/bin/systemd-notify", args, {
+    env: process.env,
+    stdio: "ignore"
+  });
+  return result.status === 0;
 }
 
 function sleep(ms) {
@@ -62,6 +45,15 @@ async function waitForHealth(timeoutMs = 60_000) {
   }
 }
 
+async function healthIsAvailable() {
+  try {
+    await waitForHealth(2_500);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const child = spawn(
   "/usr/bin/node",
   ["server.js"],
@@ -76,11 +68,7 @@ let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  try {
-    notify(`STOPPING=1\nSTATUS=Stopping (${signal})\n`);
-  } catch {
-    // ignore
-  }
+  notify(`--status=Stopping (${signal})`, "STOPPING=1");
   try {
     child.kill("SIGTERM");
   } catch {
@@ -104,20 +92,27 @@ const watchdogMs = Number.isFinite(watchdogUsec) && watchdogUsec > 0 ? Math.floo
 
 try {
   await waitForHealth(60_000);
-  notify("READY=1\nSTATUS=Running\n");
-} catch {
-  // Still signal ready to avoid systemd killing the service in a loop.
-  notify("READY=1\nSTATUS=Running (health not confirmed)\n");
+  notify("--ready", "--status=Running");
+} catch (error) {
+  notify(`--status=Startup health check failed: ${error instanceof Error ? error.message : "unknown error"}`);
+  child.kill("SIGTERM");
+  process.exitCode = 1;
 }
 
 if (watchdogMs > 0) {
   const interval = Math.max(5_000, Math.floor(watchdogMs / 2));
-  setInterval(() => {
-    notify("WATCHDOG=1\n");
+  let healthCheckRunning = false;
+  setInterval(async () => {
+    if (healthCheckRunning || shuttingDown) return;
+    healthCheckRunning = true;
+    const healthy = await healthIsAvailable();
+    if (healthy) notify("--status=Running", "WATCHDOG=1");
+    else notify("--status=Health check failed; waiting for systemd restart");
+    healthCheckRunning = false;
   }, interval).unref();
 }
 
 child.on("exit", (code, signal) => {
-  if (!shuttingDown) notify(`STATUS=Exited (${signal ?? code ?? 0})\n`);
-  process.exitCode = code ?? (signal ? 1 : 0);
+  if (!shuttingDown) notify(`--status=Exited (${signal ?? code ?? 0})`);
+  process.exitCode = shuttingDown ? 0 : (code || 1);
 });

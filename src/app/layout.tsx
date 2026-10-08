@@ -23,7 +23,7 @@ const repoUrl =
 function Footer() {
   return (
     <footer className="border-t border-slate-800/70 py-10 text-sm text-slate-300">
-      <div className="mx-auto flex w-[90%] max-w-none flex-col gap-3 px-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-3 px-4 sm:w-[94%] sm:flex-row sm:items-center sm:justify-between sm:px-5 lg:w-[90%]">
         <div className="flex flex-col gap-1">
           <div className="font-medium text-slate-200">
             ONVIFscanner <VersionStatus currentVersion={pkg.version} />
@@ -54,9 +54,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SplashScreen />
         <div className="min-h-screen">
           <header className="border-b border-slate-800/70">
-            <div className="mx-auto flex w-[90%] max-w-none items-center justify-between px-5 py-4">
-              <Link href="/" className="flex items-center gap-3">
-                <div className="relative h-9 w-9 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+            <div className="mx-auto flex w-full max-w-none items-center justify-between gap-3 px-4 py-3 sm:w-[94%] sm:px-5 sm:py-4 lg:w-[90%]">
+              <Link href="/" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
                   <Image
                     src="/logo.png"
                     alt="ONVIFscanner"
@@ -66,18 +66,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     priority
                   />
                 </div>
-                <div>
-                  <div className="text-base font-semibold leading-tight">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold leading-tight sm:text-base">
                     ONVIFscanner
                   </div>
-                  <div className="text-xs text-slate-400">
+                  <div className="hidden truncate text-xs text-slate-400 min-[390px]:block">
                     WS-Discovery + optionaler IP/Port-Scan
                   </div>
                 </div>
               </Link>
               <nav className="flex items-center gap-2">
-                <Link className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20" href="/wall">
-                  Kamera-Wall
+                <Link className="shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20" href="/wall">
+                  <span className="sm:hidden">Wall</span><span className="hidden sm:inline">Kamera-Wall</span>
                 </Link>
                 <a
                   className="hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 sm:block"
@@ -90,7 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </nav>
             </div>
           </header>
-          <main className="mx-auto w-[90%] max-w-none px-5 py-10">
+          <main className="mx-auto w-full max-w-none px-2 py-5 sm:w-[94%] sm:px-5 sm:py-8 lg:w-[90%] lg:py-10">
             {children}
           </main>
           <Footer />

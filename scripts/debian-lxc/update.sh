@@ -69,5 +69,8 @@ if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"
 fi
 
+install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
+install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
+systemctl daemon-reload
 systemctl restart --no-block onvifscanner.service
 systemctl --no-pager --full --no-ask-password status onvifscanner.service || true

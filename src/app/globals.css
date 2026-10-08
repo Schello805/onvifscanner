@@ -33,6 +33,7 @@
   overflow: auto;
   width: 100vw;
   min-height: 100vh;
+  padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
   border-radius: 0;
   background: #020617;
 }
@@ -41,5 +42,19 @@
   .wall-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.5rem;
+  }
+
+  .camera-wall {
+    border-radius: 1rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .wall-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .camera-wall:fullscreen .wall-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

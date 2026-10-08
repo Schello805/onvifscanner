@@ -19,6 +19,31 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   let mediaMtx = null;
+  let mediaRestartTimer = null;
+  let monitorController = null;
+  let shuttingDown = false;
+
+  const startMediaMtx = () => {
+    if (shuttingDown || mediaMtx) return;
+    const mediamtxPath = path.join(__dirname, "mediamtx");
+    if (!fs.existsSync(mediamtxPath)) return;
+
+    console.log("🚀 Starting MediaMTX...");
+    const configPath = path.join(__dirname, "mediamtx.yml");
+    mediaMtx = spawn(mediamtxPath, fs.existsSync(configPath) ? [configPath] : [], {
+      cwd: __dirname,
+      stdio: "inherit"
+    });
+    mediaMtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
+    mediaMtx.on("exit", (code, signal) => {
+      console.log(`MediaMTX exited (${signal ?? code ?? 0})`);
+      mediaMtx = null;
+      if (!shuttingDown) {
+        mediaRestartTimer = setTimeout(startMediaMtx, 2_000);
+      }
+    });
+  };
+
   const server = createServer(async (req, res) => {
     try {
       await handle(req, res);
@@ -37,35 +62,26 @@ app.prepare().then(() => {
     .listen(port, hostname, () => {
       console.log(`> Ready on http://${hostname}:${port}`);
       
-      // Start MediaMTX if it exists
-      const mediamtxPath = path.join(__dirname, "mediamtx");
-      if (fs.existsSync(mediamtxPath)) {
-        console.log("🚀 Starting MediaMTX...");
-        const configPath = path.join(__dirname, "mediamtx.yml");
-        mediaMtx = spawn(mediamtxPath, fs.existsSync(configPath) ? [configPath] : [], {
-          cwd: __dirname,
-          stdio: "inherit"
-        });
-        mediaMtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
-        mediaMtx.on("exit", (code) => console.log("MediaMTX exited with code", code));
-      }
+      startMediaMtx();
 
       // Start Background Services
       try {
-        const monitor = require("./scripts/monitor.js");
-        monitor.startMonitor();
+        monitorController = require("./scripts/monitor.js");
+        monitorController.startMonitor();
       } catch (err) {
         console.error("Failed to start background monitor:", err);
       }
     });
 
-  let shuttingDown = false;
   const shutdown = (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`Shutting down (${signal})...`);
+    if (mediaRestartTimer) clearTimeout(mediaRestartTimer);
     if (mediaMtx && !mediaMtx.killed) mediaMtx.kill("SIGTERM");
-    server.close(() => process.exit(0));
+    Promise.resolve(monitorController?.stopMonitor?.()).finally(() => {
+      server.close(() => process.exit(0));
+    });
     setTimeout(() => process.exit(1), 10_000).unref();
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
