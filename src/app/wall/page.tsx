@@ -30,6 +30,7 @@ export default function CameraWallPage() {
   const [images, setImages] = useState<Record<string, CameraImageState>>({});
   const [columns, setColumns] = useState(3);
   const [mobileColumns, setMobileColumns] = useState(2);
+  const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
   const [refreshSeconds, setRefreshSeconds] = useState(10);
   const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<CameraEditDraft | null>(null);
@@ -90,13 +91,16 @@ export default function CameraWallPage() {
   }, []);
 
   useEffect(() => {
-    if (!editingCameraId) return;
+    if (!editingCameraId && !expandedCameraId) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeEditor();
+      if (event.key === "Escape") {
+        closeEditor();
+        setExpandedCameraId(null);
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [editingCameraId]);
+  }, [editingCameraId, expandedCameraId]);
 
   const loadCamera = useCallback(async (camera: WallCamera, fresh = false) => {
     if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
@@ -449,36 +453,31 @@ export default function CameraWallPage() {
                   setDraggedIndex(null);
                   setDragOverIndex(null);
                 }}
-                onDoubleClick={(e) => {
-                  const elem = e.currentTarget;
-                  if (!document.fullscreenElement) {
-                    if (elem.requestFullscreen) {
-                      elem.requestFullscreen().catch(() => {});
-                    } else if ((elem as any).webkitRequestFullscreen) {
-                      (elem as any).webkitRequestFullscreen();
-                    }
+                onDoubleClick={() => {
+                  if (expandedCameraId === camera.id) {
+                    setExpandedCameraId(null);
                   } else {
-                    if (document.exitFullscreen) {
-                      document.exitFullscreen();
-                    } else if ((document as any).webkitExitFullscreen) {
-                      (document as any).webkitExitFullscreen();
-                    }
+                    setExpandedCameraId(camera.id);
                   }
                 }}
-                className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`}
+                className={`group overflow-hidden transition-all flex flex-col justify-center ${
+                  expandedCameraId === camera.id 
+                    ? 'fixed inset-0 z-[99999] bg-black' 
+                    : `relative rounded-2xl border bg-black shadow-2xl ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                }`}
               >
-                <div className="flex-1 w-full aspect-video flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
+                <div className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}>
                   {isLive ? (
                      <iframe 
                         src={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
-                        className="w-full h-full border-0 object-cover"
+                        className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
                         allow="autoplay; fullscreen"
                      />
                   ) : image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.src} alt={camera.name} className={`w-full h-full object-cover block transition-all duration-500 ${
+                      <img src={image.src} alt={camera.name} className={`w-full h-full block transition-all duration-500 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
                         image.state === "error" ? "opacity-30 grayscale" : 
                         (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
                       }`} />
