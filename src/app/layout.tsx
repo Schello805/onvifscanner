@@ -77,8 +77,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </div>
                 </div>
               </Link>
-              <nav className="flex items-center gap-2">
-                <Link className="shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20" href="/wall">
+              <nav className="relative z-20 flex shrink-0 items-center gap-2">
+                <Link className="touch-manipulation block cursor-pointer shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20 active:scale-95 transition-transform" href="/wall">
                   <span className="sm:hidden">Wall</span><span className="hidden sm:inline">Kamera-Wall</span>
                 </Link>
                 <a

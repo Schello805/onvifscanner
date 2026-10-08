@@ -1021,7 +1021,7 @@ export default function HomePage() {
                 </button>
                 <Link
                   href="/wall"
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                  className="touch-manipulation cursor-pointer relative z-10 flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95"
                 >
                   Wall öffnen
                 </Link>
