@@ -449,6 +449,22 @@ export default function CameraWallPage() {
                   setDraggedIndex(null);
                   setDragOverIndex(null);
                 }}
+                onDoubleClick={(e) => {
+                  const elem = e.currentTarget;
+                  if (!document.fullscreenElement) {
+                    if (elem.requestFullscreen) {
+                      elem.requestFullscreen().catch(() => {});
+                    } else if ((elem as any).webkitRequestFullscreen) {
+                      (elem as any).webkitRequestFullscreen();
+                    }
+                  } else {
+                    if (document.exitFullscreen) {
+                      document.exitFullscreen();
+                    } else if ((document as any).webkitExitFullscreen) {
+                      (document as any).webkitExitFullscreen();
+                    }
+                  }
+                }}
                 className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`}
               >
                 <div className="flex-1 w-full aspect-video flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
