@@ -453,20 +453,36 @@ export default function CameraWallPage() {
                   setDraggedIndex(null);
                   setDragOverIndex(null);
                 }}
-                onDoubleClick={() => {
-                  if (expandedCameraId === camera.id) {
-                    setExpandedCameraId(null);
-                  } else {
-                    setExpandedCameraId(camera.id);
-                  }
-                }}
                 className={`group overflow-hidden transition-all flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
                     : `relative rounded-2xl border bg-black shadow-2xl ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
-                <div className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}>
+                <div 
+                  onDoubleClick={() => {
+                    if (expandedCameraId === camera.id) {
+                      setExpandedCameraId(null);
+                    } else {
+                      setExpandedCameraId(camera.id);
+                    }
+                  }}
+                  className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
+                >
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedCameraId(expandedCameraId === camera.id ? null : camera.id);
+                    }}
+                    className={`absolute top-2 right-2 z-10 p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    title={expandedCameraId === camera.id ? "Vollbild schließen" : "Vollbild öffnen"}
+                  >
+                    {expandedCameraId === camera.id ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20H5v-4m14-5v4h-4M5 9V5h4m5-4h4v4" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                    )}
+                  </button>
                   {isLive ? (
                      <iframe 
                         src={livePlaybackUrls[camera.id]}

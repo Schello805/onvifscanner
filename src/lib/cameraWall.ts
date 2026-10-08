@@ -118,8 +118,8 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         ...existing,
         ...camera,
         name: existing.name || camera.name,
-        snapshotUris: camera.snapshotUris.length ? camera.snapshotUris : existing.snapshotUris,
-        streamUris: camera.streamUris.length ? camera.streamUris : existing.streamUris,
+        snapshotUris: Array.from(new Set([...existing.snapshotUris, ...camera.snapshotUris])),
+        streamUris: Array.from(new Set([...existing.streamUris, ...camera.streamUris])),
         credentials: camera.credentials ?? existing.credentials,
         overlayPosition: camera.overlayPosition ?? existing.overlayPosition
       };
