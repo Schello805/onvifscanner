@@ -44,6 +44,7 @@ export default function CameraWallPage() {
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
+  const refreshRunningRef = useRef(false);
   const liveCamerasRef = useRef<Set<string>>(new Set());
   const initialRefreshDoneRef = useRef(false);
 
@@ -91,7 +92,7 @@ export default function CameraWallPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editingCameraId]);
 
-  const loadCamera = useCallback(async (camera: WallCamera) => {
+  const loadCamera = useCallback(async (camera: WallCamera, fresh = false) => {
     if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
     
     // Don't hammer the API if the background ping detected it as offline
@@ -118,7 +119,7 @@ export default function CameraWallPage() {
           size: 512,
           timeoutMs: 3000,
           fastAuth: true,
-          fresh: true,
+          fresh,
           credentials: camera.credentials
         }),
         signal: controller.signal
@@ -161,32 +162,42 @@ export default function CameraWallPage() {
     }
   }, []);
 
-  const refreshAll = useCallback(async () => {
+  const refreshCameraList = useCallback(async (cameraList: WallCamera[], fresh = false) => {
+    if (refreshRunningRef.current) return;
+    refreshRunningRef.current = true;
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(2, cameraList.length) }, async () => {
+      while (nextIndex < cameraList.length) {
+        const camera = cameraList[nextIndex++];
+        if (!liveCamerasRef.current.has(camera.id)) await loadCamera(camera, fresh);
+      }
+    });
+    try {
+      await Promise.all(workers);
+    } finally {
+      refreshRunningRef.current = false;
+    }
+  }, [loadCamera]);
+
+  const refreshAll = useCallback(async (fresh = false) => {
     try {
       const data = await loadWallData();
       setCameras(data.cameras);
-      data.cameras.forEach((camera, index) => {
-        // Skip snapshot refresh if WebRTC stream is active
-        if (liveCamerasRef.current.has(camera.id)) return;
-        
-        window.setTimeout(() => void loadCamera(camera), index * 400);
-      });
+      await refreshCameraList(data.cameras, fresh);
     } catch (e) {
       console.error("Failed to refresh wall data", e);
     }
-  }, [loadCamera]);
+  }, [refreshCameraList]);
 
   useEffect(() => {
     if (!cameras.length || initialRefreshDoneRef.current) return;
     initialRefreshDoneRef.current = true;
-    cameras.forEach((camera, index) => {
-      window.setTimeout(() => void loadCamera(camera), index * 400);
-    });
-  }, [cameras, loadCamera]);
+    void refreshCameraList(cameras);
+  }, [cameras, refreshCameraList]);
 
   useEffect(() => {
     if (refreshSeconds <= 0 || !cameras.length) return;
-    const timer = window.setInterval(refreshAll, refreshSeconds * 1000);
+    const timer = window.setInterval(() => void refreshAll(false), refreshSeconds * 1000);
     return () => window.clearInterval(timer);
   }, [cameras.length, refreshAll, refreshSeconds]);
 
@@ -336,7 +347,7 @@ export default function CameraWallPage() {
                 <option value={60}>60 Sek.</option>
               </select>
             </label>
-            <button type="button" onClick={refreshAll} className="touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 sm:py-2">↻ Jetzt laden</button>
+            <button type="button" onClick={() => void refreshAll(true)} className="touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 sm:py-2">↻ Jetzt laden</button>
             {isFullscreen ? (
               <button type="button" onClick={leaveFullscreen} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">Vollbild verlassen</button>
             ) : (

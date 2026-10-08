@@ -6,17 +6,15 @@ StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
-Type=notify
-NotifyAccess=all
+Type=simple
 User=onvifscanner
 Group=onvifscanner
 WorkingDirectory=/opt/onvifscanner
 EnvironmentFile=/etc/onvifscanner/onvifscanner.env
+Environment=NODE_ENV=production
 ExecStart=/usr/local/bin/onvifscanner-start
 Restart=always
 RestartSec=2
-WatchdogSec=30
-TimeoutStartSec=60
 TimeoutStopSec=15
 OOMPolicy=stop
 NoNewPrivileges=true

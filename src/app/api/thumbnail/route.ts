@@ -57,17 +57,18 @@ async function acquireSlot(max: number, signal?: AbortSignal): Promise<void> {
       reject(new Error("Aborted before acquire"));
       return;
     }
+    const wake = () => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
     const onAbort = () => {
-      const idx = waiters.indexOf(resolve);
+      const idx = waiters.indexOf(wake);
       if (idx !== -1) waiters.splice(idx, 1);
       reject(new Error("Aborted while waiting"));
     };
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
-    
-    waiters.push(() => {
-      if (signal) signal.removeEventListener("abort", onAbort);
-      resolve();
-    });
+
+    waiters.push(wake);
   });
   inFlight += 1;
 }
@@ -142,8 +143,8 @@ export async function POST(req: Request) {
 
   let acquired = false;
   try {
-    const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 1, 1, 8);
-    const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 30_000, 0, 300_000);
+    const maxConcurrency = clampInt(process.env.THUMBNAIL_MAX_CONCURRENCY ?? 2, 1, 8);
+    const cacheTtlMs = clampInt(process.env.THUMBNAIL_CACHE_TTL_MS ?? 10_000, 0, 300_000);
     const attemptLog: string[] = [];
     let attempts = 0;
     let authFailures = 0;

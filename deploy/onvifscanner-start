@@ -4,7 +4,8 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-3000}"
+export NODE_ENV="${NODE_ENV:-production}"
 
 cd "$APP_DIR"
 
-exec /usr/bin/node "$APP_DIR/deploy/onvifscanner-notify.mjs"
+exec /usr/bin/node "$APP_DIR/server.js"

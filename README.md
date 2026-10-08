@@ -51,7 +51,7 @@ Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Da
 
 Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
-Der systemd-Dienst überwacht die Anwendung über `/api/health` und startet sie bei Fehlern automatisch neu. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. Automatische Netzwerksuche und Bewegungserkennung sind standardmäßig deaktiviert und können bei Bedarf in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
+Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. Automatische Netzwerksuche und Bewegungserkennung sind standardmäßig deaktiviert und können bei Bedarf in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
 
 ## Woher kommen die Streaming-URLs?
 
@@ -105,7 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/script
 - `VENDOR_PROBE_CAMERA_BUDGET_MS` (default `2500`): Zeitbudget pro Kamera für Hersteller-/URL-Prüfung.
 - `THUMBNAIL_MAX_CONCURRENCY` (default `2`): Max. parallele Thumbnail-Requests.
 - `THUMBNAIL_SHARP_CONCURRENCY` (default `2`): `sharp`/libvips Parallelität.
-- `THUMBNAIL_CACHE_TTL_MS` (default `30000`): Kurzzeit-Cache für generierte Vorschaubilder.
+- `THUMBNAIL_CACHE_TTL_MS` (default `10000`): Kurzzeit-Cache für generierte Vorschaubilder.
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 
