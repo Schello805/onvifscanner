@@ -712,11 +712,11 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-5 sm:gap-8">
-      <section className="glass-panel relative overflow-visible rounded-2xl p-4 sm:p-5 md:p-6">
+      <section className="glass-panel relative overflow-visible rounded-2xl p-3 sm:p-5 md:p-6">
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
         
-	        <div className="relative z-10 flex flex-col border-b border-white/5 pb-4 mb-4 gap-4">
+	        <div className="relative z-10 flex flex-col border-b border-white/5 pb-3 mb-3 gap-2 sm:gap-4">
 	          <div>
 	            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
 	            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
@@ -725,11 +725,11 @@ export default function HomePage() {
 	          </div>
 	        </div>
 
-        <div className="relative z-10 grid gap-6 md:grid-cols-12">
+        <div className="relative z-10 grid gap-4 sm:gap-6 md:grid-cols-12">
           
           <div className="md:col-span-5 flex flex-col gap-3">
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 sm:gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">IP oder Suchbereich</span>
@@ -777,7 +777,7 @@ export default function HomePage() {
 
             <details className="mt-1 rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <summary className="cursor-pointer select-none text-xs font-semibold text-slate-300">Erweiterte Scan-Einstellungen</summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3">
                 <label className="flex flex-col gap-1.5 md:col-span-2">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Ports</span>
                   <input className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none" value={ports} onChange={(e) => setPorts(e.target.value)} />
@@ -806,7 +806,7 @@ export default function HomePage() {
                  )}
                </button>
              </div>
-             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+             <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Benutzername</span>
                   <input
@@ -1072,7 +1072,7 @@ export default function HomePage() {
           ) : (
             <>
             {viewMode === "grid" ? (
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="mt-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4">
                 {data.results.map((r) => (
                   <article
                     key={`grid-${r.ip}`}
