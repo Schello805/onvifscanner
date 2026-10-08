@@ -161,8 +161,9 @@ export default function HomePage() {
             ...(r.vendor?.snapshotUris ?? []),
             ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
             ...(r.streamUris ?? []),
-            ...(r.vendor?.streamUris ?? []),
-            ...(r.onvif?.streamUris?.map((u) => u.uri).filter(Boolean) ?? []),
+            ...(r.vendor?.rtspUris ?? []),
+            ...(r.vendor?.httpStreamUris ?? []),
+            ...(r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? []),
           ].filter(Boolean)
         )
       ).slice(0, 4);

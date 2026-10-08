@@ -49,6 +49,3 @@
   }
 }
 
-.camera-wall:fullscreen .wall-grid {
-  /* On full screen mobile, keep user config if specified, otherwise 2 */
-}
