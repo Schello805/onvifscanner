@@ -316,6 +316,23 @@ export default function CameraWallPage() {
     }
   }
 
+  function toggleAllLive() {
+    const allIds = cameras.map(c => c.id);
+    const anyNotLive = allIds.some(id => !liveCameras.has(id));
+    
+    if (anyNotLive) {
+      // Start all cameras that are not live yet
+      for (const id of allIds) {
+        if (!liveCameras.has(id) && !liveLoading.has(id)) {
+          void toggleLive(id);
+        }
+      }
+    } else {
+      // Stop all cameras
+      setLiveCameras(new Set());
+    }
+  }
+
   return (
     <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6">
       <div className={`mb-4 sm:mb-5 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
@@ -348,6 +365,9 @@ export default function CameraWallPage() {
               </select>
             </label>
             <button type="button" onClick={() => void refreshAll(true)} className="touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 sm:py-2">↻ Jetzt laden</button>
+            <button type="button" onClick={toggleAllLive} disabled={cameras.length === 0} className="touch-manipulation rounded-xl border border-sky-500/50 bg-sky-500/10 px-3 py-2.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 sm:py-2 disabled:opacity-50">
+              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? "■ Alle stoppen" : "▶ Alle streamen"}
+            </button>
             {isFullscreen ? (
               <button type="button" onClick={leaveFullscreen} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">Vollbild verlassen</button>
             ) : (
@@ -412,18 +432,18 @@ export default function CameraWallPage() {
                 }}
                 className={`group relative overflow-hidden rounded-2xl border ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} bg-black shadow-2xl flex flex-col justify-center transition-all ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`}
               >
-                <div className="flex-1 w-full flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
+                <div className="flex-1 w-full aspect-video flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing">
                   {isLive ? (
                      <iframe 
                         src={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
-                        className="w-full h-full border-0 aspect-video object-cover"
+                        className="w-full h-full border-0 object-cover"
                         allow="autoplay; fullscreen"
                      />
                   ) : image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.src} alt={camera.name} className={`w-full h-auto block transition-all duration-500 ${
+                      <img src={image.src} alt={camera.name} className={`w-full h-full object-cover block transition-all duration-500 ${
                         image.state === "error" ? "opacity-30 grayscale" : 
                         (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
                       }`} />
@@ -521,9 +541,17 @@ export default function CameraWallPage() {
               </label>
 
               {images[editingCameraId]?.sourceUri ? (
-                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Aktuell verwendete Bild-URL</div>
-                  <div className="mt-1 break-all font-mono text-xs text-slate-300">{images[editingCameraId].sourceUri}</div>
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 flex flex-col gap-2">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">Aktuell verwendete Bild-URL</div>
+                    <div className="mt-1 break-all font-mono text-xs text-slate-300">{images[editingCameraId].sourceUri}</div>
+                  </div>
+                  {images[editingCameraId]?.src && (
+                    <div className="relative mt-1 aspect-video w-full overflow-hidden rounded-md border border-black/50 bg-black shadow-inner">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={images[editingCameraId].src} alt="Vorschau" className="h-full w-full object-cover" />
+                    </div>
+                  )}
                 </div>
               ) : null}
 

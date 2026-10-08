@@ -5,6 +5,7 @@ import "./globals.css";
 import pkg from "../../package.json";
 import { VersionStatus } from "./VersionStatus";
 import { SplashScreen } from "@/components/SplashScreen";
+import { ConnectionWatcher } from "@/components/ConnectionWatcher";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="de" data-theme="dracula">
       <body>
         <SplashScreen />
+        <ConnectionWatcher />
         <div className="min-h-screen">
           <header className="border-b border-slate-800/70">
             <div className="mx-auto flex w-full max-w-none items-center justify-between gap-3 px-4 py-3 sm:w-[94%] sm:px-5 sm:py-4 lg:w-[90%]">

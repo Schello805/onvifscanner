@@ -160,9 +160,12 @@ export default function HomePage() {
             ...(r.snapshotUris ?? []),
             ...(r.vendor?.snapshotUris ?? []),
             ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
+            ...(r.streamUris ?? []),
+            ...(r.vendor?.streamUris ?? []),
+            ...(r.onvif?.streamUris?.map((u) => u.uri).filter(Boolean) ?? []),
           ].filter(Boolean)
         )
-      ).slice(0, 3);
+      ).slice(0, 4);
       map[r.ip] = { ip: r.ip, urls };
     }
     latestResultsRef.current = map;
@@ -681,19 +684,19 @@ export default function HomePage() {
         {props.isApi ? (
           <span
             className="min-w-0 flex-1 break-all font-mono text-[11px] text-slate-500 sm:truncate"
-            title={props.url}
+            title={effective}
           >
-            {props.url}
+            {effective}
           </span>
         ) : (
           <a
             className="min-w-0 flex-1 break-all font-mono text-[11px] text-indigo-300 hover:text-indigo-200 sm:truncate"
-            href={props.url}
+            href={effective}
             target="_blank"
             rel="noreferrer"
-            title={props.url}
+            title={effective}
           >
-            {props.url}
+            {effective}
           </a>
         )}
         <button
