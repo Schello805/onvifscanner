@@ -85,7 +85,7 @@ export function PullToRefresh({ children }: { children: React.ReactNode }) {
       {/* Der Inhalt der App, der nach unten weicht */}
       <div 
         className="w-full transition-transform duration-200 ease-out"
-        style={{ transform: `translateY(${isRefreshing ? 80 : pullDistance}px)` }}
+        style={isRefreshing || pullDistance > 0 ? { transform: `translateY(${isRefreshing ? 80 : pullDistance}px)` } : undefined}
       >
         {children}
       </div>
