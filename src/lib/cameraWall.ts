@@ -14,6 +14,7 @@ export type WallCamera = {
   credentials?: Credentials;
   overlayPosition?: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   savedAt: string;
+  group?: string;
   status?: {
     isOnline: boolean;
     lastSeen: string;

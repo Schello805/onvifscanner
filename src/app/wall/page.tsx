@@ -18,6 +18,7 @@ type CameraEditDraft = {
   streamUris: string;
   username: string;
   password: string;
+  group: string;
   overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
 };
 
@@ -250,6 +251,7 @@ export default function CameraWallPage() {
       streamUris: camera.streamUris.join("\n"),
       username: camera.credentials?.username ?? "",
       password: camera.credentials?.password ?? "",
+      group: camera.group ?? "",
       overlayPosition: camera.overlayPosition ?? "top-left"
     });
     setShowPassword(false);
@@ -272,6 +274,7 @@ export default function CameraWallPage() {
       credentials: editDraft.username.trim()
         ? { username: editDraft.username.trim(), password: editDraft.password }
         : undefined,
+      group: editDraft.group.trim() || undefined,
       overlayPosition: editDraft.overlayPosition
     } : camera);
 
@@ -419,8 +422,25 @@ export default function CameraWallPage() {
           <Link href="/" className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Scanner öffnen</Link>
         </div>
       ) : (
-        <div className="wall-grid" style={{ "--wall-columns": columns, "--wall-columns-mobile": mobileColumns } as CSSProperties}>
-          {cameras.map((camera, index) => {
+        <div className="flex flex-col gap-8">
+          {Object.entries(
+            cameras.reduce((acc, camera) => {
+              const g = camera.group?.trim() || "Ungruppiert";
+              if (!acc[g]) acc[g] = [];
+              acc[g].push(camera);
+              return acc;
+            }, {} as Record<string, WallCamera[]>)
+          ).sort((a, b) => a[0] === "Ungruppiert" ? 1 : b[0] === "Ungruppiert" ? -1 : a[0].localeCompare(b[0])).map(([groupName, groupCameras]) => (
+            <div key={groupName} className="flex flex-col gap-3">
+              {groupName !== "Ungruppiert" && (
+                <h2 className="px-2 text-lg font-semibold text-white/90 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                  {groupName}
+                </h2>
+              )}
+              <div className="wall-grid" style={{ "--wall-columns": columns, "--wall-columns-mobile": mobileColumns } as CSSProperties}>
+                {groupCameras.map((camera) => {
+                  const index = cameras.findIndex(c => c.id === camera.id);
             const image = images[camera.id];
             const isLive = liveCameras.has(camera.id);
             const isOffline = camera.status && camera.status.isOnline === false;
@@ -568,8 +588,11 @@ export default function CameraWallPage() {
                   </div>
                 ) : null}
               </article>
-            );
-          })}
+                );
+              })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -631,6 +654,10 @@ export default function CameraWallPage() {
                       <input type={showPassword ? "text" : "password"} value={editDraft.password} onChange={(event) => setEditDraft({ ...editDraft, password: event.target.value })} autoComplete="current-password" className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-white outline-none" />
                       <button type="button" onClick={() => setShowPassword((value) => !value)} className="px-3 text-[11px] font-semibold text-indigo-300 hover:text-white">{showPassword ? "Verbergen" : "Anzeigen"}</button>
                     </div>
+                                    </label>
+                  <label className="grid gap-1.5">
+                    <span className="text-xs text-slate-400">Gruppe (z. B. Garten, Haus)</span>
+                    <input value={editDraft.group} onChange={(event) => setEditDraft({ ...editDraft, group: event.target.value })} className="glass-input rounded-lg px-3 py-2 text-sm outline-none" />
                   </label>
                 </div>
               </div>
