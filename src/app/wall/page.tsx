@@ -263,6 +263,27 @@ export default function CameraWallPage() {
     setShowPassword(false);
   }
 
+  function removeCamera(id: string) {
+    const next = cameras.filter((item) => item.id !== id);
+    if (expandedCameraId === id) setExpandedCameraId(null);
+    if (liveCameras.has(id)) {
+      setLiveCameras((prev) => {
+        const nextLive = new Set(prev);
+        nextLive.delete(id);
+        return nextLive;
+      });
+    }
+    const previousSrc = objectUrlsRef.current[id];
+    if (previousSrc) URL.revokeObjectURL(previousSrc);
+    delete objectUrlsRef.current[id];
+    setImages((current) => {
+      const updated = { ...current };
+      delete updated[id];
+      return updated;
+    });
+    persist(next);
+  }
+
   function saveCameraDetails() {
     if (!editingCameraId || !editDraft) return;
     const lines = (value: string) => Array.from(new Set(value.split("\n").map((line) => line.trim()).filter(Boolean)));
@@ -583,7 +604,18 @@ export default function CameraWallPage() {
                       <button type="button" onClick={() => openEditor(camera)} className="touch-manipulation rounded bg-indigo-900/50 px-2.5 py-1.5 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
                       <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
                       <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
-                      <button type="button" onClick={() => persist(cameras.filter((item) => item.id !== camera.id))} className="touch-manipulation rounded bg-red-900/40 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-900/70" title="Entfernen">×</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von der Wall entfernen?`)) {
+                            removeCamera(camera.id);
+                          }
+                        }}
+                        className="touch-manipulation rounded bg-red-900/40 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-900/70"
+                        title="Kamera von der Wall entfernen"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
                 ) : null}
@@ -677,9 +709,23 @@ export default function CameraWallPage() {
               </label>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button type="button" onClick={closeEditor} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-white/5">Abbrechen</button>
-              <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Speichern & Bild testen</button>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Möchtest du die Kamera "${editDraft.name}" wirklich von der Wall entfernen?`)) {
+                    removeCamera(editingCameraId);
+                    closeEditor();
+                  }
+                }}
+                className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-300 hover:bg-red-500/20 active:scale-95 transition-all text-left sm:text-center"
+              >
+                🗑 Von der Wall entfernen
+              </button>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <button type="button" onClick={closeEditor} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-white/5">Abbrechen</button>
+                <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Speichern & Bild testen</button>
+              </div>
             </div>
           </form>
         </div>
