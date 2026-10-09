@@ -30,6 +30,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  CheckCheck,
+  Radio,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 
@@ -106,9 +108,13 @@ export default function RecordingsPage() {
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "largest" | "smallest">("newest");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
-  // Selection & Batch Delete
+  // Clip Selection & Batch Delete
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [deletingBatch, setDeletingBatch] = useState(false);
+
+  // Camera Multi-Selection & Batch Control
+  const [selectedCamIds, setSelectedCamIds] = useState<Set<string>>(new Set());
+  const [batchCamLoading, setBatchCamLoading] = useState(false);
 
   // Pagination
   const [pageSize, setPageSize] = useState<number | "all">(50);
@@ -183,6 +189,7 @@ export default function RecordingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Single Camera Toggle
   const handleToggleRecord = async (cam: CameraNvrItem) => {
     const nextState = !cam.recordEnabled;
     try {
@@ -204,6 +211,146 @@ export default function RecordingsPage() {
       );
     } catch (err: any) {
       toast.error(err.message || "Fehler beim Umschalten.");
+    }
+  };
+
+  // Camera Batch Toggle Recording
+  const handleBatchToggleRecord = async (enabled: boolean, forAll: boolean = false) => {
+    const idsToUpdate = forAll ? cameras.map((c) => c.id) : Array.from(selectedCamIds);
+    if (idsToUpdate.length === 0) return;
+
+    setBatchCamLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: idsToUpdate,
+          recordEnabled: enabled,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fehler beim Aktualisieren");
+
+      setCameras((prev) =>
+        prev.map((c) => (idsToUpdate.includes(c.id) ? { ...c, recordEnabled: enabled } : c))
+      );
+      toast.success(
+        enabled
+          ? `🔴 Aufnahme für ${idsToUpdate.length} Kamera(s) aktiviert.`
+          : `Aufnahme für ${idsToUpdate.length} Kamera(s) gestoppt.`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Fehler bei der Aufnahmesteuerung.");
+    } finally {
+      setBatchCamLoading(false);
+    }
+  };
+
+  // Batch Delete All Recordings of Selected Cameras
+  const handleBatchDeleteCameraClips = async (cameraIdsToDelete?: string[]) => {
+    const targetIds = cameraIdsToDelete || Array.from(selectedCamIds);
+    if (targetIds.length === 0) return;
+
+    const names = cameras
+      .filter((c) => targetIds.includes(c.id))
+      .map((c) => c.name)
+      .join(", ");
+
+    const confirmMsg =
+      targetIds.length === cameras.length
+        ? "Möchtest du wirklich ALLE Aufnahmen von ALLEN Kameras unwiderruflich von der Festplatte löschen?"
+        : `Möchtest du wirklich alle Aufnahmen der Kamera(s) "${names}" unwiderruflich löschen?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setBatchCamLoading(true);
+    try {
+      const res = await fetch("/api/nvr/recordings", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cameraIds: targetIds }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || `Aufnahmen gelöscht.`);
+        fetchClips(selectedCameraId, selectedDate);
+      } else {
+        throw new Error(data.error || "Löschen fehlgeschlagen");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Fehler beim Löschen der Kamera-Aufnahmen.");
+    } finally {
+      setBatchCamLoading(false);
+    }
+  };
+
+  // Batch Set Camera Storage
+  const handleBatchSetCameraStorage = async (storageTargetId: string) => {
+    const idsToUpdate = Array.from(selectedCamIds);
+    if (idsToUpdate.length === 0) return;
+
+    setBatchCamLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: idsToUpdate,
+          storageTargetId: storageTargetId || null,
+        }),
+      });
+      if (res.ok) {
+        toast.success(`Speicherziel für ${idsToUpdate.length} Kameras zugewiesen.`);
+        fetchCameras();
+      }
+    } catch {
+      toast.error("Fehler beim Zuweisen des Speichers.");
+    } finally {
+      setBatchCamLoading(false);
+    }
+  };
+
+  // Batch Set Camera Segment Length
+  const handleBatchSetCameraSegment = async (minutes: number) => {
+    const idsToUpdate = Array.from(selectedCamIds);
+    if (idsToUpdate.length === 0) return;
+
+    setBatchCamLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: idsToUpdate,
+          recordSegmentMinutes: minutes,
+        }),
+      });
+      if (res.ok) {
+        toast.success(`Segmentdauer für ${idsToUpdate.length} Kameras auf ${minutes} Min. gesetzt.`);
+        fetchCameras();
+      }
+    } catch {
+      toast.error("Fehler beim Setzen der Segmentdauer.");
+    } finally {
+      setBatchCamLoading(false);
+    }
+  };
+
+  const toggleSelectCam = (id: string) => {
+    setSelectedCamIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllCams = () => {
+    if (selectedCamIds.size >= cameras.length && cameras.length > 0) {
+      setSelectedCamIds(new Set());
+    } else {
+      setSelectedCamIds(new Set(cameras.map((c) => c.id)));
     }
   };
 
@@ -397,121 +544,270 @@ export default function RecordingsPage() {
 
       {/* Accordion: Camera Recording Controls */}
       <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 overflow-hidden shadow-sm">
-        <button
-          onClick={() => setShowCameraSettings(!showCameraSettings)}
-          className="w-full flex items-center justify-between p-3.5 text-left hover:bg-slate-800/40 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
-              <Video className="h-4 w-4" />
-            </span>
-            <div>
-              <div className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
-                Kamera-Aufnahmesteuerung (🔴 REC)
-                {recordingCount > 0 ? (
-                  <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-300 border border-rose-500/30 flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                    {recordingCount} aktiv
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">
-                    Keine aktiv
-                  </span>
-                )}
+        <div className="flex items-center justify-between p-3.5 hover:bg-slate-800/40 transition-colors">
+          <button
+            onClick={() => setShowCameraSettings(!showCameraSettings)}
+            className="flex-1 flex items-center justify-between text-left pr-4"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Video className="h-4 w-4" />
+              </span>
+              <div>
+                <div className="text-xs sm:text-sm font-semibold text-white flex items-center gap-2">
+                  Kamera-Aufnahmesteuerung (🔴 REC)
+                  {recordingCount > 0 ? (
+                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                      {recordingCount} von {cameras.length} aktiv
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">
+                      Keine aktiv
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 hidden sm:block">
+                  Kameras auswählen, Daueraufnahme für mehrere/alle starten/stoppen oder Aufnahmen löschen.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">
-                Daueraufnahme ein-/ausschalten, Ziel-Speicher und Segmentlänge (z. B. 15 Minuten) einstellen.
-              </p>
             </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-            <span>{showCameraSettings ? "Einklappen" : "Ausklappen"}</span>
-            {showCameraSettings ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </div>
-        </button>
+            <div className="flex items-center gap-1.5 text-slate-400 text-xs">
+              <span>{showCameraSettings ? "Einklappen" : "Ausklappen"}</span>
+              {showCameraSettings ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </button>
+        </div>
 
         {showCameraSettings && (
           <div className="border-t border-slate-800/80 p-3.5 space-y-3 bg-slate-950/40">
+            {/* Quick 1-Click Global Actions Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border border-slate-800 bg-slate-900/90 text-xs">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleSelectAllCams}
+                  className="inline-flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-2.5 py-1 text-slate-200 hover:text-white hover:bg-slate-700 transition-colors"
+                >
+                  {selectedCamIds.size > 0 && selectedCamIds.size >= cameras.length ? (
+                    <>
+                      <Square className="h-3.5 w-3.5 text-slate-400" />
+                      <span>Auswahl aufheben</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="h-3.5 w-3.5 text-indigo-400" />
+                      <span>Alle {cameras.length} Kameras auswählen</span>
+                    </>
+                  )}
+                </button>
+
+                <span className="text-slate-500 font-mono text-[11px]">
+                  {selectedCamIds.size > 0
+                    ? `${selectedCamIds.size} ausgewählt`
+                    : "Kameras per Checkbox wählen für Mehrfachaktionen"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleBatchToggleRecord(true, true)}
+                  disabled={batchCamLoading}
+                  className="inline-flex items-center gap-1 rounded bg-rose-600/90 hover:bg-rose-500 px-2.5 py-1 text-white font-medium active:scale-95 transition-all"
+                  title="Alle Kameras im System sofort auf Daueraufnahme schalten"
+                >
+                  <Radio className="h-3 w-3 animate-pulse" />
+                  Alle aufnehmen
+                </button>
+                <button
+                  onClick={() => handleBatchToggleRecord(false, true)}
+                  disabled={batchCamLoading}
+                  className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-slate-300 hover:text-white transition-all"
+                  title="Alle aktiven Aufnahmen stoppen"
+                >
+                  Alle stoppen
+                </button>
+              </div>
+            </div>
+
+            {/* Camera Multi-Selection Toolbar (when cameras are selected) */}
+            {selectedCamIds.size > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3 text-xs text-indigo-200 animate-fadeIn">
+                <div className="flex items-center gap-2 font-semibold">
+                  <CheckCheck className="h-4 w-4 text-indigo-400" />
+                  <span>Aktionen für {selectedCamIds.size} ausgewählte Kamera(s):</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleBatchToggleRecord(true, false)}
+                    disabled={batchCamLoading}
+                    className="inline-flex items-center gap-1 rounded bg-rose-600 hover:bg-rose-500 px-2.5 py-1 text-white font-semibold active:scale-95 transition-all shadow-sm"
+                  >
+                    🔴 Aufnahme starten
+                  </button>
+                  <button
+                    onClick={() => handleBatchToggleRecord(false, false)}
+                    disabled={batchCamLoading}
+                    className="inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-slate-200 transition-all"
+                  >
+                    ⏹️ Aufnahme stoppen
+                  </button>
+                  <button
+                    onClick={() => handleBatchDeleteCameraClips()}
+                    disabled={batchCamLoading}
+                    className="inline-flex items-center gap-1 rounded border border-rose-900/60 bg-rose-950/60 hover:bg-rose-900 px-2.5 py-1 text-rose-300 transition-all"
+                    title="Löscht alle gespeicherten Aufnahmen der ausgewählten Kameras von der Festplatte"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Aufnahmen dieser Kameras löschen
+                  </button>
+
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) handleBatchSetCameraStorage(e.target.value);
+                    }}
+                    defaultValue=""
+                    className="rounded border border-indigo-700/60 bg-slate-950 px-2 py-1 text-xs text-indigo-200 focus:outline-none"
+                  >
+                    <option value="" disabled>Speicher zuweisen...</option>
+                    {storageTargets.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name} {st.isDefault ? "(Standard)" : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) handleBatchSetCameraSegment(Number(e.target.value));
+                    }}
+                    defaultValue=""
+                    className="rounded border border-indigo-700/60 bg-slate-950 px-2 py-1 text-xs text-indigo-200 focus:outline-none"
+                  >
+                    <option value="" disabled>Segmentdauer setzen...</option>
+                    <option value="5">5 Minuten</option>
+                    <option value="15">15 Minuten</option>
+                    <option value="30">30 Minuten</option>
+                    <option value="60">60 Minuten</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* Camera Cards Grid */}
             {cameras.length === 0 ? (
               <p className="text-xs text-slate-400">Keine gespeicherten Kameras vorhanden.</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {cameras.map((cam) => (
-                  <div
-                    key={cam.id}
-                    className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-900/90 p-3 space-y-2.5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs sm:text-sm font-bold text-white truncate">{cam.name}</h4>
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              cam.isOnline ? "bg-emerald-400" : "bg-slate-600"
+                {cameras.map((cam) => {
+                  const isCamSelected = selectedCamIds.has(cam.id);
+                  return (
+                    <div
+                      key={cam.id}
+                      className={`flex flex-col justify-between rounded-xl border bg-slate-900/90 p-3 space-y-2.5 transition-all ${
+                        isCamSelected
+                          ? "border-indigo-500/70 bg-indigo-950/15"
+                          : "border-slate-800/80"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <button
+                            onClick={() => toggleSelectCam(cam.id)}
+                            className="mt-0.5 text-slate-400 hover:text-white shrink-0"
+                            title="Kamera markieren"
+                          >
+                            {isCamSelected ? (
+                              <CheckSquare className="h-4 w-4 text-indigo-400" />
+                            ) : (
+                              <Square className="h-4 w-4 text-slate-500" />
+                            )}
+                          </button>
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs sm:text-sm font-bold text-white truncate">{cam.name}</h4>
+                              <span
+                                className={`h-2 w-2 rounded-full ${
+                                  cam.isOnline ? "bg-emerald-400" : "bg-slate-600"
+                                }`}
+                                title={cam.isOnline ? "Kamera online" : "Kamera offline"}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-mono text-slate-400 mt-0.5">
+                              <span>{cam.ip}</span>
+                              {cam.resolution && (
+                                <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.2 text-[9px] font-sans">
+                                  {cam.resolution}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Single Record Toggle */}
+                          <button
+                            onClick={() => handleToggleRecord(cam)}
+                            className={`touch-manipulation inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm active:scale-95 transition-all ${
+                              cam.recordEnabled
+                                ? "bg-rose-600 text-white shadow-rose-950 hover:bg-rose-500 animate-pulse"
+                                : "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                             }`}
-                            title={cam.isOnline ? "Kamera online" : "Kamera offline"}
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-mono text-slate-400 mt-0.5">
-                          <span>{cam.ip}</span>
-                          {cam.resolution && (
-                            <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1 py-0.2 text-[9px] font-sans">
-                              {cam.resolution}
-                            </span>
-                          )}
+                          >
+                            <span
+                              className={`h-2 w-2 rounded-full ${
+                                cam.recordEnabled ? "bg-white" : "bg-rose-500"
+                              }`}
+                            />
+                            {cam.recordEnabled ? "🔴 REC" : "Start"}
+                          </button>
+
+                          {/* Delete all recordings of this single camera */}
+                          <button
+                            onClick={() => handleBatchDeleteCameraClips([cam.id])}
+                            className="rounded p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+                            title={`Alle Aufnahmen von "${cam.name}" von der Festplatte löschen`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleToggleRecord(cam)}
-                        className={`touch-manipulation inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm active:scale-95 transition-all ${
-                          cam.recordEnabled
-                            ? "bg-rose-600 text-white shadow-rose-950 hover:bg-rose-500 animate-pulse"
-                            : "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-                        }`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${
-                            cam.recordEnabled ? "bg-white" : "bg-rose-500"
-                          }`}
-                        />
-                        {cam.recordEnabled ? "🔴 REC Aktiv" : "Aufnahme Start"}
-                      </button>
-                    </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800/60">
+                        <div>
+                          <label className="text-[10px] text-slate-500 block mb-1">Ziel-Speicher</label>
+                          <select
+                            value={cam.storageTargetId || ""}
+                            onChange={(e) => handleUpdateCameraStorage(cam.id, e.target.value)}
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:outline-none"
+                          >
+                            <option value="">Standard-Speicher</option>
+                            {storageTargets.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} {st.isDefault ? "(Standard)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800/60">
-                      <div>
-                        <label className="text-[10px] text-slate-500 block mb-1">Ziel-Speicher</label>
-                        <select
-                          value={cam.storageTargetId || ""}
-                          onChange={(e) => handleUpdateCameraStorage(cam.id, e.target.value)}
-                          className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:outline-none"
-                        >
-                          <option value="">Standard-Speicher</option>
-                          {storageTargets.map((st) => (
-                            <option key={st.id} value={st.id}>
-                              {st.name} {st.isDefault ? "(Standard)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-slate-500 block mb-1">Segmentlänge</label>
-                        <select
-                          value={cam.recordSegmentMinutes || 15}
-                          onChange={(e) => handleUpdateCameraSegment(cam.id, Number(e.target.value))}
-                          className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:outline-none"
-                        >
-                          <option value="5">5 Minuten</option>
-                          <option value="15">15 Minuten (Standard)</option>
-                          <option value="30">30 Minuten</option>
-                          <option value="60">60 Minuten</option>
-                        </select>
+                        <div>
+                          <label className="text-[10px] text-slate-500 block mb-1">Segmentdauer</label>
+                          <select
+                            value={cam.recordSegmentMinutes || 15}
+                            onChange={(e) => handleUpdateCameraSegment(cam.id, Number(e.target.value))}
+                            className="w-full rounded border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:outline-none"
+                          >
+                            <option value="5">5 Minuten</option>
+                            <option value="15">15 Minuten (Standard)</option>
+                            <option value="30">30 Minuten</option>
+                            <option value="60">60 Minuten</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -576,7 +872,7 @@ export default function RecordingsPage() {
                   setSelectedDate(e.target.value);
                   fetchClips(selectedCameraId, e.target.value);
                 }}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white focus:border-rose-500 focus:outline-none"
+                className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-rose-500 focus:outline-none"
               />
             </div>
 
@@ -671,7 +967,7 @@ export default function RecordingsPage() {
           </div>
         </div>
 
-        {/* Batch Action Bar (if items selected) */}
+        {/* Batch Action Bar (if clips selected) */}
         {selectedClipIds.size > 0 && (
           <div className="flex items-center justify-between rounded-lg border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
             <div className="flex items-center gap-2 font-medium">

@@ -124,28 +124,72 @@ export async function GET(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+    const body = await req.json().catch(() => ({}));
     let clipId = searchParams.get("clipId");
     let clipIds: string[] = [];
+    let cameraIds: string[] = [];
+    const deleteAll = Boolean(body?.allRecordings || searchParams.get("allRecordings") === "true");
 
     if (clipId) {
       clipIds = [clipId];
-    } else {
-      const body = await req.json().catch(() => ({}));
-      if (Array.isArray(body?.clipIds) && body.clipIds.length > 0) {
-        clipIds = body.clipIds;
-      } else if (body?.clipId) {
-        clipIds = [String(body.clipId)];
-      }
+    } else if (Array.isArray(body?.clipIds) && body.clipIds.length > 0) {
+      clipIds = body.clipIds;
+    } else if (body?.clipId) {
+      clipIds = [String(body.clipId)];
     }
 
-    if (clipIds.length === 0) {
-      return NextResponse.json({ error: "Keine Clip-ID(s) übergeben." }, { status: 400 });
+    if (searchParams.get("cameraId")) {
+      cameraIds = [searchParams.get("cameraId")!];
+    } else if (Array.isArray(body?.cameraIds) && body.cameraIds.length > 0) {
+      cameraIds = body.cameraIds.map(String);
+    } else if (body?.cameraId) {
+      cameraIds = [String(body.cameraId)];
     }
 
     const targets = await prisma.storageTarget.findMany();
     const targetPaths = targets.map((t) => path.resolve(t.path));
 
     let deletedCount = 0;
+
+    // Mode 1: Delete all recordings of specific camera(s) or all cameras
+    if (deleteAll || cameraIds.length > 0) {
+      for (const targetPath of targetPaths) {
+        if (!fs.existsSync(targetPath)) continue;
+        try {
+          const entries = await fsp.readdir(targetPath, { withFileTypes: true });
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const camId = entry.name;
+            if (!deleteAll && !cameraIds.includes(camId)) continue;
+
+            const camDirPath = path.join(targetPath, camId);
+            const files = await fsp.readdir(camDirPath).catch(() => []);
+            for (const file of files) {
+              if (file.endsWith(".mp4") || file.endsWith(".m4s")) {
+                try {
+                  await fsp.unlink(path.join(camDirPath, file));
+                  deletedCount++;
+                } catch {}
+              }
+            }
+          }
+        } catch {}
+      }
+
+      return NextResponse.json({
+        ok: true,
+        deletedCount,
+        message: deleteAll
+          ? `Alle ${deletedCount} Aufnahmen im System wurden gelöscht.`
+          : `${deletedCount} Aufnahme(n) von ${cameraIds.length} Kamera(s) wurden gelöscht.`,
+      });
+    }
+
+    // Mode 2: Delete specific clip IDs
+    if (clipIds.length === 0) {
+      return NextResponse.json({ error: "Keine Clip- oder Kamera-ID(s) übergeben." }, { status: 400 });
+    }
+
     for (const id of clipIds) {
       try {
         const decodedPath = Buffer.from(id, "base64url").toString("utf-8");

@@ -47,11 +47,20 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const body = await req.json();
-    const id = String(body.id || "").trim();
-    if (!id) return NextResponse.json({ error: "Kamera-ID fehlt." }, { status: 400 });
 
-    const camera = await prisma.camera.findUnique({ where: { id } });
-    if (!camera) return NextResponse.json({ error: "Kamera nicht gefunden." }, { status: 404 });
+    let ids: string[] = [];
+    if (Array.isArray(body?.ids) && body.ids.length > 0) {
+      ids = body.ids.map(String);
+    } else if (body?.id) {
+      ids = [String(body.id).trim()];
+    } else if (body?.all) {
+      const allCams = await prisma.camera.findMany({ select: { id: true } });
+      ids = allCams.map((c) => c.id);
+    }
+
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Keine Kamera-ID(s) übergeben." }, { status: 400 });
+    }
 
     const updateData: Record<string, any> = {};
 
@@ -65,24 +74,20 @@ export async function PATCH(req: Request) {
       updateData.storageTargetId = body.storageTargetId ? String(body.storageTargetId).trim() : null;
     }
 
-    const updated = await prisma.camera.update({
-      where: { id },
+    await prisma.camera.updateMany({
+      where: { id: { in: ids } },
       data: updateData,
-      include: {
-        status: true,
-        storageTarget: true,
-      },
     });
 
-    // Synchronize directly with MediaMTX
-    const syncResult = await syncCameraWithMediaMtx(id);
+    // Synchronize modified cameras with MediaMTX
+    for (const id of ids) {
+      await syncCameraWithMediaMtx(id).catch(() => null);
+    }
 
     return NextResponse.json({
-      camera: updated,
-      syncResult,
-      message: syncResult.ok
-        ? "Aufnahme-Einstellung gespeichert und Stream-Server aktualisiert."
-        : `Einstellung gespeichert, aber Stream-Server meldet: ${syncResult.message}`,
+      ok: true,
+      updatedCount: ids.length,
+      message: `${ids.length} Kamera(s) erfolgreich aktualisiert.`,
     });
   } catch (error: any) {
     console.error("PATCH /api/nvr/cameras error:", error);
