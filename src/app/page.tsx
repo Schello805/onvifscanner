@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
 import { loadWallData, saveWallData, upsertWallCameras, wallCameraFromScan } from "@/lib/cameraWall";
+import { useToast } from "@/components/ToastProvider";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
 function parsePorts(input: string): number[] {
@@ -47,6 +48,7 @@ function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
 }
 
 export default function HomePage() {
+  const { toast } = useToast();
   const [cidr, setCidr] = useState("192.168.1.0/24");
   const [detectedSubnets, setDetectedSubnets] = useState<
     Array<{ interfaceName: string; ip: string; cidr: string }>
@@ -349,20 +351,34 @@ export default function HomePage() {
   }, []);
 
   async function saveToWall(results: ScanResult[]) {
-    const credentials = username.trim() ? { username: username.trim(), password } : undefined;
-    const additions = results.map((result) => wallCameraFromScan(result, credentials));
-    const current = await loadWallData();
-    const next = upsertWallCameras(current.cameras, additions);
-    await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-    setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+    try {
+      const credentials = username.trim() ? { username: username.trim(), password } : undefined;
+      const additions = results.map((result) => wallCameraFromScan(result, credentials));
+      const current = await loadWallData();
+      const next = upsertWallCameras(current.cameras, additions);
+      await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
+      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+      if (results.length === 1) {
+        toast.success(`Kamera ${results[0].ip} zur Wall hinzugefügt.`);
+      } else {
+        toast.success(`${results.length} Kameras zur Wall hinzugefügt.`);
+      }
+    } catch {
+      toast.error("Fehler beim Speichern auf der Wall.");
+    }
   }
 
   async function removeFromWall(ip: string) {
     if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von der Kamera-Wall entfernen?`)) return;
-    const current = await loadWallData();
-    const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
-    await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-    setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+    try {
+      const current = await loadWallData();
+      const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
+      await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
+      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+      toast.info(`Kamera ${ip} von der Wall entfernt.`);
+    } catch {
+      toast.error("Fehler beim Entfernen von der Wall.");
+    }
   }
 
   function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
@@ -604,8 +620,11 @@ export default function HomePage() {
     } catch (e) {
       if (abortController.signal.aborted) {
         setError("Scan abgebrochen.");
+        toast.info("Scan abgebrochen.");
       } else {
-        setError(e instanceof Error ? e.message : String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        toast.error(`Scan fehlgeschlagen: ${msg}`);
       }
     } finally {
       setLoading(false);
@@ -615,6 +634,7 @@ export default function HomePage() {
   }
 
   function stopScan() {
+    toast.info("Scan wird gestoppt...");
     abortRef.current?.abort();
   }
 
@@ -647,6 +667,7 @@ export default function HomePage() {
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
+      toast.success("In die Zwischenablage kopiert!");
     } catch {
       const el = document.createElement("textarea");
       el.value = text;
@@ -656,6 +677,7 @@ export default function HomePage() {
       el.select();
       document.execCommand("copy");
       document.body.removeChild(el);
+      toast.success("In die Zwischenablage kopiert!");
     }
   }
 
