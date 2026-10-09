@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
     const pathName = camera.id;
     const encodedPath = encodeURIComponent(pathName);
-    const config = { source: source.toString(), sourceOnDemand: true };
+    const config = { source: source.toString(), sourceOnDemand: true, rtspTransport: "tcp" };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
 

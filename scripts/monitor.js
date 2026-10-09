@@ -266,6 +266,7 @@ async function syncMediaMtxPaths(cameras) {
         desiredPaths[cam.id] = {
           source: uri,
           sourceOnDemand: !cam.recordEnabled,
+          rtspTransport: "tcp",
           record: Boolean(cam.recordEnabled),
           ...(cam.recordEnabled ? {
             recordPath,
@@ -286,7 +287,13 @@ async function syncMediaMtxPaths(cameras) {
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(config)
         }).catch(()=>null);
-      } else if (existing.source !== config.source || existing.record !== config.record || existing.sourceOnDemand !== config.sourceOnDemand) {
+      } else if (
+        existing.source !== config.source ||
+        existing.record !== config.record ||
+        existing.sourceOnDemand !== config.sourceOnDemand ||
+        existing.rtspTransport !== config.rtspTransport ||
+        (config.record && existing.recordPath !== config.recordPath)
+      ) {
         await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
           method: 'PATCH',
           headers: {'Content-Type': 'application/json'},

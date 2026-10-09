@@ -125,36 +125,49 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     let clipId = searchParams.get("clipId");
+    let clipIds: string[] = [];
 
-    if (!clipId) {
+    if (clipId) {
+      clipIds = [clipId];
+    } else {
       const body = await req.json().catch(() => ({}));
-      clipId = body?.clipId;
+      if (Array.isArray(body?.clipIds) && body.clipIds.length > 0) {
+        clipIds = body.clipIds;
+      } else if (body?.clipId) {
+        clipIds = [String(body.clipId)];
+      }
     }
 
-    if (!clipId) {
-      return NextResponse.json({ error: "Clip-ID fehlt." }, { status: 400 });
+    if (clipIds.length === 0) {
+      return NextResponse.json({ error: "Keine Clip-ID(s) übergeben." }, { status: 400 });
     }
 
-    const decodedPath = Buffer.from(clipId, "base64url").toString("utf-8");
-    const resolved = path.resolve(decodedPath);
-
-    // Verify file is within an approved storage target
     const targets = await prisma.storageTarget.findMany();
-    const isAllowed = targets.some((t) => resolved.startsWith(path.resolve(t.path)));
+    const targetPaths = targets.map((t) => path.resolve(t.path));
 
-    if (!isAllowed) {
-      return NextResponse.json({ error: "Zugriff verweigert (Pfad außerhalb konfigurierter Speicherorte)." }, { status: 403 });
+    let deletedCount = 0;
+    for (const id of clipIds) {
+      try {
+        const decodedPath = Buffer.from(id, "base64url").toString("utf-8");
+        const resolved = path.resolve(decodedPath);
+
+        const isAllowed = targetPaths.some((tp) => resolved.startsWith(tp));
+        if (!isAllowed) continue;
+
+        if (fs.existsSync(resolved)) {
+          await fsp.unlink(resolved);
+          deletedCount++;
+        }
+      } catch {}
     }
 
-    if (!fs.existsSync(resolved)) {
-      return NextResponse.json({ error: "Datei nicht gefunden." }, { status: 404 });
-    }
-
-    await fsp.unlink(resolved);
-
-    return NextResponse.json({ ok: true, message: "Aufnahme gelöscht." });
+    return NextResponse.json({
+      ok: true,
+      deletedCount,
+      message: `${deletedCount} Aufnahme(n) erfolgreich gelöscht.`,
+    });
   } catch (error: any) {
     console.error("DELETE /api/nvr/recordings error:", error);
-    return NextResponse.json({ error: error?.message || "Fehler beim Löschen der Aufnahme." }, { status: 500 });
+    return NextResponse.json({ error: error?.message || "Fehler beim Löschen der Aufnahme(n)." }, { status: 500 });
   }
 }
