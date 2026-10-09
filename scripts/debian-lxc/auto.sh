@@ -71,6 +71,8 @@ ensure_user() {
     useradd --system --create-home --home-dir "/home/${APP_USER}" --shell /usr/sbin/nologin "$APP_USER"
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/recordings"
   install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
   install -d -o root -g root /etc/onvifscanner
 }
@@ -96,6 +98,8 @@ checkout_repo() {
     as_app_user "git clone '$REPO_URL' '$APP_DIR'"
     as_app_user "git -C '$APP_DIR' checkout -f main"
   fi
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/recordings"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
 
@@ -137,7 +141,7 @@ build_app() {
   as_app_user "cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
   APP_DIR="$APP_DIR" APP_USER="$APP_USER" bash "$APP_DIR/scripts/debian-lxc/setup-media.sh"
   as_app_user "cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
-  as_app_user "cd '$APP_DIR' && npm run build"
+  as_app_user "cd '$APP_DIR' && NODE_OPTIONS='--max-old-space-size=1536' npm run build"
   as_app_user "cd '$APP_DIR' && npm prune --omit=dev"
   if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
     echo "Running runtime dependency audit (omit=dev)..."
