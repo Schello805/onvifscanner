@@ -109,17 +109,9 @@ curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/script
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 
-## Rechtliches
+## Lizenz
 
-Die Rechtsdokumente findest du in der App unter:
-
-- `/impressum`
-- `/datenschutz`
-- `/cookies`
-
-Bitte passe die Platzhalter (Name/Firma/Adresse/Hosting/Analytics etc.) an deine Situation an.
-
-Lizenzhinweis (Required Notice): siehe `NOTICE`.
+Siehe `LICENSE` und `NOTICE`.
 
 ## Nutzung im Heimnetz
 
