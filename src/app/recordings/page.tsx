@@ -27,6 +27,7 @@ type CameraNvrItem = {
   id: string;
   name: string;
   ip: string;
+  resolution?: string;
   isOnline: boolean;
   recordEnabled: boolean;
   recordSegmentMinutes: number;
@@ -147,9 +148,17 @@ export default function RecordingsPage() {
   };
 
   useEffect(() => {
+    let initialCamId = "";
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("cameraId");
+      if (q) {
+        initialCamId = q;
+        setSelectedCameraId(q);
+      }
+    }
     fetchCameras();
     fetchStorageTargets();
-    fetchClips("", getTodayStr());
+    fetchClips(initialCamId, getTodayStr());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -359,7 +368,14 @@ export default function RecordingsPage() {
                             title={cam.isOnline ? "Kamera erreichbar" : "Kamera offline"}
                           />
                         </div>
-                        <p className="text-xs font-mono text-slate-400">{cam.ip}</p>
+                        <div className="flex items-center gap-2 text-xs font-mono text-slate-400 mt-0.5">
+                          <span>{cam.ip}</span>
+                          {cam.resolution && (
+                            <span className="rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 text-[10px] font-sans">
+                              📷 {cam.resolution}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Record Toggle Button */}

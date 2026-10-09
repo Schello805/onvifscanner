@@ -357,14 +357,32 @@ export default function HomePage() {
     setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
   }
 
+  async function removeFromWall(ip: string) {
+    if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von der Kamera-Wall entfernen?`)) return;
+    const current = await loadWallData();
+    const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
+    await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
+    setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+  }
+
   function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
     const saved = savedCameraIps.has(result.ip);
     return (
       <button
         type="button"
-        onClick={() => saveToWall([result])}
-        className={`${compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-xs"} rounded-lg border font-semibold transition ${saved ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"}`}
-        title={saved ? "Gespeicherte Daten aktualisieren" : "Kamera zur Kamera-Wall hinzufügen"}
+        onClick={() => {
+          if (saved) {
+            void removeFromWall(result.ip);
+          } else {
+            void saveToWall([result]);
+          }
+        }}
+        className={`${compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-xs"} rounded-lg border font-semibold transition ${
+          saved
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40"
+            : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"
+        }`}
+        title={saved ? "Kamera ist auf der Wall. Klicken, um sie zu entfernen." : "Kamera zur Kamera-Wall hinzufügen"}
       >
         {saved ? "✓ Wall" : "+ Wall"}
       </button>

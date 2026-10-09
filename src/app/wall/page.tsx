@@ -20,6 +20,7 @@ type CameraEditDraft = {
   password: string;
   group: string;
   overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  recordEnabled: boolean;
 };
 
 function apiUrl(path: string): string {
@@ -252,7 +253,8 @@ export default function CameraWallPage() {
       username: camera.credentials?.username ?? "",
       password: camera.credentials?.password ?? "",
       group: camera.group ?? "",
-      overlayPosition: camera.overlayPosition ?? "top-left"
+      overlayPosition: camera.overlayPosition ?? "top-left",
+      recordEnabled: Boolean(camera.recordEnabled)
     });
     setShowPassword(false);
   }
@@ -287,6 +289,7 @@ export default function CameraWallPage() {
   function saveCameraDetails() {
     if (!editingCameraId || !editDraft) return;
     const lines = (value: string) => Array.from(new Set(value.split("\n").map((line) => line.trim()).filter(Boolean)));
+    const currentCam = cameras.find((camera) => camera.id === editingCameraId);
     const next = cameras.map((camera) => camera.id === editingCameraId ? {
       ...camera,
       name: editDraft.name.trim() || `Kamera ${camera.ip}`,
@@ -296,8 +299,17 @@ export default function CameraWallPage() {
         ? { username: editDraft.username.trim(), password: editDraft.password }
         : undefined,
       group: editDraft.group.trim() || undefined,
-      overlayPosition: editDraft.overlayPosition
+      overlayPosition: editDraft.overlayPosition,
+      recordEnabled: editDraft.recordEnabled
     } : camera);
+
+    if (currentCam && currentCam.recordEnabled !== editDraft.recordEnabled) {
+      void fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingCameraId, recordEnabled: editDraft.recordEnabled })
+      });
+    }
 
     const previousSrc = objectUrlsRef.current[editingCameraId];
     if (previousSrc) URL.revokeObjectURL(previousSrc);
@@ -539,10 +551,21 @@ export default function CameraWallPage() {
                   ) : image?.src ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={image.src} alt={camera.name} className={`w-full h-full block transition-all duration-500 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
-                        image.state === "error" ? "opacity-30 grayscale" : 
-                        (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
-                      }`} />
+                      <img
+                        src={image.src}
+                        alt={camera.name}
+                        onLoad={(e) => {
+                          const target = e.currentTarget;
+                          if (target.naturalWidth && target.naturalHeight && !camera.resolution) {
+                            const res = `${target.naturalWidth}×${target.naturalHeight}`;
+                            setCameras((prev) => prev.map((c) => (c.id === camera.id ? { ...c, resolution: res } : c)));
+                          }
+                        }}
+                        className={`w-full h-full block transition-all duration-500 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
+                          image.state === "error" ? "opacity-30 grayscale" : 
+                          (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
+                        }`}
+                      />
                       {image.state === "error" && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
                            {image.message === "AUTH_REQUIRED" ? (
@@ -578,15 +601,26 @@ export default function CameraWallPage() {
                   )}
 
                   {image?.src && camera.overlayPosition && (
-                    <div className={`absolute m-3 px-2.5 py-1 text-xs font-bold text-white bg-black/60 rounded-md backdrop-blur-md border border-white/10 shadow-lg
+                    <div className={`absolute m-3 px-2.5 py-1 text-xs font-bold text-white bg-black/60 rounded-md backdrop-blur-md border border-white/10 shadow-lg flex items-center gap-1.5 flex-wrap
                       ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
                       ${camera.overlayPosition === "top-right" ? "top-0 right-0" : ""}
                       ${camera.overlayPosition === "bottom-left" ? "bottom-0 left-0" : ""}
                       ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
                     `}>
-                      {camera.name}
-                      {isOffline ? <span className="ml-2 inline-block rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider">Offline</span> : null}
-                      {isLive && !isOffline ? <span className="ml-2 inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
+                      <span>{camera.name}</span>
+                      {camera.resolution && (
+                        <span className="rounded bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 px-1 text-[9px] font-mono">
+                          {camera.resolution}
+                        </span>
+                      )}
+                      {camera.recordEnabled && (
+                        <span className="inline-flex items-center gap-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 px-1.5 text-[9px] font-semibold animate-pulse">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                          REC
+                        </span>
+                      )}
+                      {isOffline ? <span className="rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider">Offline</span> : null}
+                      {isLive && !isOffline ? <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
                     </div>
                   )}
                 </div>
@@ -600,7 +634,14 @@ export default function CameraWallPage() {
                       </button>
                       {liveErrors[camera.id] ? <div className="mt-1 max-w-72 truncate text-[10px] text-red-300" title={liveErrors[camera.id]}>{liveErrors[camera.id]}</div> : null}
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
+                      <Link
+                        href={`/recordings?cameraId=${camera.id}`}
+                        className="touch-manipulation rounded bg-rose-950/40 border border-rose-800/40 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-900/60 flex items-center gap-1"
+                        title="Aufnahmen dieser Kamera ansehen"
+                      >
+                        🎬<span className="hidden sm:inline"> Clips</span>
+                      </Link>
                       <button type="button" onClick={() => openEditor(camera)} className="touch-manipulation rounded bg-indigo-900/50 px-2.5 py-1.5 text-xs text-indigo-200 hover:bg-indigo-900/80" title="Kamera bearbeiten">✎</button>
                       <button type="button" disabled={index === 0} onClick={() => moveCamera(index, -1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach vorne">←</button>
                       <button type="button" disabled={index === cameras.length - 1} onClick={() => moveCamera(index, 1)} className="touch-manipulation rounded bg-white/5 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 disabled:opacity-30" title="Nach hinten">→</button>
@@ -706,6 +747,28 @@ export default function CameraWallPage() {
                   <option value="bottom-left">Unten Links</option>
                   <option value="bottom-right">Unten Rechts</option>
                 </select>
+              </label>
+
+              {cameras.find((c) => c.id === editingCameraId)?.resolution && (
+                <div className="flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-200">
+                  <span>📷 Erkannte Auflösung:</span>
+                  <strong className="font-mono text-white">
+                    {cameras.find((c) => c.id === editingCameraId)?.resolution}
+                  </strong>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2.5 cursor-pointer rounded-lg border border-white/10 bg-white/5 p-3">
+                <input
+                  type="checkbox"
+                  checked={editDraft.recordEnabled}
+                  onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked })}
+                  className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
+                />
+                <div className="text-xs">
+                  <span className="font-semibold text-white block">🔴 NVR-Daueraufnahme aktiv</span>
+                  <span className="text-slate-400">RTSP-Stream kontinuierlich auf das Speichermedium aufzeichnen</span>
+                </div>
               </label>
             </div>
 

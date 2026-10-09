@@ -26,11 +26,15 @@ export async function GET() {
       id: c.id,
       name: c.name,
       ip: c.ip,
+      resolution: c.resolution,
       isOnline: c.status?.isOnline ?? false,
       recordEnabled: c.recordEnabled,
       recordSegmentMinutes: c.recordSegmentMinutes,
       storageTargetId: c.storageTargetId,
       storageTarget: c.storageTarget || defaultStorage || null,
+      streamUris: (() => {
+        try { return JSON.parse(c.streamUris); } catch { return []; }
+      })(),
     }));
 
     return NextResponse.json({ cameras: formatted });

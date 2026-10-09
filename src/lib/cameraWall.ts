@@ -9,6 +9,8 @@ export type WallCamera = {
   hostname?: string;
   manufacturer?: string;
   model?: string;
+  resolution?: string;
+  recordEnabled?: boolean;
   snapshotUris: string[];
   streamUris: string[];
   credentials?: Credentials;
@@ -102,6 +104,7 @@ export function wallCameraFromScan(result: ScanResult, credentials?: Credentials
     hostname: result.hostname,
     manufacturer: result.manufacturer,
     model: result.model,
+    resolution: result.primaryResolution,
     snapshotUris,
     streamUris: Array.from(new Set(result.streamUris ?? [])),
     credentials: credentials?.username ? credentials : undefined,
@@ -119,6 +122,8 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         ...existing,
         ...camera,
         name: existing.name || camera.name,
+        resolution: camera.resolution || existing.resolution,
+        recordEnabled: existing.recordEnabled,
         snapshotUris: Array.from(new Set([...existing.snapshotUris, ...camera.snapshotUris])),
         streamUris: Array.from(new Set([...existing.streamUris, ...camera.streamUris])),
         credentials: camera.credentials ?? existing.credentials,

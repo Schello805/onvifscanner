@@ -14,6 +14,7 @@ model Camera {
   hostname        String?
   manufacturer    String?
   model           String?
+  resolution      String?
   snapshotUris    String   // JSON array
   streamUris      String   // JSON array
   username        String?
