@@ -22,8 +22,27 @@ model Camera {
   savedAt         DateTime @default(now())
   sortOrder       Int      @default(0)
   
+  recordEnabled        Boolean  @default(false)
+  recordSegmentMinutes Int      @default(15)
+  storageTargetId      String?
+  storageTarget        StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
+
   status          DeviceStatus?
   alarms          AlarmLog[]
+}
+
+model StorageTarget {
+  id              String   @id @default(cuid())
+  name            String
+  path            String   @unique
+  isDefault       Boolean  @default(false)
+  enabled         Boolean  @default(true)
+  maxDays         Int      @default(14)
+  minFreeSpaceGb  Int      @default(10)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cameras         Camera[]
 }
 
 model DeviceStatus {
@@ -36,9 +55,10 @@ model DeviceStatus {
 }
 
 model Settings {
-  id      String @id @default("default")
-  columns Int?
-  refresh Int?
+  id          String   @id @default("default")
+  columns     Int?
+  refresh     Int?
+  autoCleanup Boolean? @default(true)
 }
 
 model DiscoveredDevice {

@@ -220,6 +220,12 @@ async function syncMediaMtxPaths(cameras) {
     if (!listRes.ok) return;
     const currentPaths = (await listRes.json()).items || [];
     
+    // Fetch default storage target if any
+    const defaultStorage = await prisma.storageTarget.findFirst({
+      where: { isDefault: true, enabled: true }
+    });
+    const defaultStoragePath = defaultStorage?.path || require('path').join(process.cwd(), 'data', 'recordings');
+
     const desiredPaths = {};
     for (const cam of cameras) {
       let uris = Array.isArray(cam.streamUris) ? cam.streamUris : [];
@@ -238,23 +244,53 @@ async function syncMediaMtxPaths(cameras) {
               uri = parsed.toString();
            } catch(e) {}
         }
-        desiredPaths[cam.id] = uri;
+
+        let recordPath = null;
+        let segmentDuration = "15m";
+        if (cam.recordEnabled) {
+          const fs = require('fs');
+          const path = require('path');
+          let targetDir = defaultStoragePath;
+          if (cam.storageTargetId) {
+            const target = await prisma.storageTarget.findUnique({ where: { id: cam.storageTargetId } });
+            if (target && target.enabled) targetDir = target.path;
+          }
+          const camRecordDir = path.join(targetDir, cam.id);
+          if (!fs.existsSync(camRecordDir)) {
+            try { fs.mkdirSync(camRecordDir, { recursive: true }); } catch {}
+          }
+          recordPath = path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S');
+          segmentDuration = `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
+        }
+
+        desiredPaths[cam.id] = {
+          source: uri,
+          sourceOnDemand: !cam.recordEnabled,
+          record: Boolean(cam.recordEnabled),
+          ...(cam.recordEnabled ? {
+            recordPath,
+            recordFormat: "fmp4",
+            recordPartDuration: "1s",
+            recordSegmentDuration: segmentDuration,
+            recordDeleteAfter: "0s"
+          } : {})
+        };
       }
     }
 
-    for (const [id, source] of Object.entries(desiredPaths)) {
+    for (const [id, config] of Object.entries(desiredPaths)) {
       const existing = currentPaths.find(p => p.name === id);
       if (!existing) {
         await fetch(`http://127.0.0.1:9997/v3/config/paths/add/${encodeURIComponent(id)}`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ source, sourceOnDemand: true })
+          body: JSON.stringify(config)
         }).catch(()=>null);
-      } else if (existing.source !== source) {
+      } else if (existing.source !== config.source || existing.record !== config.record || existing.sourceOnDemand !== config.sourceOnDemand) {
         await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
           method: 'PATCH',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ source, sourceOnDemand: true })
+          body: JSON.stringify(config)
         }).catch(()=>null);
       }
     }
@@ -269,6 +305,68 @@ async function syncMediaMtxPaths(cameras) {
   }
 }
 
+async function runRetentionJob() {
+  try {
+    const fs = require('fs');
+    const fsp = require('fs/promises');
+    const path = require('path');
+    const targets = await prisma.storageTarget.findMany({ where: { enabled: true } });
+
+    for (const target of targets) {
+      if (!fs.existsSync(target.path)) continue;
+
+      const clips = [];
+      const walk = async (dir) => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.')) continue;
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            await walk(fullPath);
+          } else if (entry.isFile() && (entry.name.endsWith('.mp4') || entry.name.endsWith('.m4s'))) {
+            try {
+              const stat = await fsp.stat(fullPath);
+              clips.push({ fullPath, mtimeMs: stat.mtimeMs, size: stat.size });
+            } catch {}
+          }
+        }
+      };
+
+      await walk(target.path);
+      clips.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+      const now = Date.now();
+      const maxAgeMs = target.maxDays > 0 ? target.maxDays * 86_400_000 : Infinity;
+
+      const remainingClips = [];
+      for (const clip of clips) {
+        if (now - clip.mtimeMs > maxAgeMs) {
+          try { await fsp.unlink(clip.fullPath); } catch {}
+        } else {
+          remainingClips.push(clip);
+        }
+      }
+
+      if (target.minFreeSpaceGb > 0) {
+        try {
+          const statfs = fs.statfsSync(target.path);
+          let currentFreeBytes = Number(statfs.bavail) * (statfs.bsize || 4096);
+          const minFreeBytes = target.minFreeSpaceGb * 1024 * 1024 * 1024;
+          for (const clip of remainingClips) {
+            if (currentFreeBytes >= minFreeBytes) break;
+            try {
+              await fsp.unlink(clip.fullPath);
+              currentFreeBytes += clip.size;
+            } catch {}
+          }
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.error('Retention Job Error:', err);
+  }
+}
+
 function startMonitor() {
   if (isMonitoring) return;
   isMonitoring = true;
@@ -279,6 +377,10 @@ function startMonitor() {
   // Run immediately, then every 60 seconds
   void runMonitorCycle();
   monitorTimers.push(setInterval(() => void runMonitorCycle(), monitorIntervalMs));
+
+  // Run storage retention cleanup every 15 minutes
+  monitorTimers.push(setInterval(() => void runRetentionJob(), 15 * 60 * 1000));
+  monitorTimers.push(setTimeout(() => void runRetentionJob(), 30_000));
   
   if (autoDiscoveryEnabled) {
     monitorTimers.push(setInterval(() => void runAutoDiscovery(), 4 * 60 * 60 * 1000));

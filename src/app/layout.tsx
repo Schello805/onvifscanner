@@ -79,12 +79,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </div>
                   </div>
                 </Link>
-                <nav className="relative z-20 flex shrink-0 items-center gap-2">
-                  <Link className="touch-manipulation block cursor-pointer shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-500/20 active:scale-95 transition-transform" href="/wall">
+                <nav className="relative z-20 flex shrink-0 items-center gap-1.5 sm:gap-2">
+                  <Link className="touch-manipulation block cursor-pointer shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-indigo-200 hover:bg-indigo-500/20 active:scale-95 transition-transform" href="/wall">
                     <span className="sm:hidden">Wall</span><span className="hidden sm:inline">Kamera-Wall</span>
                   </Link>
+                  <Link className="touch-manipulation block cursor-pointer shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-rose-200 hover:bg-rose-500/20 active:scale-95 transition-transform flex items-center gap-1.5" href="/recordings">
+                    <span className="inline-block w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span>Aufnahmen</span>
+                  </Link>
+                  <Link className="touch-manipulation block cursor-pointer shrink-0 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-cyan-200 hover:bg-cyan-500/20 active:scale-95 transition-transform" href="/nvr/storage">
+                    <span>Speicher</span>
+                  </Link>
                   <a
-                    className="hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 sm:block"
+                    className="hidden rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 lg:block"
                     href={repoUrl}
                     target="_blank"
                     rel="noreferrer"
