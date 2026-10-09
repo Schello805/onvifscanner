@@ -153,6 +153,25 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
     ]
   },
   {
+    id: "dlink",
+    label: "D-Link",
+    match: ["dlink", "d-link", "dcs-"],
+    rtsp: [
+      { label: "RTSP Live 1", path: "/live1.sdp" },
+      { label: "RTSP Live 2", path: "/live2.sdp" },
+      { label: "RTSP Play 1", path: "/play1.sdp" }
+    ],
+    httpStream: [
+      { label: "HTTP MJPEG", path: "/video/mjpg.cgi" },
+      { label: "HTTP MJPEG Stream", path: "/mjpeg.cgi" },
+      { label: "HTTP MJPEG Video", path: "/video.cgi" }
+    ],
+    snapshot: [
+      { label: "Snapshot JPEG", path: "/image/jpeg.cgi" },
+      { label: "Snapshot Front", path: "/image/front.jpg" }
+    ]
+  },
+  {
     id: "generic",
     label: "Generic MJPEG/JPEG",
     match: [],
