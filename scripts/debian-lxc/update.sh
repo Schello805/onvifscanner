@@ -18,7 +18,8 @@ apt-get install -y --no-install-recommends \
   ca-certificates curl git gnupg \
   build-essential python3 make g++ pkg-config \
   libvips libvips-dev \
-  libc6 ffmpeg
+  libc6 ffmpeg \
+  cifs-utils nfs-common sudo
 
 if command -v node >/dev/null 2>&1; then
   major="$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)"
@@ -70,6 +71,12 @@ if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
 fi
 
 install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
+if [[ -f "$APP_DIR/deploy/onvifscanner-storage-helper" ]]; then
+  install -m 0755 "$APP_DIR/deploy/onvifscanner-storage-helper" /usr/local/bin/onvifscanner-storage-helper
+  mkdir -p /etc/sudoers.d
+  echo "${APP_USER} ALL=(ALL) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper" > /etc/sudoers.d/onvifscanner
+  chmod 0440 /etc/sudoers.d/onvifscanner
+fi
 install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
 systemctl daemon-reload
 systemctl restart --no-block onvifscanner.service

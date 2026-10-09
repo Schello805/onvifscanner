@@ -2,7 +2,11 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import os from "os";
+import { execFile } from "child_process";
+import util from "util";
 import { prisma } from "@/lib/db";
+
+const execFileAsync = util.promisify(execFile);
 
 export type StorageStats = {
   path: string;
@@ -311,6 +315,114 @@ export async function testStoragePath(
   } catch (err: any) {
     res.error = err?.message || String(err);
     return res;
+  }
+}
+
+/**
+ * Automatically fixes write permissions on a folder via helper script or direct chmod.
+ */
+export async function fixPathPermissions(targetPath: string): Promise<{
+  ok: boolean;
+  message: string;
+  error?: string;
+}> {
+  const resolved = path.resolve(targetPath);
+  if (!fs.existsSync(resolved)) {
+    try {
+      await fsp.mkdir(resolved, { recursive: true });
+    } catch (e: any) {
+      return { ok: false, message: "Ordner existiert nicht und konnte nicht erstellt werden.", error: e?.message };
+    }
+  }
+
+  // 1. Check if helper script is installed
+  const helperPath = "/usr/local/bin/onvifscanner-storage-helper";
+  if (fs.existsSync(helperPath)) {
+    try {
+      const { stdout } = await execFileAsync("sudo", [helperPath, "fix-permissions", resolved]);
+      const res = JSON.parse(stdout.trim());
+      if (res.ok) {
+        return { ok: true, message: "Berechtigungen wurden erfolgreich über den System-Dienst freigegeben." };
+      }
+    } catch (helperErr: any) {
+      console.warn("Storage helper failed, trying fallback chmod:", helperErr?.message);
+    }
+  }
+
+  // 2. Direct chmod fallback
+  try {
+    await fsp.chmod(resolved, 0o777);
+    return { ok: true, message: "Berechtigungen wurden freigegeben (777)." };
+  } catch (chmodErr: any) {
+    return {
+      ok: false,
+      message: "Berechtigungen konnten nicht automatisch geändert werden.",
+      error: chmodErr?.message || String(chmodErr),
+    };
+  }
+}
+
+/**
+ * Mounts a network share (SMB/CIFS or NFS) without CLI.
+ */
+export async function mountNetworkShare(params: {
+  type: "cifs" | "nfs";
+  server: string;
+  share: string;
+  mountpoint: string;
+  username?: string;
+  password?: string;
+  domain?: string;
+  persist?: boolean;
+}): Promise<{
+  ok: boolean;
+  message: string;
+  error?: string;
+}> {
+  const resolvedMount = path.resolve(params.mountpoint);
+  const helperPath = "/usr/local/bin/onvifscanner-storage-helper";
+
+  if (!fs.existsSync(helperPath)) {
+    return {
+      ok: false,
+      message: "Der automatische Mount-Dienst ist auf diesem System nicht aktiv.",
+      error: "onvifscanner-storage-helper nicht gefunden. Bitte installer ausführen.",
+    };
+  }
+
+  try {
+    if (params.type === "cifs") {
+      const { stdout } = await execFileAsync("sudo", [
+        helperPath,
+        "mount-cifs",
+        params.server,
+        params.share,
+        resolvedMount,
+        params.username || "",
+        params.password || "",
+        params.domain || "",
+        params.persist !== false ? "true" : "false",
+      ]);
+      const res = JSON.parse(stdout.trim());
+      return { ok: true, message: res.message || "SMB/CIFS Freigabe erfolgreich eingehängt." };
+    } else {
+      const { stdout } = await execFileAsync("sudo", [
+        helperPath,
+        "mount-nfs",
+        params.server,
+        params.share,
+        resolvedMount,
+        params.persist !== false ? "true" : "false",
+      ]);
+      const res = JSON.parse(stdout.trim());
+      return { ok: true, message: res.message || "NFS Freigabe erfolgreich eingehängt." };
+    }
+  } catch (mountErr: any) {
+    return {
+      ok: false,
+      message: "Fehler beim Einhängen der Netzwerkfreigabe.",
+      error: mountErr?.stderr || mountErr?.message || String(mountErr),
+    };
   }
 }
 

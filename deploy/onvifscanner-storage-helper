@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Storage helper script for ONVIFscanner
+# Allows the web application to fix permissions and mount SMB/NFS shares without CLI.
+
+ACTION="${1:-}"
+
+if [[ -z "$ACTION" ]]; then
+  echo '{"error": "Keine Aktion angegeben."}' >&2
+  exit 1
+fi
+
+APP_USER="${APP_USER:-onvifscanner}"
+
+fix_permissions() {
+  local target_path="$1"
+  if [[ -z "$target_path" || "$target_path" != /* ]]; then
+    echo '{"error": "Ungültiger Pfad."}' >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$target_path" ]]; then
+    mkdir -p "$target_path"
+  fi
+
+  if id "$APP_USER" >/dev/null 2>&1; then
+    chown -R "$APP_USER:$APP_USER" "$target_path" 2>/dev/null || true
+  fi
+
+  chmod -R 775 "$target_path" 2>/dev/null || chmod -R 777 "$target_path" 2>/dev/null || true
+  echo '{"ok": true, "message": "Berechtigungen erfolgreich aktualisiert."}'
+}
+
+mount_cifs() {
+  local server="$1"
+  local share="$2"
+  local mountpoint="$3"
+  local username="${4:-}"
+  local password="${5:-}"
+  local domain="${6:-}"
+  local persist="${7:-false}"
+
+  if [[ -z "$server" || -z "$share" || -z "$mountpoint" ]]; then
+    echo '{"error": "Server, Freigabename und Mountpunkt sind erforderlich."}' >&2
+    exit 1
+  fi
+
+  # Strip leading/trailing slashes
+  share="${share#/}"
+  share="${share%/}"
+
+  local unc="//${server}/${share}"
+
+  mkdir -p "$mountpoint"
+
+  local uid_val=1000
+  local gid_val=1000
+  if id -u "$APP_USER" >/dev/null 2>&1; then
+    uid_val=$(id -u "$APP_USER")
+    gid_val=$(id -g "$APP_USER")
+  fi
+
+  local opts="uid=${uid_val},gid=${gid_val},file_mode=0775,dir_mode=0775,iocharset=utf8"
+
+  if [[ -n "$username" ]]; then
+    local hash
+    hash=$(echo -n "$mountpoint" | md5sum | awk '{print $1}')
+    local cred_dir="/etc/onvifscanner/credentials"
+    mkdir -p "$cred_dir"
+    chmod 0700 "$cred_dir"
+    local cred_file="${cred_dir}/cifs_${hash}.cred"
+
+    cat >"$cred_file" <<EOF
+username=${username}
+password=${password}
+${domain:+domain=${domain}}
+EOF
+    chmod 0600 "$cred_file"
+    opts="${opts},credentials=${cred_file}"
+  else
+    opts="${opts},guest"
+  fi
+
+  # Mount share
+  mount -t cifs "$unc" "$mountpoint" -o "$opts"
+
+  if [[ "$persist" == "true" ]]; then
+    local fstab_line="${unc} ${mountpoint} cifs ${opts},_netdev,nofail 0 0"
+    if ! grep -qF "$mountpoint" /etc/fstab; then
+      echo "$fstab_line" >> /etc/fstab
+    fi
+  fi
+
+  echo '{"ok": true, "message": "SMB/CIFS-Freigabe erfolgreich eingehängt."}'
+}
+
+mount_nfs() {
+  local server="$1"
+  local share="$2"
+  local mountpoint="$3"
+  local persist="${4:-false}"
+
+  if [[ -z "$server" || -z "$share" || -z "$mountpoint" ]]; then
+    echo '{"error": "Server, Exportpfad und Mountpunkt sind erforderlich."}' >&2
+    exit 1
+  fi
+
+  # Ensure share begins with /
+  if [[ "$share" != /* ]]; then
+    share="/${share}"
+  fi
+
+  local nfs_source="${server}:${share}"
+
+  mkdir -p "$mountpoint"
+
+  local opts="rw,nolock,hard,intr"
+  mount -t nfs "$nfs_source" "$mountpoint" -o "$opts"
+
+  if id "$APP_USER" >/dev/null 2>&1; then
+    chown -R "$APP_USER:$APP_USER" "$mountpoint" 2>/dev/null || true
+  fi
+  chmod 775 "$mountpoint" 2>/dev/null || true
+
+  if [[ "$persist" == "true" ]]; then
+    local fstab_line="${nfs_source} ${mountpoint} nfs ${opts},_netdev,nofail 0 0"
+    if ! grep -qF "$mountpoint" /etc/fstab; then
+      echo "$fstab_line" >> /etc/fstab
+    fi
+  fi
+
+  echo '{"ok": true, "message": "NFS-Freigabe erfolgreich eingehängt."}'
+}
+
+umount_share() {
+  local mountpoint="$1"
+  if [[ -z "$mountpoint" ]]; then
+    echo '{"error": "Kein Mountpunkt angegeben."}' >&2
+    exit 1
+  fi
+
+  if mountpoint -q "$mountpoint" 2>/dev/null; then
+    umount -l "$mountpoint" || umount -f "$mountpoint"
+  fi
+
+  if [[ -f /etc/fstab ]]; then
+    sed -i "\|${mountpoint}|d" /etc/fstab || true
+  fi
+
+  echo '{"ok": true, "message": "Laufwerk erfolgreich ausgehängt."}'
+}
+
+case "$ACTION" in
+  fix-permissions)
+    shift
+    fix_permissions "$@"
+    ;;
+  mount-cifs)
+    shift
+    mount_cifs "$@"
+    ;;
+  mount-nfs)
+    shift
+    mount_nfs "$@"
+    ;;
+  umount)
+    shift
+    umount_share "$@"
+    ;;
+  *)
+    echo '{"error": "Unbekannte Aktion: '"$ACTION"'"}' >&2
+    exit 1
+    ;;
+esac

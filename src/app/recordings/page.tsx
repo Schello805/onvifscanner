@@ -22,6 +22,7 @@ import {
   RotateCcw,
   RotateCw,
 } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 type CameraNvrItem = {
   id: string;
@@ -81,6 +82,7 @@ function getYesterdayStr(): string {
 }
 
 export default function RecordingsPage() {
+  const { toast } = useToast();
   const [cameras, setCameras] = useState<CameraNvrItem[]>([]);
   const [storageTargets, setStorageTargets] = useState<StorageTargetSimple[]>([]);
   const [clips, setClips] = useState<RecordingClip[]>([]);
@@ -229,7 +231,7 @@ export default function RecordingsPage() {
         method: "DELETE",
       });
       if (res.ok) {
-        setMessage({ type: "ok", text: "Aufnahme gelöscht." });
+        toast.success(`Aufnahme ${clip.filename} gelöscht.`);
         setClips((prev) => prev.filter((c) => c.id !== clip.id));
         if (activeClip?.id === clip.id) {
           setActiveClip(null);
@@ -239,7 +241,7 @@ export default function RecordingsPage() {
         throw new Error(data.error || "Löschen fehlgeschlagen");
       }
     } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Fehler beim Löschen." });
+      toast.error(err.message || "Fehler beim Löschen.");
     }
   };
 

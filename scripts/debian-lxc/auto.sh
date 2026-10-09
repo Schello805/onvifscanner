@@ -43,7 +43,7 @@ ensure_packages() {
     ca-certificates curl git gnupg \
     build-essential python3 make g++ pkg-config \
     libvips libvips-dev \
-    libc6 ffmpeg
+    libc6 ffmpeg cifs-utils nfs-common sudo
 }
 
 install_node20() {
@@ -160,6 +160,9 @@ stop_service_if_running() {
 
 install_service() {
   install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
+  install -m 0755 "$APP_DIR/deploy/onvifscanner-storage-helper" /usr/local/bin/onvifscanner-storage-helper
+  echo "onvifscanner ALL=(ALL) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper" > /etc/sudoers.d/onvifscanner
+  chmod 0440 /etc/sudoers.d/onvifscanner
   install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
   systemctl daemon-reload
   systemctl enable onvifscanner.service

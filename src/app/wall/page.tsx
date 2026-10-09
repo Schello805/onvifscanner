@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
+import { useToast } from "@/components/ToastProvider";
 
 type CameraImageState = {
   src?: string;
@@ -29,6 +30,7 @@ function apiUrl(path: string): string {
 }
 
 export default function CameraWallPage() {
+  const { toast } = useToast();
   const [cameras, setCameras] = useState<WallCamera[]>([]);
   const [images, setImages] = useState<Record<string, CameraImageState>>({});
   const [columns, setColumns] = useState(3);
@@ -272,6 +274,7 @@ export default function CameraWallPage() {
   }
 
   function removeCamera(id: string) {
+    const cam = cameras.find((item) => item.id === id);
     const next = cameras.filter((item) => item.id !== id);
     if (expandedCameraId === id) setExpandedCameraId(null);
     if (liveCameras.has(id)) {
@@ -290,6 +293,7 @@ export default function CameraWallPage() {
       return updated;
     });
     persist(next);
+    toast.success(`Kamera "${cam?.name || id}" von der Wall entfernt.`);
   }
 
   function saveCameraDetails() {
@@ -327,6 +331,7 @@ export default function CameraWallPage() {
     });
     persist(next);
     closeEditor();
+    toast.success(`Kamera "${editDraft.name.trim() || currentCam?.name}" gespeichert.`);
   }
 
   async function enterMonitorMode() {
@@ -339,12 +344,14 @@ export default function CameraWallPage() {
   }
 
   async function toggleLive(cameraId: string) {
+    const cam = cameras.find((c) => c.id === cameraId);
     if (liveCameras.has(cameraId)) {
       setLiveCameras((current) => {
         const next = new Set(current);
         next.delete(cameraId);
         return next;
       });
+      toast.info(`Live-Stream für "${cam?.name || cameraId}" gestoppt.`);
       return;
     }
 
@@ -362,11 +369,14 @@ export default function CameraWallPage() {
       }
       setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
       setLiveCameras((current) => new Set(current).add(cameraId));
+      toast.success(`Live-Stream für "${cam?.name || cameraId}" aktiv.`);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "Live-Stream konnte nicht gestartet werden.";
       setLiveErrors((current) => ({
         ...current,
-        [cameraId]: error instanceof Error ? error.message : "Live-Stream konnte nicht gestartet werden."
+        [cameraId]: msg
       }));
+      toast.error(msg);
     } finally {
       setLiveLoading((current) => {
         const next = new Set(current);
@@ -381,15 +391,15 @@ export default function CameraWallPage() {
     const anyNotLive = allIds.some(id => !liveCameras.has(id));
     
     if (anyNotLive) {
-      // Start all cameras that are not live yet
+      toast.info("Starte alle Live-Streams...");
       for (const id of allIds) {
         if (!liveCameras.has(id) && !liveLoading.has(id)) {
           void toggleLive(id);
         }
       }
     } else {
-      // Stop all cameras
       setLiveCameras(new Set());
+      toast.info("Alle Live-Streams gestoppt.");
     }
   }
 
