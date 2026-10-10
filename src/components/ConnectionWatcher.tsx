@@ -13,8 +13,8 @@ export function ConnectionWatcher() {
         try {
           const res = await fetch("/api/health", { 
             cache: "no-store",
-            // Short timeout to quickly detect if server is gone
-            signal: AbortSignal.timeout(3000) 
+            // Longer timeout to prevent false positives when network is busy
+            signal: AbortSignal.timeout(10000) 
           });
           
           if (!res.ok) throw new Error("HTTP error");
