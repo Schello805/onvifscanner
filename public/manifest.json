@@ -2,7 +2,7 @@
   "name": "OnvifScanner",
   "short_name": "Scanner",
   "description": "ONVIF Camera Scanner and NVR",
-  "start_url": "/wall",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0ea5e9",
