@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import {
   Radar,
   LayoutGrid,
+  Radio,
   Film,
   HardDrive,
   Menu,
@@ -60,13 +61,25 @@ const NAV_ITEMS: NavItem[] = [
     href: "/recordings",
     label: "Aufnahmen",
     mobileLabel: "Aufnahmen",
-    description: "NVR Video-Clips, Timeline & Downloads",
-    icon: Film,
+    description: "Kamera-Daueraufnahmen, Steuerung & Speicherzuweisung",
+    icon: Radio,
     color: "text-rose-400",
     activeBg: "bg-rose-500/15",
     activeBorder: "border-rose-500/40",
     activeText: "text-rose-200",
     dotColor: "bg-rose-500",
+  },
+  {
+    href: "/wiedergabe",
+    label: "Wiedergabe",
+    mobileLabel: "Wiedergabe",
+    description: "Video-Archiv durchsuchen, Player & Downloads",
+    icon: Film,
+    color: "text-amber-400",
+    activeBg: "bg-amber-500/15",
+    activeBorder: "border-amber-500/40",
+    activeText: "text-amber-200",
+    dotColor: "bg-amber-500",
   },
   {
     href: "/nvr/storage",
@@ -126,6 +139,9 @@ export function Navigation({
     }
     if (item.href === "/monitore") {
       return pathname.startsWith("/monitore") || pathname.startsWith("/wall");
+    }
+    if (item.href === "/recordings") {
+      return pathname.startsWith("/recordings") || pathname.startsWith("/aufnahmen");
     }
     return pathname.startsWith(item.href);
   };
@@ -320,7 +336,7 @@ export function Navigation({
           className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-800/80 bg-slate-950/90 backdrop-blur-2xl px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))] shadow-[0_-8px_30px_rgba(0,0,0,0.7)]"
           aria-label="Mobile Schnellnavigation"
         >
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {NAV_ITEMS.map((item) => {
               const active = isItemActive(item);
               const Icon = item.icon;
