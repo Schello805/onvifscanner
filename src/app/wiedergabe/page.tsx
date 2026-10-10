@@ -86,6 +86,8 @@ export default function PlaybackPage() {
   // Filters & Search
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(getTodayStr());
+  const [timeFrom, setTimeFrom] = useState<string>("");
+  const [timeTo, setTimeTo] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "largest" | "smallest">("newest");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -165,6 +167,23 @@ export default function PlaybackPage() {
           c.storageTargetName.toLowerCase().includes(q)
       );
     }
+    if (timeFrom) {
+      const tFrom = timeFrom.length === 5 ? `${timeFrom}:00` : timeFrom;
+      if (timeTo) {
+        const tTo = timeTo.length === 5 ? `${timeTo}:59` : timeTo;
+        if (tFrom <= tTo) {
+          result = result.filter((c) => c.timeStr >= tFrom && c.timeStr <= tTo);
+        } else {
+          result = result.filter((c) => c.timeStr >= tFrom || c.timeStr <= tTo);
+        }
+      } else {
+        result = result.filter((c) => c.timeStr >= tFrom);
+      }
+    } else if (timeTo) {
+      const tTo = timeTo.length === 5 ? `${timeTo}:59` : timeTo;
+      result = result.filter((c) => c.timeStr <= tTo);
+    }
+
     if (sortBy === "newest") {
       result.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     } else if (sortBy === "oldest") {
@@ -175,7 +194,7 @@ export default function PlaybackPage() {
       result.sort((a, b) => a.sizeBytes - b.sizeBytes);
     }
     return result;
-  }, [clips, searchQuery, sortBy]);
+  }, [clips, searchQuery, timeFrom, timeTo, sortBy]);
 
   // Pagination
   const totalPages = pageSize === "all" ? 1 : Math.ceil(filteredClips.length / Number(pageSize)) || 1;
@@ -524,6 +543,122 @@ export default function PlaybackPage() {
                 <span className="hidden sm:inline">Karten</span>
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Time Range Filter Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-slate-400">
+              <Clock className="h-3.5 w-3.5 text-amber-400" />
+              <span className="font-medium text-slate-300">Uhrzeit:</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={timeFrom}
+                onChange={(e) => {
+                  setTimeFrom(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-white focus:border-amber-500 focus:outline-none"
+                title="Von Uhrzeit (z. B. 08:00)"
+              />
+              <span className="text-slate-500">–</span>
+              <input
+                type="time"
+                value={timeTo}
+                onChange={(e) => {
+                  setTimeTo(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-white focus:border-amber-500 focus:outline-none"
+                title="Bis Uhrzeit (z. B. 18:00)"
+              />
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom("06:00");
+                  setTimeTo("12:00");
+                  setCurrentPage(1);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  timeFrom === "06:00" && timeTo === "12:00"
+                    ? "bg-amber-600 text-white font-semibold"
+                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                06–12 Uhr
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom("12:00");
+                  setTimeTo("18:00");
+                  setCurrentPage(1);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  timeFrom === "12:00" && timeTo === "18:00"
+                    ? "bg-amber-600 text-white font-semibold"
+                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                12–18 Uhr
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom("18:00");
+                  setTimeTo("23:59");
+                  setCurrentPage(1);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  timeFrom === "18:00" && timeTo === "23:59"
+                    ? "bg-amber-600 text-white font-semibold"
+                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                18–24 Uhr
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom("00:00");
+                  setTimeTo("06:00");
+                  setCurrentPage(1);
+                }}
+                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  timeFrom === "00:00" && timeTo === "06:00"
+                    ? "bg-amber-600 text-white font-semibold"
+                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                }`}
+              >
+                00–06 Uhr
+              </button>
+            </div>
+
+            {(timeFrom || timeTo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom("");
+                  setTimeTo("");
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25 transition-all"
+              >
+                ✕ Zeitfilter löschen
+              </button>
+            )}
+          </div>
+
+          <div className="text-[11px] text-slate-400">
+            {filteredClips.length} {filteredClips.length === 1 ? "Aufnahme" : "Aufnahmen"}
           </div>
         </div>
 
