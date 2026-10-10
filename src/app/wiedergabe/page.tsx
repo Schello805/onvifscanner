@@ -237,8 +237,10 @@ export default function PlaybackPage() {
   // Filters & Search
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(getTodayStr());
+  const [datePreset, setDatePreset] = useState<string>("today");
   const [timeFrom, setTimeFrom] = useState<string>("");
   const [timeTo, setTimeTo] = useState<string>("");
+  const [timePreset, setTimePreset] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "largest" | "smallest">("newest");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
@@ -247,7 +249,7 @@ export default function PlaybackPage() {
   // Timeline Zoom & Event Inspector State
   const [timelineZoom, setTimelineZoom] = useState<24 | 12 | 6 | 2 | 1>(24);
   const [timelineStartMin, setTimelineStartMin] = useState<number>(0);
-  const [showEventLog, setShowEventLog] = useState<boolean>(true);
+  const [showEventLog, setShowEventLog] = useState<boolean>(false);
   const [eventLogSearch, setEventLogSearch] = useState<string>("");
   const [eventLogTimeOfDay, setEventLogTimeOfDay] = useState<"all" | "night" | "morning" | "afternoon" | "evening">("all");
   const [showVideoTrack, setShowVideoTrack] = useState<boolean>(true);
@@ -303,6 +305,43 @@ export default function PlaybackPage() {
       setLoadingStats(false);
     }
   }, [statsPeriod]);
+
+  const handleDatePresetChange = (preset: string) => {
+    setDatePreset(preset);
+    if (preset === "today") {
+      const d = getTodayStr();
+      setSelectedDate(d);
+      fetchClips(selectedCameraId, d);
+    } else if (preset === "yesterday") {
+      const d = getYesterdayStr();
+      setSelectedDate(d);
+      fetchClips(selectedCameraId, d);
+    } else if (preset === "all") {
+      setSelectedDate("");
+      fetchClips(selectedCameraId, "");
+    }
+  };
+
+  const handleTimePresetChange = (preset: string) => {
+    setTimePreset(preset);
+    if (preset === "all") {
+      setTimeFrom("");
+      setTimeTo("");
+    } else if (preset === "morning") {
+      setTimeFrom("06:00");
+      setTimeTo("12:00");
+    } else if (preset === "afternoon") {
+      setTimeFrom("12:00");
+      setTimeTo("18:00");
+    } else if (preset === "evening") {
+      setTimeFrom("18:00");
+      setTimeTo("23:59");
+    } else if (preset === "night") {
+      setTimeFrom("00:00");
+      setTimeTo("06:00");
+    }
+    setCurrentPage(1);
+  };
 
   const fetchCameras = async () => {
     try {
@@ -825,16 +864,17 @@ export default function PlaybackPage() {
         </div>
       </div>
 
-      {/* Filter Toolbar Bar */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3.5 shadow-md space-y-3">
+      {/* Sleek, Modern & Uncluttered Filter Bar */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
+          {/* Left Group: Search & Core Filters */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Search Input */}
-            <div className="relative min-w-[180px] sm:min-w-[220px]">
+            <div className="relative min-w-[160px] sm:min-w-[200px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Suche (Kamera, Uhrzeit, Datei)..."
+                placeholder="Suche..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -852,16 +892,16 @@ export default function PlaybackPage() {
               )}
             </div>
 
-            {/* Camera Filter */}
-            <div className="flex items-center gap-1">
-              <Video className="h-3.5 w-3.5 text-slate-400" />
+            {/* Camera Dropdown */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+              <Video className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               <select
                 value={selectedCameraId}
                 onChange={(e) => {
                   setSelectedCameraId(e.target.value);
                   fetchClips(e.target.value, selectedDate);
                 }}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none max-w-[160px] truncate"
+                className="bg-transparent text-xs text-white focus:outline-none max-w-[150px] truncate cursor-pointer"
               >
                 <option value="">Alle Kameras</option>
                 {cameras.map((c) => (
@@ -872,70 +912,79 @@ export default function PlaybackPage() {
               </select>
             </div>
 
-            {/* Date Filter */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs">
-              <Calendar className="h-3.5 w-3.5 text-amber-400" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value);
-                  fetchClips(selectedCameraId, e.target.value);
-                }}
-                className="bg-transparent text-xs text-white focus:outline-none"
-              />
+            {/* Date Preset Dropdown */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+              <Calendar className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <select
+                value={datePreset}
+                onChange={(e) => handleDatePresetChange(e.target.value)}
+                className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
+              >
+                <option value="today">Heute ({formatGermanDate(getTodayStr())})</option>
+                <option value="yesterday">Gestern ({formatGermanDate(getYesterdayStr())})</option>
+                <option value="all">Alle Tage (Gesamt)</option>
+                <option value="custom">📅 Anderes Datum...</option>
+              </select>
+              {datePreset === "custom" && (
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    fetchClips(selectedCameraId, e.target.value);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none ml-1"
+                />
+              )}
             </div>
 
-            {/* Quick Date Pills */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  setSelectedDate(getTodayStr());
-                  fetchClips(selectedCameraId, getTodayStr());
-                }}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                  selectedDate === getTodayStr()
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
+            {/* Time of Day Preset Dropdown */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+              <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <select
+                value={timePreset}
+                onChange={(e) => handleTimePresetChange(e.target.value)}
+                className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
               >
-                Heute ({formatGermanDate(getTodayStr())})
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate(getYesterdayStr());
-                  fetchClips(selectedCameraId, getYesterdayStr());
-                }}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                  selectedDate === getYesterdayStr()
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                Gestern ({formatGermanDate(getYesterdayStr())})
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate("");
-                  fetchClips(selectedCameraId, "");
-                }}
-                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
-                  selectedDate === ""
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                Alle Tage
-              </button>
+                <option value="all">Ganzer Tag (00–24 Uhr)</option>
+                <option value="morning">🌅 Vormittag (06–12 Uhr)</option>
+                <option value="afternoon">☀️ Nachmittag (12–18 Uhr)</option>
+                <option value="evening">🌙 Abend (18–24 Uhr)</option>
+                <option value="night">🌌 Nacht (00–06 Uhr)</option>
+                <option value="custom">⚙️ Eigene Uhrzeit...</option>
+              </select>
+              {timePreset === "custom" && (
+                <div className="flex items-center gap-1 ml-1">
+                  <input
+                    type="time"
+                    value={timeFrom}
+                    onChange={(e) => {
+                      setTimeFrom(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-slate-900 border border-slate-700 rounded px-1 text-xs text-white"
+                  />
+                  <span className="text-slate-500">–</span>
+                  <input
+                    type="time"
+                    value={timeTo}
+                    onChange={(e) => {
+                      setTimeTo(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-slate-900 border border-slate-700 rounded px-1 text-xs text-white"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Filter: Nur Clips mit Bewegung */}
+            {/* Filter: Nur Clips mit Bewegung Toggle */}
             <button
               onClick={() => {
                 setFilterMotionOnly(!filterMotionOnly);
                 setCurrentPage(1);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
                 filterMotionOnly
                   ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20"
                   : "border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700"
@@ -943,7 +992,7 @@ export default function PlaybackPage() {
               title="Nur Aufnahmen mit erkannter Bewegung anzeigen"
             >
               <Zap className={`h-3.5 w-3.5 ${filterMotionOnly ? "fill-slate-950 text-slate-950" : "fill-amber-400 text-amber-400"}`} />
-              <span>Nur mit Bewegung</span>
+              <span>Nur Bewegung</span>
               {motionClipsCount > 0 && (
                 <span
                   className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
@@ -956,15 +1005,15 @@ export default function PlaybackPage() {
             </button>
           </div>
 
-          {/* View Mode & Sort Controls */}
+          {/* Right Group: Sort, View Switcher & Counter */}
           <div className="flex items-center gap-2">
             {/* Sort Dropdown */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs">
               <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-white focus:outline-none"
+                className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
               >
                 <option value="newest">Neueste zuerst</option>
                 <option value="oldest">Älteste zuerst</option>
@@ -1000,122 +1049,10 @@ export default function PlaybackPage() {
                 <span className="hidden sm:inline">Karten</span>
               </button>
             </div>
-          </div>
-        </div>
 
-        {/* Time Range Filter Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-2.5 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <Clock className="h-3.5 w-3.5 text-amber-400" />
-              <span className="font-medium text-slate-300">Uhrzeit:</span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <input
-                type="time"
-                value={timeFrom}
-                onChange={(e) => {
-                  setTimeFrom(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-white focus:border-amber-500 focus:outline-none"
-                title="Von Uhrzeit (z. B. 08:00)"
-              />
-              <span className="text-slate-500">–</span>
-              <input
-                type="time"
-                value={timeTo}
-                onChange={(e) => {
-                  setTimeTo(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-white focus:border-amber-500 focus:outline-none"
-                title="Bis Uhrzeit (z. B. 18:00)"
-              />
-            </div>
-
-            {/* Quick Presets */}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeFrom("06:00");
-                  setTimeTo("12:00");
-                  setCurrentPage(1);
-                }}
-                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
-                  timeFrom === "06:00" && timeTo === "12:00"
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                06–12 Uhr
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeFrom("12:00");
-                  setTimeTo("18:00");
-                  setCurrentPage(1);
-                }}
-                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
-                  timeFrom === "12:00" && timeTo === "18:00"
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                12–18 Uhr
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeFrom("18:00");
-                  setTimeTo("23:59");
-                  setCurrentPage(1);
-                }}
-                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
-                  timeFrom === "18:00" && timeTo === "23:59"
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                18–24 Uhr
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeFrom("00:00");
-                  setTimeTo("06:00");
-                  setCurrentPage(1);
-                }}
-                className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all ${
-                  timeFrom === "00:00" && timeTo === "06:00"
-                    ? "bg-amber-600 text-white font-semibold"
-                    : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
-                }`}
-              >
-                00–06 Uhr
-              </button>
-            </div>
-
-            {(timeFrom || timeTo) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTimeFrom("");
-                  setTimeTo("");
-                  setCurrentPage(1);
-                }}
-                className="rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-medium text-amber-300 hover:bg-amber-500/25 transition-all"
-              >
-                ✕ Zeitfilter löschen
-              </button>
-            )}
-          </div>
-
-          <div className="text-[11px] text-slate-400">
-            {filteredClips.length} {filteredClips.length === 1 ? "Aufnahme" : "Aufnahmen"}
+            <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+              {filteredClips.length} {filteredClips.length === 1 ? "Clip" : "Clips"}
+            </span>
           </div>
         </div>
 
@@ -1879,48 +1816,31 @@ export default function PlaybackPage() {
       </div>
     )}
 
-      {/* Modern High-Precision Timeline with Multi-Zoom & Event Inspector */}
+      {/* Modern High-Precision Timeline */}
       <div className="rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 sm:p-5 mb-6 shadow-2xl backdrop-blur-md">
-        {/* Timeline Header & Zoom Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-sm shadow-amber-500/10">
+        {/* Timeline Header & Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
               <Clock className="h-4 w-4" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold text-white tracking-wide">
-                  {timelineZoom === 24 ? "24-Stunden Zeitstrahl" : `Detail-Zeitleiste (${timelineZoom}h Zoom)`}
-                </h2>
-                <span className="rounded-full bg-slate-800/90 border border-slate-700/80 px-2.5 py-0.5 text-[11px] font-mono text-slate-300">
-                  {selectedDate ? formatGermanDate(selectedDate) : "Alle Tage"}
-                </span>
-                {timelineZoom < 24 && (
-                  <span className="rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-mono">
-                    Fenster: {formatMinutesToTime(timelineStartMin)} – {formatMinutesToTime(timelineStartMin + timelineZoom * 60)}
-                  </span>
-                )}
-                {timelineClips.length > 0 && (
-                  <span className="rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 px-2.5 py-0.5 text-[11px] font-medium flex items-center gap-1.5">
-                    <Video className="h-3 w-3 text-sky-400" />
-                    {timelineClips.length} {timelineClips.length === 1 ? "Segment" : "Segmente"}
-                  </span>
-                )}
-                {motionEvents.length > 0 && (
-                  <button
-                    onClick={jumpToMotionCluster}
-                    className="rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 text-[11px] font-medium flex items-center gap-1.5 shadow-sm shadow-amber-500/10 transition active:scale-95"
-                    title="Klick: Zoomt direkt auf den ersten Bewegungs-Cluster"
-                  >
-                    <Zap className="h-3 w-3 text-amber-400 fill-amber-400" />
-                    <span>{motionEvents.length} {motionEvents.length === 1 ? "Bewegung" : "Bewegungen"}</span>
-                    <span className="text-[10px] text-amber-200 underline ml-0.5">Focus 🔍</span>
-                  </button>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Wähle die Zoomstufe für sekundengenaue Details oder klicke auf ein Bewegungsevent (<Zap className="h-2.5 w-2.5 inline text-amber-400" />).
-              </p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white tracking-wide">
+                Zeitleiste
+              </h2>
+              <span className="rounded-full bg-slate-800/90 border border-slate-700/80 px-2 py-0.5 text-[11px] font-mono text-slate-300">
+                {selectedDate ? formatGermanDate(selectedDate) : "Alle Tage"}
+              </span>
+              {motionEvents.length > 0 && (
+                <button
+                  onClick={jumpToMotionCluster}
+                  className="rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-medium flex items-center gap-1 transition active:scale-95"
+                  title="Fokus auf erste Bewegung"
+                >
+                  <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
+                  <span>{motionEvents.length} {motionEvents.length === 1 ? "Bewegung" : "Bewegungen"}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2310,39 +2230,18 @@ export default function PlaybackPage() {
                   className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
 
-                {/* Tageszeit Filter */}
-                <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950 p-0.5 text-[11px]">
-                  <button
-                    onClick={() => setEventLogTimeOfDay("all")}
-                    className={`px-2 py-0.5 rounded ${eventLogTimeOfDay === "all" ? "bg-amber-600 text-white font-semibold" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Alle
-                  </button>
-                  <button
-                    onClick={() => setEventLogTimeOfDay("night")}
-                    className={`px-2 py-0.5 rounded ${eventLogTimeOfDay === "night" ? "bg-amber-600 text-white font-semibold" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Nacht (00–06)
-                  </button>
-                  <button
-                    onClick={() => setEventLogTimeOfDay("morning")}
-                    className={`px-2 py-0.5 rounded ${eventLogTimeOfDay === "morning" ? "bg-amber-600 text-white font-semibold" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Morgen (06–12)
-                  </button>
-                  <button
-                    onClick={() => setEventLogTimeOfDay("afternoon")}
-                    className={`px-2 py-0.5 rounded ${eventLogTimeOfDay === "afternoon" ? "bg-amber-600 text-white font-semibold" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Mittag (12–18)
-                  </button>
-                  <button
-                    onClick={() => setEventLogTimeOfDay("evening")}
-                    className={`px-2 py-0.5 rounded ${eventLogTimeOfDay === "evening" ? "bg-amber-600 text-white font-semibold" : "text-slate-400 hover:text-white"}`}
-                  >
-                    Abend (18–24)
-                  </button>
-                </div>
+                {/* Tageszeit Dropdown Filter */}
+                <select
+                  value={eventLogTimeOfDay}
+                  onChange={(e) => setEventLogTimeOfDay(e.target.value as any)}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Alle Tageszeiten</option>
+                  <option value="morning">🌅 Vormittag (06–12 Uhr)</option>
+                  <option value="afternoon">☀️ Nachmittag (12–18 Uhr)</option>
+                  <option value="evening">🌙 Abend (18–24 Uhr)</option>
+                  <option value="night">🌌 Nacht (00–06 Uhr)</option>
+                </select>
               </div>
             )}
           </div>
