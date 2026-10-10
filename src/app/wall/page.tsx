@@ -716,17 +716,6 @@ export default function CameraWallPage() {
                   }}
                   className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
                 >
-                  {/* Unconditional prominent REC badge in top-left corner */}
-                  {camera.recordEnabled && (
-                    <div className="absolute top-2.5 left-2.5 z-20 pointer-events-none select-none inline-flex items-center gap-1.5 rounded-full bg-black/85 border border-rose-500/80 px-2.5 py-1 text-[11px] font-bold text-rose-200 shadow-xl backdrop-blur-md">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                      </span>
-                      <span>REC</span>
-                    </div>
-                  )}
-
                   <button 
                     onClick={(e) => {
                       e.preventDefault();
@@ -807,8 +796,11 @@ export default function CameraWallPage() {
                     `}>
                       <span className="truncate">{camera.name}</span>
                       {camera.recordEnabled && (
-                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 text-rose-300 border border-rose-500/40 px-1 text-[9px] font-bold leading-tight">
-                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 text-[9px] font-bold leading-tight">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                          </span>
                           REC
                         </span>
                       )}
@@ -820,7 +812,7 @@ export default function CameraWallPage() {
 
                 {!isFullscreen || controlsVisible ? (
                   <div className="bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
-                    <div className="flex items-center gap-1 min-w-0 shrink flex-wrap sm:flex-nowrap">
+                    <div className="flex items-center gap-1 min-w-0 shrink flex-nowrap">
                       {/* Live Stream Button */}
                       <button
                         type="button"
@@ -857,14 +849,14 @@ export default function CameraWallPage() {
                         </span>
                       </button>
 
-                      {/* Quick jump to archive if recording */}
+                      {/* Quick jump to archive if recording - compact icon button */}
                       {camera.recordEnabled && (
                         <Link
                           href={`/wiedergabe?search=${encodeURIComponent(camera.name)}`}
-                          className="touch-manipulation rounded bg-white/5 hover:bg-white/10 border border-white/10 px-1.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white transition shrink-0 hidden sm:inline-flex items-center gap-1"
-                          title="Gespeicherte Aufnahmen dieser Kamera ansehen"
+                          className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-slate-300 hover:text-white transition shrink-0"
+                          title="Gespeicherte Aufnahmen dieser Kamera im Archiv ansehen"
                         >
-                          🎞️ Archiv
+                          🎞️
                         </Link>
                       )}
 
@@ -1140,6 +1132,30 @@ export default function CameraWallPage() {
                   )}
                 </div>
               </div>
+
+              {/* Sensitivity & Camera Web GUI shortcut */}
+              {editingCameraId && cameras.find((c) => c.id === editingCameraId)?.ip && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                  <div>
+                    <span className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                      <span>🌿</span>
+                      <span>Empfindlichkeit & Pflanzen-Erkennung anpassen</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      Die Erkennung läuft direkt auf dem Chip der Kamera. Öffne die Kamera-Weboberfläche ({cameras.find((c) => c.id === editingCameraId)?.ip}), um Zonen einzuzeichnen, Blätter/Bäume auszuschließen oder die Empfindlichkeit zu senken.
+                    </span>
+                  </div>
+                  <a
+                    href={`http://${cameras.find((c) => c.id === editingCameraId)?.ip}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 text-xs transition shadow-md shadow-emerald-600/30 active:scale-95"
+                  >
+                    <span>🌐 Weboberfläche öffnen</span>
+                    <span>➔</span>
+                  </a>
+                </div>
+              )}
             </div>
 
             {/* Sticky Footer */}

@@ -1147,18 +1147,20 @@ export default function PlaybackPage() {
               </div>
             </div>
 
-            {/* Video Element */}
-            <div className="relative bg-black aspect-video flex items-center justify-center shrink-0">
-              <video
-                ref={videoRef}
-                key={activeClip.id}
-                src={activeClip.streamUrl}
-                controls
-                autoPlay
-                playsInline
-                className="w-full h-full max-h-[46vh] sm:max-h-[50vh] object-contain"
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
+            {/* Scrollable Player Body: Ensures Video, Timeline, and Toolbar are ALWAYS visible on any display */}
+            <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+              {/* Video Element */}
+              <div className="relative bg-black flex items-center justify-center shrink-0 max-h-[38vh] sm:max-h-[44vh] overflow-hidden">
+                <video
+                  ref={videoRef}
+                  key={activeClip.id}
+                  src={activeClip.streamUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="w-full h-full max-h-[38vh] sm:max-h-[44vh] object-contain"
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
                 onLoadedMetadata={(e) => {
                   const dur = e.currentTarget.duration || 0;
                   setVideoDuration(dur);
@@ -1419,10 +1421,10 @@ export default function PlaybackPage() {
                 <button
                   type="button"
                   onClick={() => setShowSensitivityHelp(!showSensitivityHelp)}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition shadow-sm ${
                     showSensitivityHelp
-                      ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-300 font-semibold"
-                      : "border-slate-800 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
+                      ? "border-emerald-500 bg-emerald-950/60 text-emerald-200 ring-1 ring-emerald-400 font-semibold"
+                      : "border-emerald-500/40 bg-emerald-950/25 text-emerald-300 hover:bg-emerald-900/40 hover:border-emerald-400"
                   }`}
                   title="Empfindlichkeit einstellen / Fehlalarme durch Pflanzen vermeiden"
                 >
@@ -1490,7 +1492,8 @@ export default function PlaybackPage() {
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
       {/* Modern High-Precision Timeline with Multi-Zoom & Event Inspector */}
       <div className="rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 sm:p-5 mb-6 shadow-2xl backdrop-blur-md">
