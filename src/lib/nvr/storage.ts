@@ -517,19 +517,25 @@ export async function runStorageRetention(targetId?: string) {
         }
       }
 
-      // Clean empty camera subdirectories
-      try {
-        const cameraDirs = await fsp.readdir(target.path, { withFileTypes: true });
-        for (const cDir of cameraDirs) {
-          if (cDir.isDirectory()) {
-            const cPath = path.join(target.path, cDir.name);
-            const contents = await fsp.readdir(cPath);
-            if (contents.length === 0) {
-              await fsp.rmdir(cPath);
+      // Clean empty subdirectories recursively
+      const cleanEmptyDirs = async (dir: string) => {
+        try {
+          const entries = await fsp.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              const subPath = path.join(dir, entry.name);
+              await cleanEmptyDirs(subPath);
             }
           }
-        }
-      } catch {}
+          if (dir !== target.path) {
+            const remaining = await fsp.readdir(dir);
+            if (remaining.length === 0) {
+              await fsp.rmdir(dir);
+            }
+          }
+        } catch {}
+      };
+      await cleanEmptyDirs(target.path);
     } catch (err: any) {
       targetResult.error = err?.message || String(err);
     }
@@ -537,5 +543,45 @@ export async function runStorageRetention(targetId?: string) {
     results.push(targetResult);
   }
 
+  // Persist status to data/retention_status.json
+  try {
+    const statusFilePath = path.join(process.cwd(), "data", "retention_status.json");
+    const statusData = {
+      lastRun: new Date().toISOString(),
+      totalDeletedFiles: results.reduce((acc, r) => acc + r.deletedFiles, 0),
+      totalFreedBytes: results.reduce((acc, r) => acc + r.freedBytes, 0),
+      results,
+    };
+    await fsp.writeFile(statusFilePath, JSON.stringify(statusData, null, 2), "utf8");
+  } catch (writeErr) {
+    console.warn("Could not save retention_status.json:", writeErr);
+  }
+
   return results;
+}
+
+export type RetentionStatus = {
+  lastRun: string | null;
+  totalDeletedFiles: number;
+  totalFreedBytes: number;
+  results: Array<{ targetId: string; name: string; deletedFiles: number; freedBytes: number; error?: string }>;
+};
+
+/**
+ * Returns the timestamp and details of the most recent retention run.
+ */
+export async function getLastRetentionStatus(): Promise<RetentionStatus> {
+  const statusFilePath = path.join(process.cwd(), "data", "retention_status.json");
+  try {
+    if (fs.existsSync(statusFilePath)) {
+      const content = await fsp.readFile(statusFilePath, "utf8");
+      return JSON.parse(content);
+    }
+  } catch {}
+  return {
+    lastRun: null,
+    totalDeletedFiles: 0,
+    totalFreedBytes: 0,
+    results: [],
+  };
 }

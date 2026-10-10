@@ -105,6 +105,7 @@ export default function PlaybackPage() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
+  const [autoPlayNext, setAutoPlayNext] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
@@ -195,6 +196,18 @@ export default function PlaybackPage() {
     }
     return result;
   }, [clips, searchQuery, timeFrom, timeTo, sortBy]);
+
+  // Clips for 24h Timeline (clips matching selected date and selected camera)
+  const timelineClips = useMemo(() => {
+    let list = clips;
+    if (selectedDate) {
+      list = list.filter((c) => c.dateStr === selectedDate);
+    }
+    if (selectedCameraId) {
+      list = list.filter((c) => c.cameraId === selectedCameraId);
+    }
+    return list;
+  }, [clips, selectedDate, selectedCameraId]);
 
   // Pagination
   const totalPages = pageSize === "all" ? 1 : Math.ceil(filteredClips.length / Number(pageSize)) || 1;
@@ -754,6 +767,11 @@ export default function PlaybackPage() {
                 className="w-full h-full max-h-[70vh] object-contain"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onEnded={() => {
+                  if (autoPlayNext && activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1) {
+                    playNextClip();
+                  }
+                }}
               />
             </div>
 
@@ -811,23 +829,39 @@ export default function PlaybackPage() {
                 </button>
               </div>
 
-              {/* Playback Speed Selector */}
-              <div className="flex items-center gap-1">
-                <Gauge className="h-3.5 w-3.5 text-slate-400" />
-                <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Tempo:</span>
-                {[0.5, 1, 1.5, 2, 4].map((rate) => (
-                  <button
-                    key={rate}
-                    onClick={() => setSpeed(rate)}
-                    className={`rounded px-1.5 py-1 font-mono text-[11px] transition-all ${
-                      playbackRate === rate
-                        ? "bg-amber-500 text-slate-950 font-bold"
-                        : "border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
-                    }`}
-                  >
-                    {rate}x
-                  </button>
-                ))}
+              {/* Playback Speed & Auto-Play */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAutoPlayNext(!autoPlayNext)}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                    autoPlayNext
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                      : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+                  }`}
+                  title={autoPlayNext ? "Auto-Play aktiv: Nächster Clip startet automatisch" : "Auto-Play deaktiviert"}
+                >
+                  <span>🔁</span>
+                  <span className="hidden sm:inline">Auto-Play</span>
+                </button>
+
+                <div className="flex items-center gap-1">
+                  <Gauge className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Tempo:</span>
+                  {[0.5, 1, 1.5, 2, 4].map((rate) => (
+                    <button
+                      key={rate}
+                      onClick={() => setSpeed(rate)}
+                      className={`rounded px-1.5 py-1 font-mono text-[11px] transition-all ${
+                        playbackRate === rate
+                          ? "bg-amber-500 text-slate-950 font-bold"
+                          : "border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
+                      }`}
+                    >
+                      {rate}x
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Delete Clip */}
@@ -841,6 +875,157 @@ export default function PlaybackPage() {
           </div>
         </div>
       )}
+
+      {/* 24-Stunden Zeitstrahl (Timeline Scrubber) */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 sm:p-4 mb-6 shadow-lg backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+              <Clock className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-white">24-Stunden Zeitstrahl</h2>
+                <span className="rounded-full bg-slate-800 border border-slate-700 px-2 py-0.5 text-[11px] font-mono text-slate-300">
+                  {selectedDate || "Alle Tage"}
+                </span>
+                {timelineClips.length > 0 && (
+                  <span className="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 text-[11px] font-medium">
+                    {timelineClips.length} {timelineClips.length === 1 ? "Segment" : "Segmente"}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Klicke auf einen Zeitabschnitt zum Abspielen oder auf die Zeitachse zum Filtern.
+              </p>
+            </div>
+          </div>
+
+          {(timeFrom || timeTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setTimeFrom("");
+                setTimeTo("");
+              }}
+              className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-medium transition"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Zeitfilter zurücksetzen ({timeFrom || "00:00"} - {timeTo || "24:00"})
+            </button>
+          )}
+        </div>
+
+        {/* Timeline Bar Track */}
+        <div
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const pct = Math.max(0, Math.min(1, clickX / rect.width));
+            const totalMinutes = Math.floor(pct * 1440);
+            const hour = Math.floor(totalMinutes / 60);
+            const minute = Math.floor((totalMinutes % 60) / 15) * 15;
+            const formatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+            setTimeFrom(formatted);
+          }}
+          className="relative h-11 sm:h-12 w-full rounded-xl bg-slate-950 border border-slate-800 overflow-hidden cursor-crosshair select-none group"
+          title="Klicke auf die Zeitachse, um ab dieser Uhrzeit zu filtern"
+        >
+          {/* Subtle background hour stripes (12 2-hour segments) */}
+          <div className="absolute inset-0 grid grid-cols-12 pointer-events-none opacity-20">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-full border-r border-slate-700 ${i % 2 === 0 ? "bg-slate-800/30" : ""}`}
+              />
+            ))}
+          </div>
+
+          {/* Active Time Window Highlight if timeFrom / timeTo are set */}
+          {timeFrom && (
+            (() => {
+              const [fH, fM] = timeFrom.split(":").map(Number);
+              const [tH, tM] = (timeTo || "24:00").split(":").map(Number);
+              const startMin = (isNaN(fH) ? 0 : fH) * 60 + (isNaN(fM) ? 0 : fM);
+              const endMin = (isNaN(tH) ? 24 : tH) * 60 + (isNaN(tM) ? 0 : tM);
+              const leftPct = (startMin / 1440) * 100;
+              const widthPct = Math.max(1, ((endMin - startMin) / 1440) * 100);
+              return (
+                <div
+                  className="absolute top-0 bottom-0 bg-amber-500/15 border-x border-amber-500/40 pointer-events-none z-0"
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                />
+              );
+            })()
+          )}
+
+          {/* Recorded Clips as interactive blocks */}
+          {timelineClips.map((clip) => {
+            const timeParts = clip.timeStr.split(":").map(Number);
+            const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
+            const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
+            const startMin = hh * 60 + mm;
+            const leftPct = (startMin / 1440) * 100;
+            // standard segment is ~15 min
+            const widthPct = Math.max(0.6, (15 / 1440) * 100);
+            const isCurrentPlaying = activeClip?.id === clip.id;
+
+            return (
+              <div
+                key={clip.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveClip(clip);
+                  setIsPlaying(true);
+                }}
+                className={`absolute top-1 bottom-1 rounded transition-all cursor-pointer z-10 ${
+                  isCurrentPlaying
+                    ? "bg-cyan-400 ring-2 ring-white shadow-lg shadow-cyan-500/50 z-20"
+                    : "bg-amber-500/85 hover:bg-amber-400 border border-amber-400/60 hover:scale-y-110 shadow-sm"
+                }`}
+                style={{
+                  left: `${leftPct}%`,
+                  width: `${widthPct}%`,
+                  minWidth: "4px",
+                }}
+                title={`${clip.cameraName} · ${clip.timeStr} Uhr (${formatBytes(clip.sizeBytes)}) - Klick zum Abspielen`}
+              />
+            );
+          })}
+
+          {/* Indicator for currently playing clip */}
+          {activeClip && (
+            (() => {
+              const timeParts = activeClip.timeStr.split(":").map(Number);
+              const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
+              const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
+              const startMin = hh * 60 + mm;
+              const leftPct = (startMin / 1440) * 100;
+              return (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 z-30 pointer-events-none shadow-[0_0_8px_#38bdf8]"
+                  style={{ left: `${leftPct}%` }}
+                >
+                  <div className="absolute -top-1 -left-1.5 h-3.5 w-3.5 rounded-full bg-cyan-400 border border-white shadow-md animate-pulse" />
+                </div>
+              );
+            })()
+          )}
+        </div>
+
+        {/* 24h Ruler Axis (00:00 - 24:00) */}
+        <div className="relative mt-1.5 flex justify-between text-[10px] font-mono text-slate-500 select-none">
+          <span>00:00</span>
+          <span>03:00</span>
+          <span>06:00</span>
+          <span>09:00</span>
+          <span>12:00</span>
+          <span>15:00</span>
+          <span>18:00</span>
+          <span>21:00</span>
+          <span>24:00</span>
+        </div>
+      </div>
 
       {/* Main Content Area: List vs Grid */}
       {loadingClips ? (

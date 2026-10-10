@@ -319,8 +319,15 @@ async function runRetentionJob() {
     const path = require('path');
     const targets = await prisma.storageTarget.findMany({ where: { enabled: true } });
 
+    let totalDeleted = 0;
+    let totalFreed = 0;
+    const results = [];
+
     for (const target of targets) {
       if (!fs.existsSync(target.path)) continue;
+
+      let targetDeleted = 0;
+      let targetFreed = 0;
 
       const clips = [];
       const walk = async (dir) => {
@@ -330,7 +337,7 @@ async function runRetentionJob() {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
             await walk(fullPath);
-          } else if (entry.isFile() && (entry.name.endsWith('.mp4') || entry.name.endsWith('.m4s'))) {
+          } else if (entry.isFile() && (entry.name.endsWith('.mp4') || entry.name.endsWith('.m4s') || entry.name.endsWith('.ts'))) {
             try {
               const stat = await fsp.stat(fullPath);
               clips.push({ fullPath, mtimeMs: stat.mtimeMs, size: stat.size });
@@ -345,15 +352,21 @@ async function runRetentionJob() {
       const now = Date.now();
       const maxAgeMs = target.maxDays > 0 ? target.maxDays * 86_400_000 : Infinity;
 
+      // 1. Delete files older than maxDays
       const remainingClips = [];
       for (const clip of clips) {
         if (now - clip.mtimeMs > maxAgeMs) {
-          try { await fsp.unlink(clip.fullPath); } catch {}
+          try {
+            await fsp.unlink(clip.fullPath);
+            targetDeleted++;
+            targetFreed += clip.size;
+          } catch {}
         } else {
           remainingClips.push(clip);
         }
       }
 
+      // 2. Check emergency buffer (minFreeSpaceGb)
       if (target.minFreeSpaceGb > 0) {
         try {
           const statfs = fs.statfsSync(target.path);
@@ -363,11 +376,55 @@ async function runRetentionJob() {
             if (currentFreeBytes >= minFreeBytes) break;
             try {
               await fsp.unlink(clip.fullPath);
+              targetDeleted++;
+              targetFreed += clip.size;
               currentFreeBytes += clip.size;
             } catch {}
           }
         } catch {}
       }
+
+      // 3. Clean empty subdirectories recursively
+      const cleanEmptyDirs = async (dir) => {
+        try {
+          const entries = await fsp.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              await cleanEmptyDirs(path.join(dir, entry.name));
+            }
+          }
+          if (dir !== target.path) {
+            const rem = await fsp.readdir(dir);
+            if (rem.length === 0) await fsp.rmdir(dir);
+          }
+        } catch {}
+      };
+      await cleanEmptyDirs(target.path);
+
+      totalDeleted += targetDeleted;
+      totalFreed += targetFreed;
+      results.push({
+        targetId: target.id,
+        name: target.name,
+        deletedFiles: targetDeleted,
+        freedBytes: targetFreed,
+      });
+    }
+
+    // Persist status to data/retention_status.json
+    try {
+      const statusFilePath = path.join(process.cwd(), 'data', 'retention_status.json');
+      const statusData = {
+        lastRun: new Date().toISOString(),
+        totalDeletedFiles: totalDeleted,
+        totalFreedBytes: totalFreed,
+        results,
+      };
+      await fsp.writeFile(statusFilePath, JSON.stringify(statusData, null, 2), 'utf8');
+    } catch {}
+
+    if (totalDeleted > 0) {
+      console.log(`[Retention Watchdog] 🧹 Bereinigung: ${totalDeleted} Dateien gelöscht, ${Math.round(totalFreed / 1024 / 1024)} MB freigegeben.`);
     }
   } catch (err) {
     console.error('Retention Job Error:', err);
