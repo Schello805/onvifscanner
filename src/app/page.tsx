@@ -844,7 +844,7 @@ export default function CameraWallPage() {
                         <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
                           {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
                         </span>
-                        <span>
+                        <span className="hidden sm:inline">
                           {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "REC Stop" : "Aufnahme"}
                         </span>
                       </button>
