@@ -20,8 +20,11 @@ export async function GET(req: Request) {
     }
 
     if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      // Allow timezone window (+/- 14h) to cover any local timezone differences
       const startDate = new Date(`${dateStr}T00:00:00.000Z`);
+      startDate.setHours(startDate.getHours() - 14);
       const endDate = new Date(`${dateStr}T23:59:59.999Z`);
+      endDate.setHours(endDate.getHours() + 14);
       whereClause.timestamp = {
         gte: startDate,
         lte: endDate,
@@ -39,24 +42,33 @@ export async function GET(req: Request) {
       },
     });
 
-    const formatted = events.map((ev) => {
+    let formatted = events.map((ev) => {
       const d = new Date(ev.timestamp);
       const hours = String(d.getHours()).padStart(2, "0");
       const mins = String(d.getMinutes()).padStart(2, "0");
       const secs = String(d.getSeconds()).padStart(2, "0");
       const timeStr = `${hours}:${mins}:${secs}`;
       const totalMinutes = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const evDateStr = `${year}-${month}-${day}`;
 
       return {
         id: ev.id,
         cameraId: ev.cameraId,
         cameraName: ev.camera?.name || "Kamera",
         timestamp: ev.timestamp.toISOString(),
+        dateStr: evDateStr,
         timeStr,
         totalMinutes,
         message: ev.message || "Bewegung erkannt",
       };
     });
+
+    if (dateStr) {
+      formatted = formatted.filter((ev) => ev.dateStr === dateStr);
+    }
 
     return NextResponse.json({ ok: true, events: formatted });
   } catch (err) {

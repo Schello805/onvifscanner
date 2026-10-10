@@ -63,10 +63,93 @@ type MotionEvent = {
   cameraId: string;
   cameraName: string;
   timestamp: string;
+  dateStr?: string;
   timeStr: string;
   totalMinutes: number;
   message: string;
 };
+
+type ClipMotionEvent = {
+  id: string;
+  timeStr: string;
+  offsetSec: number;
+  message: string;
+  pct: number;
+};
+
+function parseTimeToSeconds(timeStr: string): number {
+  if (!timeStr) return 0;
+  const parts = timeStr.split(":").map(Number);
+  const h = isNaN(parts[0]) ? 0 : parts[0];
+  const m = isNaN(parts[1]) ? 0 : parts[1];
+  const s = isNaN(parts[2]) ? 0 : parts[2];
+  return h * 3600 + m * 60 + s;
+}
+
+function formatSeconds(totalSec: number): string {
+  if (isNaN(totalSec) || totalSec < 0) return "0:00";
+  const m = Math.floor(totalSec / 60);
+  const s = Math.floor(totalSec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function getMotionEventsForClip(
+  clip: RecordingClip,
+  events: MotionEvent[],
+  videoDuration = 0
+): ClipMotionEvent[] {
+  if (!clip || !events || events.length === 0) return [];
+  const clipStartSec = parseTimeToSeconds(clip.timeStr);
+  const maxDuration = videoDuration > 0 ? videoDuration : 900; // Standardsegment ca. 15 Min
+
+  const matched: ClipMotionEvent[] = [];
+  const seenSeconds = new Set<number>();
+
+  for (const ev of events) {
+    if (ev.cameraId && clip.cameraId && ev.cameraId !== clip.cameraId) {
+      continue;
+    }
+    if (clip.dateStr && ev.dateStr && clip.dateStr !== ev.dateStr) {
+      continue;
+    }
+
+    const evSec = parseTimeToSeconds(ev.timeStr);
+    let offset = evSec - clipStartSec;
+
+    // Tageswechsel-Kompensation (um Mitternacht)
+    if (offset < -43200) offset += 86400;
+    if (offset > 43200) offset -= 86400;
+
+    // Toleranzbereich: Bis zu 2s vor Segmentstart oder 3s nach Segmentende
+    if (offset >= -2 && offset <= maxDuration + 3) {
+      const clampedOffset = Math.max(0, Math.min(maxDuration, offset));
+      const roundedOffset = Math.round(clampedOffset);
+
+      // Duplikate innerhalb von 2 Sekunden zusammenfassen
+      let isDuplicate = false;
+      for (const s of seenSeconds) {
+        if (Math.abs(s - roundedOffset) <= 2) {
+          isDuplicate = true;
+          break;
+        }
+      }
+      if (isDuplicate) continue;
+
+      seenSeconds.add(roundedOffset);
+      const pct = maxDuration > 0 ? (clampedOffset / maxDuration) * 100 : 0;
+      matched.push({
+        id: ev.id,
+        timeStr: ev.timeStr,
+        offsetSec: clampedOffset,
+        message: ev.message,
+        pct,
+      });
+    }
+  }
+
+  matched.sort((a, b) => a.offsetSec - b.offsetSec);
+  return matched;
+}
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return "0 MB";
@@ -103,6 +186,7 @@ export default function PlaybackPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "largest" | "smallest">("newest");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [filterMotionOnly, setFilterMotionOnly] = useState(false);
 
   // Clip Selection & Batch Delete
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
@@ -128,6 +212,9 @@ export default function PlaybackPage() {
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
   const [autoPlayNext, setAutoPlayNext] = useState(true);
+  const [videoDuration, setVideoDuration] = useState<number>(0);
+  const [videoCurrentTime, setVideoCurrentTime] = useState<number>(0);
+  const pendingSeekRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
@@ -194,6 +281,23 @@ export default function PlaybackPage() {
     fetchClips(initialCamId, getTodayStr());
   }, [fetchClips]);
 
+  // Pre-calculate motion events per clip for instant lookup
+  const clipMotionMap = useMemo(() => {
+    const map = new Map<string, ClipMotionEvent[]>();
+    for (const clip of clips) {
+      map.set(clip.id, getMotionEventsForClip(clip, motionEvents));
+    }
+    return map;
+  }, [clips, motionEvents]);
+
+  const motionClipsCount = useMemo(() => {
+    let count = 0;
+    for (const clip of clips) {
+      if ((clipMotionMap.get(clip.id)?.length || 0) > 0) count++;
+    }
+    return count;
+  }, [clips, clipMotionMap]);
+
   // Filtered & Sorted Clips
   const filteredClips = useMemo(() => {
     let result = [...clips];
@@ -225,6 +329,10 @@ export default function PlaybackPage() {
       result = result.filter((c) => c.timeStr <= tTo);
     }
 
+    if (filterMotionOnly) {
+      result = result.filter((c) => (clipMotionMap.get(c.id)?.length || 0) > 0);
+    }
+
     if (sortBy === "newest") {
       result.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     } else if (sortBy === "oldest") {
@@ -235,7 +343,7 @@ export default function PlaybackPage() {
       result.sort((a, b) => a.sizeBytes - b.sizeBytes);
     }
     return result;
-  }, [clips, searchQuery, timeFrom, timeTo, sortBy]);
+  }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, clipMotionMap]);
 
   // Clips for 24h Timeline (clips matching selected date and selected camera)
   const timelineClips = useMemo(() => {
@@ -257,6 +365,29 @@ export default function PlaybackPage() {
     const start = (currentPage - 1) * size;
     return filteredClips.slice(start, start + size);
   }, [filteredClips, pageSize, currentPage]);
+
+  // Motion events for the currently active clip
+  const activeClipMotionEvents = useMemo(() => {
+    if (!activeClip) return [];
+    return getMotionEventsForClip(activeClip, motionEvents, videoDuration);
+  }, [activeClip, motionEvents, videoDuration]);
+
+  // Open clip handlers
+  const openClip = (clip: RecordingClip) => {
+    setVideoDuration(0);
+    setVideoCurrentTime(0);
+    pendingSeekRef.current = null;
+    setActiveClip(clip);
+    setIsPlaying(true);
+  };
+
+  const openClipWithOffset = (clip: RecordingClip, offsetSec = 0) => {
+    setVideoDuration(0);
+    setVideoCurrentTime(0);
+    pendingSeekRef.current = offsetSec > 0 ? offsetSec : null;
+    setActiveClip(clip);
+    setIsPlaying(true);
+  };
 
   // Single Clip Deletion
   const handleDeleteClip = async (clip: RecordingClip) => {
@@ -340,6 +471,36 @@ export default function PlaybackPage() {
     }
   };
 
+  const seekToOffset = (seconds: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = Math.max(0, seconds);
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  };
+
+  const jumpToNextMotion = useCallback(() => {
+    if (!videoRef.current || !activeClipMotionEvents.length) return;
+    const curr = videoRef.current.currentTime;
+    const next = activeClipMotionEvents.find((m) => m.offsetSec > curr + 1.5);
+    if (next) {
+      seekToOffset(next.offsetSec);
+    } else {
+      seekToOffset(activeClipMotionEvents[0].offsetSec);
+    }
+  }, [activeClipMotionEvents]);
+
+  const jumpToPrevMotion = useCallback(() => {
+    if (!videoRef.current || !activeClipMotionEvents.length) return;
+    const curr = videoRef.current.currentTime;
+    const prev = [...activeClipMotionEvents].reverse().find((m) => m.offsetSec < curr - 1.5);
+    if (prev) {
+      seekToOffset(prev.offsetSec);
+    } else {
+      seekToOffset(activeClipMotionEvents[activeClipMotionEvents.length - 1].offsetSec);
+    }
+  }, [activeClipMotionEvents]);
+
   const setSpeed = (rate: number) => {
     setPlaybackRate(rate);
     if (videoRef.current) {
@@ -355,13 +516,13 @@ export default function PlaybackPage() {
 
   const playPreviousClip = () => {
     if (activeClipIndex > 0) {
-      setActiveClip(filteredClips[activeClipIndex - 1]);
+      openClip(filteredClips[activeClipIndex - 1]);
     }
   };
 
   const playNextClip = () => {
     if (activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1) {
-      setActiveClip(filteredClips[activeClipIndex + 1]);
+      openClip(filteredClips[activeClipIndex + 1]);
     }
   };
 
@@ -394,6 +555,12 @@ export default function PlaybackPage() {
         seekRelative(-10);
       } else if (e.key === "l") {
         seekRelative(10);
+      } else if (e.key === "n" || e.key === "m") {
+        e.preventDefault();
+        jumpToNextMotion();
+      } else if (e.key === "p") {
+        e.preventDefault();
+        jumpToPrevMotion();
       } else if (e.key === "f") {
         e.preventDefault();
         toggleFullscreen();
@@ -403,7 +570,7 @@ export default function PlaybackPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeClip]);
+  }, [activeClip, jumpToNextMotion, jumpToPrevMotion]);
 
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
@@ -550,6 +717,32 @@ export default function PlaybackPage() {
                 Alle Tage
               </button>
             </div>
+
+            {/* Filter: Nur Clips mit Bewegung */}
+            <button
+              onClick={() => {
+                setFilterMotionOnly(!filterMotionOnly);
+                setCurrentPage(1);
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                filterMotionOnly
+                  ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20"
+                  : "border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-700"
+              }`}
+              title="Nur Aufnahmen mit erkannter Bewegung anzeigen"
+            >
+              <Zap className={`h-3.5 w-3.5 ${filterMotionOnly ? "fill-slate-950 text-slate-950" : "fill-amber-400 text-amber-400"}`} />
+              <span>Nur mit Bewegung</span>
+              {motionClipsCount > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                    filterMotionOnly ? "bg-slate-950 text-amber-300" : "bg-slate-800 text-amber-400"
+                  }`}
+                >
+                  {motionClipsCount}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* View Mode & Sort Controls */}
@@ -752,12 +945,22 @@ export default function PlaybackPage() {
             {/* Player Header */}
             <div className="flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-900/80">
               <div className="min-w-0 pr-4">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse"></span>
                   <h3 className="text-sm font-bold text-white truncate">{activeClip.cameraName}</h3>
                   <span className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-mono text-slate-300">
                     {activeClip.timeStr} Uhr
                   </span>
+                  {activeClipMotionEvents.length > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-300 shadow-sm">
+                      <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
+                      {activeClipMotionEvents.length} {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip
+                    </span>
+                  ) : (
+                    <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-[10px] text-slate-400">
+                      Keine Bewegung erkannt
+                    </span>
+                  )}
                   {activeClipIndex >= 0 && (
                     <span className="text-[10px] text-slate-500 font-mono">
                       ({activeClipIndex + 1}/{filteredClips.length})
@@ -804,9 +1007,20 @@ export default function PlaybackPage() {
                 controls
                 autoPlay
                 playsInline
-                className="w-full h-full max-h-[70vh] object-contain"
+                className="w-full h-full max-h-[65vh] object-contain"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onLoadedMetadata={(e) => {
+                  const dur = e.currentTarget.duration || 0;
+                  setVideoDuration(dur);
+                  if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
+                    e.currentTarget.currentTime = Math.min(dur, pendingSeekRef.current);
+                    pendingSeekRef.current = null;
+                  }
+                }}
+                onTimeUpdate={(e) => {
+                  setVideoCurrentTime(e.currentTarget.currentTime || 0);
+                }}
                 onEnded={() => {
                   if (autoPlayNext && activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1) {
                     playNextClip();
@@ -815,10 +1029,121 @@ export default function PlaybackPage() {
               />
             </div>
 
+            {/* In-Clip Motion Timeline & Exact Moments Bar */}
+            <div className="border-t border-slate-800 bg-slate-950/95 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                    <Zap className="h-4 w-4 fill-amber-400 text-amber-400 animate-pulse" />
+                    {activeClipMotionEvents.length > 0 ? (
+                      <span>
+                        {activeClipMotionEvents.length}{" "}
+                        {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip:
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-normal">
+                        Keine Bewegungserkennung für diesen Clip registriert
+                      </span>
+                    )}
+                  </div>
+                  {activeClipMotionEvents.length > 0 && (
+                    <span className="text-[10px] text-slate-400 hidden sm:inline">
+                      (Klicke auf eine Marke, um genau dorthin zu springen)
+                    </span>
+                  )}
+                </div>
+
+                {/* Video Time Info */}
+                {videoDuration > 0 && (
+                  <div className="flex items-center gap-1 text-[11px] font-mono text-slate-300 shrink-0">
+                    <span className="text-white font-bold">{formatSeconds(videoCurrentTime)}</span>
+                    <span className="text-slate-500">/</span>
+                    <span className="text-slate-400">{formatSeconds(videoDuration)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* In-Clip Interactive Scrubber Track with Motion Pins */}
+              {videoDuration > 0 && (
+                <div
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                    const pct = clickX / rect.width;
+                    seekToOffset(pct * videoDuration);
+                  }}
+                  className="relative h-4.5 w-full rounded-md bg-slate-900 border border-slate-800/80 cursor-pointer overflow-hidden group select-none shadow-inner"
+                  title="Klicke auf den Zeitstrahl zum Springen"
+                >
+                  {/* Played progress */}
+                  <div
+                    className="absolute top-0 bottom-0 left-0 bg-sky-500/25 border-r-2 border-sky-400 pointer-events-none transition-all duration-75"
+                    style={{ width: `${Math.min(100, (videoCurrentTime / videoDuration) * 100)}%` }}
+                  />
+
+                  {/* Motion Markers */}
+                  {activeClipMotionEvents.map((ev, idx) => {
+                    const markerPct = Math.min(100, Math.max(0, (ev.offsetSec / videoDuration) * 100));
+                    const isCurrent = Math.abs(videoCurrentTime - ev.offsetSec) < 2.5;
+                    return (
+                      <div
+                        key={ev.id || idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          seekToOffset(ev.offsetSec);
+                        }}
+                        className="absolute top-0 bottom-0 w-3 -ml-1.5 flex items-center justify-center cursor-pointer z-10 hover:scale-125 transition-transform"
+                        style={{ left: `${markerPct}%` }}
+                        title={`⚡ ${ev.timeStr} Uhr (bei ${formatSeconds(ev.offsetSec)}) - Klick zum Abspielen`}
+                      >
+                        <div
+                          className={`w-1 h-full shadow-sm ${
+                            isCurrent
+                              ? "bg-amber-300 ring-2 ring-white scale-110 z-20"
+                              : "bg-amber-400 ring-1 ring-amber-300/80"
+                          }`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Clickable Motion Pills with Exact Timestamps and Video Offsets */}
+              {activeClipMotionEvents.length > 0 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pt-2 pb-0.5 scrollbar-thin">
+                  <span className="text-[10px] text-slate-400 shrink-0 font-medium mr-1">
+                    Genaue Zeitpunkte:
+                  </span>
+                  {activeClipMotionEvents.map((ev, idx) => {
+                    const isNear = Math.abs(videoCurrentTime - ev.offsetSec) < 2.5;
+                    return (
+                      <button
+                        key={ev.id || idx}
+                        onClick={() => seekToOffset(ev.offsetSec)}
+                        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-mono transition-all ${
+                          isNear
+                            ? "bg-amber-400 text-slate-950 font-bold ring-2 ring-amber-300 shadow-md shadow-amber-500/30 scale-105"
+                            : "border border-amber-500/30 bg-amber-950/20 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400"
+                        }`}
+                        title={`Springe zu ${ev.timeStr} Uhr (bei ${formatSeconds(ev.offsetSec)})`}
+                      >
+                        <Zap className={`h-3 w-3 ${isNear ? "fill-slate-950 text-slate-950" : "fill-amber-400 text-amber-400"}`} />
+                        <span className="font-semibold">{ev.timeStr} Uhr</span>
+                        <span className={`text-[10px] ${isNear ? "text-slate-900" : "text-amber-200/80"}`}>
+                          (bei {formatSeconds(ev.offsetSec)})
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Advanced NVR Toolbar */}
             <div className="p-3 border-t border-slate-800 bg-slate-900/70 flex flex-wrap items-center justify-between gap-3 text-xs">
-              {/* Skip Controls & Clip Step */}
-              <div className="flex items-center gap-1.5">
+              {/* Skip Controls, Motion Jumps & Clip Step */}
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={playPreviousClip}
                   disabled={activeClipIndex <= 0}
@@ -857,6 +1182,28 @@ export default function PlaybackPage() {
                 >
                   +60s
                 </button>
+
+                {/* Direct Jump to Motion Buttons */}
+                {activeClipMotionEvents.length > 0 && (
+                  <div className="flex items-center gap-1 border-l border-slate-800 pl-1.5">
+                    <button
+                      onClick={jumpToPrevMotion}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                      title="Zur vorherigen Bewegung springen (Taste P)"
+                    >
+                      <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                      <span className="hidden md:inline">Vorh. Bew.</span>
+                    </button>
+                    <button
+                      onClick={jumpToNextMotion}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                      title="Zur nächsten Bewegung springen (Taste N oder M)"
+                    >
+                      <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                      <span className="hidden md:inline">Nächste Bew.</span>
+                    </button>
+                  </div>
+                )}
 
                 <button
                   onClick={playNextClip}
@@ -1025,8 +1372,7 @@ export default function PlaybackPage() {
             });
 
             if (matchingClip) {
-              setActiveClip(matchingClip);
-              setIsPlaying(true);
+              openClip(matchingClip);
             } else {
               const hour = Math.floor(totalMinutes / 60);
               const minute = Math.floor((totalMinutes % 60) / 15) * 15;
@@ -1083,8 +1429,7 @@ export default function PlaybackPage() {
                 key={clip.id}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setActiveClip(clip);
-                  setIsPlaying(true);
+                  openClip(clip);
                 }}
                 className={`absolute top-2 bottom-2 rounded-sm transition-all cursor-pointer z-10 ${
                   isCurrentPlaying
@@ -1116,8 +1461,13 @@ export default function PlaybackPage() {
                   }) || timelineClips[0];
 
                   if (matchingClip) {
-                    setActiveClip(matchingClip);
-                    setIsPlaying(true);
+                    const clipStartSec = parseTimeToSeconds(matchingClip.timeStr);
+                    const evSec = parseTimeToSeconds(ev.timeStr);
+                    let offset = evSec - clipStartSec;
+                    if (offset < -43200) offset += 86400;
+                    if (offset > 43200) offset -= 86400;
+                    const clampedOffset = Math.max(0, offset);
+                    openClipWithOffset(matchingClip, clampedOffset);
                     toast.info(`Springe zu ${matchingClip.cameraName} (${ev.timeStr} Uhr - Bewegung)`);
                   }
                 }}
@@ -1249,6 +1599,7 @@ export default function PlaybackPage() {
                   <th className="py-2.5 px-3 w-12 text-center">Play</th>
                   <th className="py-2.5 px-3">Kamera</th>
                   <th className="py-2.5 px-3">Aufnahmezeit</th>
+                  <th className="py-2.5 px-3">Bewegung</th>
                   <th className="py-2.5 px-3">Größe</th>
                   <th className="py-2.5 px-3 hidden md:table-cell">Speicherort</th>
                   <th className="py-2.5 px-3 hidden lg:table-cell">Dateiname</th>
@@ -1258,6 +1609,7 @@ export default function PlaybackPage() {
               <tbody className="divide-y divide-slate-800/60">
                 {currentPageClips.map((clip) => {
                   const isSelected = selectedClipIds.has(clip.id);
+                  const clipMotions = clipMotionMap.get(clip.id) || [];
                   return (
                     <tr
                       key={clip.id}
@@ -1282,9 +1634,17 @@ export default function PlaybackPage() {
                       {/* Play Button */}
                       <td className="py-2 px-3 text-center">
                         <button
-                          onClick={() => setActiveClip(clip)}
+                          onClick={() =>
+                            clipMotions.length > 0
+                              ? openClipWithOffset(clip, clipMotions[0].offsetSec)
+                              : openClip(clip)
+                          }
                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold"
-                          title="Abspielen"
+                          title={
+                            clipMotions.length > 0
+                              ? `Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`
+                              : "Abspielen"
+                          }
                         >
                           <Play className="h-3 w-3 fill-current ml-0.5" />
                         </button>
@@ -1317,6 +1677,30 @@ export default function PlaybackPage() {
                         </div>
                       </td>
 
+                      {/* Bewegung */}
+                      <td className="py-2 px-3">
+                        {clipMotions.length > 0 ? (
+                          <div className="flex flex-col gap-0.5">
+                            <button
+                              onClick={() => openClipWithOffset(clip, clipMotions[0].offsetSec)}
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/35 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors group/m w-fit"
+                              title={`Bewegungen um: ${clipMotions.map((m) => `${m.timeStr} (bei ${formatSeconds(m.offsetSec)})`).join(", ")} - Klick zum Abspielen`}
+                            >
+                              <Zap className="h-3 w-3 fill-amber-400 text-amber-400 group-hover/m:scale-110 transition-transform" />
+                              <span>
+                                {clipMotions.length} {clipMotions.length === 1 ? "Bewegung" : "Bewegungen"}
+                              </span>
+                            </button>
+                            <span className="text-slate-400 font-mono text-[10px] pl-0.5">
+                              {clipMotions.map((m) => m.timeStr).slice(0, 2).join(", ")}
+                              {clipMotions.length > 2 ? "..." : ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 italic">Keine</span>
+                        )}
+                      </td>
+
                       {/* Größe */}
                       <td className="py-2 px-3">
                         <span className="font-mono text-slate-300 font-medium">
@@ -1342,7 +1726,11 @@ export default function PlaybackPage() {
                       <td className="py-2 px-3 text-right">
                         <div className="inline-flex items-center gap-1">
                           <button
-                            onClick={() => setActiveClip(clip)}
+                            onClick={() =>
+                              clipMotions.length > 0
+                                ? openClipWithOffset(clip, clipMotions[0].offsetSec)
+                                : openClip(clip)
+                            }
                             className="rounded p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
                             title="Abspielen"
                           >
@@ -1376,6 +1764,7 @@ export default function PlaybackPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {currentPageClips.map((clip) => {
             const isSelected = selectedClipIds.has(clip.id);
+            const clipMotions = clipMotionMap.get(clip.id) || [];
             return (
               <div
                 key={clip.id}
@@ -1422,6 +1811,27 @@ export default function PlaybackPage() {
                     <span className="text-slate-500 text-[10px]">{clip.dateStr}</span>
                   </div>
 
+                  {/* Motion Info in Card */}
+                  {clipMotions.length > 0 ? (
+                    <button
+                      onClick={() => openClipWithOffset(clip, clipMotions[0].offsetSec)}
+                      className="w-full flex items-center justify-between text-[10px] text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 rounded px-2 py-1 mt-1.5 text-left transition-colors"
+                      title={`Klick zum Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`}
+                    >
+                      <span className="flex items-center gap-1 font-semibold">
+                        <Zap className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
+                        {clipMotions.length} {clipMotions.length === 1 ? "Bewegung" : "Bewegungen"}:
+                      </span>
+                      <span className="font-mono text-slate-300 truncate max-w-[110px]">
+                        {clipMotions.map((m) => m.timeStr).join(", ")}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="text-[10px] text-slate-500 mt-1.5 pl-0.5">
+                      Keine Bewegung registriert
+                    </div>
+                  )}
+
                   <div className="text-[10px] text-slate-500 truncate mt-1">
                     Speicher: <span className="text-slate-400">{clip.storageTargetName}</span>
                   </div>
@@ -1429,7 +1839,11 @@ export default function PlaybackPage() {
 
                 <div className="flex items-center justify-between gap-1.5 pt-2.5 border-t border-slate-800/80 mt-2">
                   <button
-                    onClick={() => setActiveClip(clip)}
+                    onClick={() =>
+                      clipMotions.length > 0
+                        ? openClipWithOffset(clip, clipMotions[0].offsetSec)
+                        : openClip(clip)
+                    }
                     className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 px-2 py-1 text-xs font-bold shadow-sm active:scale-95 transition-all"
                   >
                     <Play className="h-3 w-3 fill-current" />
