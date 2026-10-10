@@ -101,17 +101,41 @@ export default function CameraWallPage() {
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
+  const openExpanded = useCallback((id: string) => {
+    if (typeof window !== "undefined") {
+      window.history.pushState({ modal: "camera-fullscreen", id }, "");
+    }
+    setExpandedCameraId(id);
+  }, []);
+
+  const closeExpanded = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.state?.modal === "camera-fullscreen") {
+      window.history.back();
+    } else {
+      setExpandedCameraId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setExpandedCameraId(null);
+      setEditingCameraId(null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   useEffect(() => {
     if (!editingCameraId && !expandedCameraId) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        closeEditor();
-        setExpandedCameraId(null);
+        if (editingCameraId) closeEditor();
+        if (expandedCameraId) closeExpanded();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [editingCameraId, expandedCameraId]);
+  }, [editingCameraId, expandedCameraId, closeExpanded]);
 
   const loadCamera = useCallback(async (camera: WallCamera, fresh = false) => {
     if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
@@ -276,7 +300,7 @@ export default function CameraWallPage() {
   function removeCamera(id: string) {
     const cam = cameras.find((item) => item.id === id);
     const next = cameras.filter((item) => item.id !== id);
-    if (expandedCameraId === id) setExpandedCameraId(null);
+    if (expandedCameraId === id) closeExpanded();
     if (liveCameras.has(id)) {
       setLiveCameras((prev) => {
         const nextLive = new Set(prev);
@@ -578,7 +602,11 @@ export default function CameraWallPage() {
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
                       // Double click detected!
-                      setExpandedCameraId(expandedCameraId === camera.id ? null : camera.id);
+                      if (expandedCameraId === camera.id) {
+                        closeExpanded();
+                      } else {
+                        openExpanded(camera.id);
+                      }
                       lastClickRef.current = { id: "", time: 0 };
                     } else {
                       lastClickRef.current = { id: camera.id, time: now };
@@ -599,8 +627,13 @@ export default function CameraWallPage() {
 
                   <button 
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
-                      setExpandedCameraId(expandedCameraId === camera.id ? null : camera.id);
+                      if (expandedCameraId === camera.id) {
+                        closeExpanded();
+                      } else {
+                        openExpanded(camera.id);
+                      }
                     }}
                     className={`absolute top-2 right-2 z-10 p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
                     title={expandedCameraId === camera.id ? "Vollbild schließen" : "Vollbild öffnen"}
