@@ -643,22 +643,14 @@ export default function RecordingsConfigPage() {
                 </div>
 
                 {/* Footer Quick Links */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-xs text-slate-400">
-                  <Link
-                    href={`/wiedergabe?cameraId=${encodeURIComponent(cam.id)}`}
-                    className="inline-flex items-center gap-1.5 text-amber-300 hover:text-amber-200 font-medium transition-colors"
-                  >
-                    <Film className="h-3.5 w-3.5" />
-                    <span>Aufnahmen dieser Kamera ansehen ➔</span>
-                  </Link>
-
+                <div className="flex items-center justify-end pt-2 border-t border-slate-800/60 text-xs text-slate-400">
                   <button
                     onClick={() => handleDeleteCameraClips([cam.id])}
-                    className="inline-flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-slate-500 hover:text-rose-400 transition-colors"
                     title={`Alle Video-Aufnahmen von "${cam.name}" von der Festplatte löschen`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Archiv leeren</span>
+                    <span>Archiv leeren</span>
                   </button>
                 </div>
               </div>

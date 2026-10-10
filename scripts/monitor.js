@@ -301,7 +301,8 @@ async function syncMediaMtxPaths(cameras) {
         existing.record !== config.record ||
         existing.sourceOnDemand !== config.sourceOnDemand ||
         existing.rtspTransport !== config.rtspTransport ||
-        (config.record && existing.recordPath !== config.recordPath)
+        (config.record && existing.recordPath !== config.recordPath) ||
+        (config.record && existing.recordSegmentDuration !== config.recordSegmentDuration && existing.recordSegmentDuration !== `${config.recordSegmentDuration}0s`)
       ) {
         await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
           method: 'PATCH',
