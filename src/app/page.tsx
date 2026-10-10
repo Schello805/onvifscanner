@@ -1,1585 +1,1197 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
-import { loadWallData, saveWallData, upsertWallCameras, wallCameraFromScan } from "@/lib/cameraWall";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
 
-const defaultPorts = "80,443,554,8554,8000,8080,8899";
-function parsePorts(input: string): number[] {
-  const ports = input
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => Number(s))
-    .filter((n) => Number.isInteger(n) && n > 0 && n <= 65535);
-  return Array.from(new Set(ports));
+type CameraImageState = {
+  src?: string;
+  sourceUri?: string;
+  state: "idle" | "loading" | "ok" | "error";
+  message?: string;
+  updatedAt?: Date;
+};
+
+type CameraEditDraft = {
+  name: string;
+  snapshotUris: string;
+  streamUris: string;
+  username: string;
+  password: string;
+  group: string;
+  overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  recordEnabled: boolean;
+  recordSegmentMinutes: number;
+  storageTargetId: string;
+};
+
+function apiUrl(path: string): string {
+  return new URL(path, window.location.origin).toString();
 }
 
-function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
-  const lines = [`Kamera gefunden: ${r.ip}`];
-  if (r.mac) lines.push(`MAC-Adresse: ${r.mac}`);
-  if (r.hostname) lines.push(`DNS/Hostname: ${r.hostname}`);
-  if (r.primaryResolution) lines.push(`Auflösung: ${r.primaryResolution}`);
-  if (r.ptz) lines.push("PTZ: Pan/Tilt/Zoom unterstützt.");
-  if (r.manufacturer || r.model) {
-    lines.push(`Gerät: ${[r.manufacturer, r.model].filter(Boolean).join(" · ")}`);
-  } else {
-    lines.push("Gerät: Hersteller/Modell noch nicht eindeutig erkannt.");
-  }
-  if (r.streamUris?.length) lines.push(`Stream-URLs: ${r.streamUris.length} erkannt.`);
-  else lines.push("Stream-URLs: keine bestätigte URL erkannt.");
-  if (r.snapshotUris?.length) lines.push(`Snapshot-URLs: ${r.snapshotUris.length} erkannt.`);
-  else lines.push("Snapshot-URLs: keine bestätigte URL erkannt.");
-  if (r.onvif?.ok) lines.push("ONVIF: erreichbar, Geräteinfos wurden abgefragt.");
-  else if (r.onvif?.discoveryOnly) lines.push("ONVIF: XAddr/Endpoint gefunden, Tiefenanalyse nicht ausgeführt.");
-  else if (r.onvif?.error) lines.push(`ONVIF: nicht erfolgreich (${r.onvif.error}).`);
-  if (r.rtsp?.ok) lines.push("RTSP: erreichbar.");
-  else if (r.rtsp?.discoveryOnly) lines.push("RTSP: Kandidaten vorhanden, nicht aktiv getestet.");
-  else if (r.rtsp?.error) lines.push(`RTSP: nicht erfolgreich (${r.rtsp.error}).`);
-  if (r.vendor?.profile && r.vendor.profile !== "Vendor-Katalog") {
-    lines.push(`Vendor-Profil: ${r.vendor.profile}.`);
-  }
-  if (thumbnailLog) {
-    lines.push(`Vorschau: ${thumbnailLog.includes("error") ? "nicht geladen, Details im Log." : "geprüft."}`);
-  }
-  return lines;
-}
-
-export default function HomePage() {
+export default function CameraWallPage() {
   const { toast } = useToast();
-  const [cidr, setCidr] = useState("192.168.1.0/24");
-  const [detectedSubnets, setDetectedSubnets] = useState<
-    Array<{ interfaceName: string; ip: string; cidr: string }>
-  >([]);
-  const [ports, setPorts] = useState(defaultPorts);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showMultiCreds, setShowMultiCreds] = useState(false);
-  const [multiCredsText, setMultiCredsText] = useState("");
-  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
-  const [autoRefreshSec, setAutoRefreshSec] = useState<number>(0);
-  const [copyWithCreds, setCopyWithCreds] = useState(true);
-  const [includeThumbnails, setIncludeThumbnails] = useState(true);
-  const [thumbnailsOnExpandOnly, setThumbnailsOnExpandOnly] = useState(false);
-  const [verboseLog, setVerboseLog] = useState(true);
-  const [deepProbe, setDeepProbe] = useState(true);
-  const [timeoutMs, setTimeoutMs] = useState(1200);
-  const [concurrency, setConcurrency] = useState(128);
-  const [ack, setAck] = useState(true);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [savedCameraIps, setSavedCameraIps] = useState<Set<string>>(new Set());
-  const [recordingCameraIps, setRecordingCameraIps] = useState<Set<string>>(new Set());
-
-  const [loading, setLoading] = useState(false);
-  const [scanStatus, setScanStatus] = useState<string | null>(null);
-  const [scanProgress, setScanProgress] = useState<{ done: number; total: number; phase: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<ScanResponse | null>(null);
-  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const [thumbnailLog, setThumbnailLog] = useState<Record<string, string>>({});
-  const [thumbnailState, setThumbnailState] = useState<
-    Record<string, "idle" | "loading" | "ok" | "fail">
-  >({});
-  const [expandedIps, setExpandedIps] = useState<Record<string, boolean>>({});
-  const runNonceRef = useRef(0);
-  const activeRunNonceRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
-  const latestResultsRef = useRef<Record<string, { ip: string; urls: string[] }>>({});
-  const thumbQueueRef = useRef<string[]>([]);
-  const thumbInFlightRef = useRef(0);
-  const thumbSuccessRef = useRef(0);
-  const thumbStopRef = useRef(false);
-  const thumbPumpRef = useRef(false);
-  const thumbRequestedRef = useRef<Set<string>>(new Set());
-  const initialThumbIpsRef = useRef<Set<string>>(new Set());
-
-  function InfoTip(props: { tip: string }) {
-    return (
-      <span className="relative z-[9999] inline-flex shrink-0 align-middle group/info">
-        <span
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 bg-slate-900 text-[10px] font-bold text-slate-300 shadow-sm hover:border-indigo-400 hover:text-white"
-          aria-label="Info"
-          role="img"
-        >
-          i
-        </span>
-        <span className="pointer-events-none absolute bottom-6 right-0 z-[9999] hidden w-64 rounded-md border border-indigo-400/20 bg-slate-950 px-3 py-2 text-[11px] font-normal leading-snug tracking-normal text-slate-100 shadow-2xl shadow-black/40 group-hover/info:block sm:left-1/2 sm:right-auto sm:-translate-x-1/2">
-          {props.tip}
-        </span>
-      </span>
-    );
-  }
-
-  function OptionCheck(props: {
-    checked: boolean;
-    disabled?: boolean;
-    label: string;
-    tip: string;
-    onChange: (checked: boolean) => void;
-  }) {
-    const disabled = props.disabled ?? false;
-
-    return (
-      <label
-        className={`relative flex min-h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 transition-colors ${
-          disabled ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-indigo-400/30 hover:bg-white/[0.06]"
-        }`}
-      >
-        <span className="relative flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded border border-white/20 bg-white/5">
-          {props.checked && (
-            <svg className="h-3 w-3 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-          <input
-            type="checkbox"
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
-            checked={props.checked}
-            disabled={disabled}
-            onChange={(e) => props.onChange(e.target.checked)}
-          />
-        </span>
-        <span className="min-w-0 flex-1 text-[11px] leading-tight text-slate-300">{props.label}</span>
-        <InfoTip tip={props.tip} />
-      </label>
-    );
-  }
-
-  function apiUrl(path: string): string {
-    return new URL(path, window.location.origin).toString();
-  }
-
-  function getThumbUrlsForIp(ip: string): string[] {
-    return latestResultsRef.current[ip]?.urls ?? [];
-  }
-
-  function indexResultsForThumbs(json: ScanResponse) {
-    const map: Record<string, { ip: string; urls: string[] }> = {};
-    for (const r of json.results) {
-      const urls = Array.from(
-        new Set(
-          [
-            ...(r.snapshotUris ?? []),
-            ...(r.vendor?.snapshotUris ?? []),
-            ...(r.onvif?.snapshotUris?.map((u) => u.uri).filter(Boolean) ?? []),
-            ...(r.streamUris ?? []),
-            ...(r.vendor?.rtspUris ?? []),
-            ...(r.vendor?.httpStreamUris ?? []),
-            ...(r.onvif?.rtspUris?.map((u) => u.uri).filter(Boolean) ?? []),
-          ].filter(Boolean)
-        )
-      ).slice(0, 4);
-      map[r.ip] = { ip: r.ip, urls };
-    }
-    latestResultsRef.current = map;
-  }
-
-  async function fetchThumbnail(ip: string): Promise<void> {
-    if (thumbStopRef.current) return;
-    if (thumbnailState[ip] === "loading" || thumbnailState[ip] === "ok") return;
-
-    const urls = getThumbUrlsForIp(ip).slice(0, 4);
-    if (!urls.length) return;
-
-    setThumbnailState((prev) => ({ ...prev, [ip]: "loading" }));
-    try {
-      const ac = new AbortController();
-      const t = window.setTimeout(() => ac.abort(), 3500);
-      const camResult = data?.results?.find((r) => r.ip === ip);
-      const thumbCreds =
-        camResult?.credentials ??
-        (username.trim() || password.trim()
-          ? { username: username.trim() || "admin", password }
-          : undefined);
-
-      const thumbRes = await fetch(apiUrl("/api/thumbnail"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          urls,
-          size: 200,
-          timeoutMs: 1500,
-          fastAuth: true,
-          credentials: thumbCreds,
-          credentialsList: parsedCredsList.length ? parsedCredsList : undefined
-        }),
-        signal: ac.signal
-      }).finally(() => window.clearTimeout(t));
-
-      // Ignore outdated scan runs.
-      if (activeRunNonceRef.current !== runNonceRef.current) return;
-
-      if (!thumbRes.ok) {
-        let logWritten = false;
-        try {
-          const ct = (thumbRes.headers.get("content-type") ?? "").toLowerCase();
-          if (ct.includes("application/json")) {
-            const j = (await thumbRes.json().catch(() => null)) as any;
-            if (j?.error) {
-              const lines = [String(j.error), ...(Array.isArray(j.log) ? j.log : [])];
-              setThumbnailLog((prev) => ({
-                ...prev,
-                [ip]: lines.slice(0, verboseLog ? 60 : 12).join("\n")
-              }));
-              logWritten = true;
-            } else {
-              const txt = JSON.stringify(j).slice(0, 1200);
-              setThumbnailLog((prev) => ({ ...prev, [ip]: txt }));
-              logWritten = true;
-            }
-          } else {
-            const txt = await thumbRes.text();
-            setThumbnailLog((prev) => ({ ...prev, [ip]: txt.slice(0, 1200) }));
-            logWritten = true;
-          }
-        } catch {
-          // ignore
-        }
-        if (!logWritten) {
-          setThumbnailLog((prev) => ({
-            ...prev,
-            [ip]: `Thumbnail proxy failed (HTTP ${thumbRes.status}).`
-          }));
-        }
-        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-        return;
-      }
-
-      const contentType = (thumbRes.headers.get("content-type") ?? "").toLowerCase();
-      if (contentType.includes("application/json")) {
-        const j = (await thumbRes.json().catch(() => null)) as any;
-        const lines = [String(j?.error ?? "Kein Vorschaubild."), ...(Array.isArray(j?.log) ? j.log : [])];
-        setThumbnailLog((prev) => ({
-          ...prev,
-          [ip]: lines.slice(0, verboseLog ? 60 : 12).join("\n")
-        }));
-        setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-        return;
-      }
-
-      const blob = await thumbRes.blob();
-      if (!blob.size) return;
-      const objectUrl = URL.createObjectURL(blob);
-      if (runNonceRef.current !== activeRunNonceRef.current) {
-        try {
-          URL.revokeObjectURL(objectUrl);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-      setThumbnails((prev) => {
-        const existing = prev[ip];
-        if (existing) {
-          try {
-            if (existing.startsWith("blob:")) URL.revokeObjectURL(existing);
-          } catch {
-            // ignore
-          }
-        }
-        return { ...prev, [ip]: objectUrl };
-      });
-      const src = thumbRes.headers.get("x-thumbnail-source");
-      if (src) setThumbnailLog((prev) => ({ ...prev, [ip]: `OK: ${src}` }));
-
-      const imgW = parseInt(thumbRes.headers.get("x-image-width") ?? "0", 10);
-      const imgH = parseInt(thumbRes.headers.get("x-image-height") ?? "0", 10);
-      if (imgW > 0 && imgH > 0) {
-        setData((prev) => {
-          if (!prev?.results) return prev;
-          const updated = prev.results.map((item) => {
-            if (item.ip !== ip) return item;
-            if (item.primaryResolution) return item;
-            const resLabel = `${imgW}×${imgH}`;
-            return {
-              ...item,
-              primaryResolution: resLabel,
-              resolutions: item.resolutions ?? [{ width: imgW, height: imgH, label: resLabel }]
-            };
-          });
-          return { ...prev, results: updated };
-        });
-      }
-
-      setThumbnailState((prev) => ({ ...prev, [ip]: "ok" }));
-      thumbSuccessRef.current += 1;
-    } catch {
-      setThumbnailState((prev) => ({ ...prev, [ip]: "fail" }));
-    }
-  }
-
-  function pumpThumbQueue() {
-    if (thumbPumpRef.current) return;
-    thumbPumpRef.current = true;
-
-    const tick = () => {
-      const maxConcurrency = 2;
-      while (
-        !thumbStopRef.current &&
-        thumbInFlightRef.current < maxConcurrency &&
-        thumbQueueRef.current.length > 0
-      ) {
-        const ip = thumbQueueRef.current.shift()!;
-        thumbInFlightRef.current += 1;
-        void fetchThumbnail(ip).finally(() => {
-          thumbInFlightRef.current = Math.max(0, thumbInFlightRef.current - 1);
-          tick();
-        });
-      }
-
-      if (
-        thumbStopRef.current ||
-        (thumbInFlightRef.current === 0 && thumbQueueRef.current.length === 0)
-      ) {
-        thumbPumpRef.current = false;
-      }
-    };
-
-    tick();
-  }
+  const [cameras, setCameras] = useState<WallCamera[]>([]);
+  const [images, setImages] = useState<Record<string, CameraImageState>>({});
+  const [columns, setColumns] = useState(3);
+  const [mobileColumns, setMobileColumns] = useState(2);
+  const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
+  const [refreshSeconds, setRefreshSeconds] = useState(10);
+  const [editingCameraId, setEditingCameraId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<CameraEditDraft | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
+  const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
+  const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
+  const [liveLoading, setLiveLoading] = useState<Set<string>>(new Set());
+  const [recordLoading, setRecordLoading] = useState<Set<string>>(new Set());
+  const [batchRecordLoading, setBatchRecordLoading] = useState(false);
+  const [storageTargets, setStorageTargets] = useState<Array<{ id: string; name: string; path: string; isDefault: boolean }>>([]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    loadWallData().then((data) => {
-      setSavedCameraIps(new Set(data.cameras.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(data.cameras.filter((c) => c.recordEnabled).map((c) => c.ip)));
-    });
-    fetch("/api/network")
-      .then((r) => r.json())
-      .then((netData) => {
-        if (netData?.primaryCidr) {
-          setCidr((prev) => (prev === "192.168.1.0/24" ? netData.primaryCidr : prev));
-        }
-        if (Array.isArray(netData?.subnets)) {
-          setDetectedSubnets(netData.subnets);
+    setMounted(true);
+    fetch("/api/nvr/storage", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.targets && Array.isArray(data.targets)) {
+          setStorageTargets(data.targets);
         }
       })
       .catch(() => {});
   }, []);
-
-  async function saveToWall(results: ScanResult[]) {
-    try {
-      const credentials = username.trim() ? { username: username.trim(), password } : undefined;
-      const additions = results.map((result) => wallCameraFromScan(result, credentials));
-      const current = await loadWallData();
-      const next = upsertWallCameras(current.cameras, additions);
-      await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
-      if (results.length === 1) {
-        toast.success(`Kamera ${results[0].ip} zu den Monitoren hinzugefügt.`);
-      } else {
-        toast.success(`${results.length} Kameras zu den Monitoren hinzugefügt.`);
-      }
-    } catch {
-      toast.error("Fehler beim Speichern unter Monitore.");
-    }
-  }
-
-  async function removeFromWall(ip: string) {
-    if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von den Monitoren entfernen?`)) return;
-    try {
-      const current = await loadWallData();
-      const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
-      await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
-      toast.info(`Kamera ${ip} von den Monitoren entfernt.`);
-    } catch {
-      toast.error("Fehler beim Entfernen von den Monitoren.");
-    }
-  }
-
-  function RecordingBadge({ ip }: { ip: string }) {
-    if (!recordingCameraIps.has(ip)) return null;
-    return (
-      <Link
-        href={`/wiedergabe?search=${encodeURIComponent(ip)}`}
-        className="inline-flex items-center gap-1 rounded bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/30 transition shadow-sm animate-pulse"
-        title="Daueraufnahme aktiv – Klick zum Aufnahmen-Archiv"
-      >
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-        </span>
-        <span>REC Aktiv</span>
-      </Link>
-    );
-  }
-
-  function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
-    const saved = savedCameraIps.has(result.ip);
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          if (saved) {
-            void removeFromWall(result.ip);
-          } else {
-            void saveToWall([result]);
-          }
-        }}
-        className={`${compact ? "px-2 py-1 text-[10px]" : "px-2.5 py-1.5 text-xs"} rounded-lg border font-semibold transition ${
-          saved
-            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40"
-            : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"
-        }`}
-        title={saved ? "Kamera ist unter Monitore gespeichert. Klicken, um sie zu entfernen." : "Kamera zu Monitore hinzufügen"}
-      >
-        {saved ? "✓ Monitore" : "+ Monitore"}
-      </button>
-    );
-  }
-
-  function enqueueThumb(ip: string) {
-    if (!includeThumbnails) return;
-    if (thumbStopRef.current) return;
-    if (thumbnailState[ip] === "ok" || thumbnailState[ip] === "loading") return;
-    if (thumbRequestedRef.current.has(ip)) return;
-    thumbRequestedRef.current.add(ip);
-    if (!thumbQueueRef.current.includes(ip)) thumbQueueRef.current.push(ip);
-    pumpThumbQueue();
-  }
-
-  function refreshAllThumbnails() {
-    if (!data?.results?.length) return;
-    for (const r of data.results) {
-      thumbRequestedRef.current.delete(r.ip);
-      setThumbnailState((prev) => ({ ...prev, [r.ip]: "loading" }));
-      enqueueThumb(r.ip);
-    }
-  }
+  const wallRef = useRef<HTMLDivElement>(null);
+  const objectUrlsRef = useRef<Record<string, string>>({});
+  const runningRef = useRef<Set<string>>(new Set());
+  const refreshRunningRef = useRef(false);
+  const liveCamerasRef = useRef<Set<string>>(new Set());
+  const initialRefreshDoneRef = useRef(false);
+  const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
 
   useEffect(() => {
-    if (!autoRefreshSec || autoRefreshSec <= 0) return;
-    if (!data?.results?.length || loading) return;
-    const interval = setInterval(() => {
-      refreshAllThumbnails();
-    }, autoRefreshSec * 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefreshSec, data?.results?.length, loading]);
+    liveCamerasRef.current = liveCameras;
+  }, [liveCameras]);
 
-  const parsedCredsList: Credentials[] = useMemo(() => {
-    if (!multiCredsText.trim()) return [];
-    const lines = multiCredsText.split("\n");
-    const list: Credentials[] = [];
-    const baseUser = username.trim() || "admin";
-
-    for (const l of lines) {
-      const trimmed = l.trim();
-      if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
-      const colon = trimmed.indexOf(":");
-      if (colon >= 0) {
-        const u = trimmed.slice(0, colon).trim();
-        const p = trimmed.slice(colon + 1);
-        const finalUser = u || baseUser;
-        list.push({ username: finalUser, password: p });
-      } else {
-        // Line has no colon: The user entered just a password!
-        list.push({ username: baseUser, password: trimmed });
-        if (baseUser !== "admin") {
-          list.push({ username: "admin", password: trimmed });
-        }
-      }
+  useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
+    
+    loadWallData().then((data) => {
+      setCameras(data.cameras);
+      if (data.columns !== null && data.columns >= 1 && data.columns <= 6) setColumns(data.columns);
+      if (data.refresh !== null && [0, 5, 10, 30, 60].includes(data.refresh)) setRefreshSeconds(data.refresh);
+    });
+    
+    if (typeof window !== "undefined") {
+      const storedMobileCol = localStorage.getItem("wall_mobile_columns");
+      if (storedMobileCol) setMobileColumns(Number(storedMobileCol));
     }
-    const deduped: Credentials[] = [];
-    for (const c of list) {
-      if (!deduped.some((x) => x.username === c.username && x.password === c.password)) {
-        deduped.push(c);
-      }
-    }
-    return deduped;
-  }, [multiCredsText, username]);
 
-  const isSingleIp = useMemo(() => {
-    const pfx = cidr.trim().split("/")[1];
-    return !pfx || parseInt(pfx, 10) === 32;
-  }, [cidr]);
-
-  const request: ScanRequest = useMemo(
-    () => ({
-      preset: isSingleIp ? "cidr" : "auto",
-      cidr,
-      ports: parsePorts(ports),
-      credentials:
-        username.trim() || password.trim()
-          ? { username: username.trim() || "admin", password }
-          : undefined,
-      credentialsList: parsedCredsList.length ? parsedCredsList : undefined,
-      timeoutMs,
-      concurrency,
-      deepProbe,
-      includeThumbnails,
-      acknowledgeAuthorizedNetwork: ack
-    }),
-    [
-      ack,
-      cidr,
-      concurrency,
-      deepProbe,
-      includeThumbnails,
-      isSingleIp,
-      parsedCredsList,
-      password,
-      ports,
-      timeoutMs,
-      username
-    ]
-  );
-
-  async function runScan() {
-    runNonceRef.current += 1;
-    const runNonce = runNonceRef.current;
-    activeRunNonceRef.current = runNonce;
-    abortRef.current?.abort();
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-    setError(null);
-    setLoading(true);
-    setScanStatus("Scan startet…");
-    setScanProgress(null);
-    setData(null);
-    setExpandedIps({});
-
-    const resetThumbs = () => {
-      setThumbnails((prev) => {
-        for (const v of Object.values(prev)) {
-          try {
-            if (v.startsWith("blob:")) URL.revokeObjectURL(v);
-          } catch {
-            // ignore
-          }
-        }
-        return {};
+    const sync = () => {
+      loadWallData().then(data => {
+        setCameras(data.cameras);
       });
-      setThumbnailLog({});
-      setThumbnailState({});
-      thumbQueueRef.current = [];
-      thumbInFlightRef.current = 0;
-      thumbSuccessRef.current = 0;
-      thumbStopRef.current = false;
-      thumbRequestedRef.current = new Set();
-      initialThumbIpsRef.current = new Set();
     };
+    window.addEventListener("onvifscanner:wall-updated", sync);
+    return () => {
+      window.removeEventListener("onvifscanner:wall-updated", sync);
+      for (const src of Object.values(objectUrls)) URL.revokeObjectURL(src);
+    };
+  }, []);
 
-    function enqueueInitialThumbs(json: ScanResponse) {
-      if (!includeThumbnails) return;
-      const count = thumbnailsOnExpandOnly ? 4 : Math.min(8, json.results.length);
-      const ips = json.results.map((r) => r.ip).slice(0, count);
-      for (const ip of ips) {
-        initialThumbIpsRef.current.add(ip);
-        enqueueThumb(ip);
-      }
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const fullscreen = Boolean(document.fullscreenElement);
+      setIsFullscreen(fullscreen);
+      if (!fullscreen) setControlsVisible(true);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const openExpanded = useCallback((id: string) => {
+    if (typeof window !== "undefined") {
+      window.history.pushState({ modal: "camera-fullscreen", id }, "");
     }
+    setExpandedCameraId(id);
+  }, []);
+
+  const closeExpanded = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.state?.modal === "camera-fullscreen") {
+      window.history.back();
+    } else {
+      setExpandedCameraId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setExpandedCameraId(null);
+      setEditingCameraId(null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (!editingCameraId && !expandedCameraId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (editingCameraId) closeEditor();
+        if (expandedCameraId) closeExpanded();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [editingCameraId, expandedCameraId, closeExpanded]);
+
+  const loadCamera = useCallback(async (camera: WallCamera, fresh = false) => {
+    if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
+    
+    // Don't hammer the API if the background ping detected it as offline
+    if (camera.status?.isOnline === false) {
+       setImages((current) => ({
+         ...current,
+         [camera.id]: { ...current[camera.id], state: "error", message: "Kamera ist offline" }
+       }));
+       return;
+    }
+
+    runningRef.current.add(camera.id);
+    setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
 
     try {
-      resetThumbs();
-      const res = await fetch(apiUrl("/api/scan/stream"), {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 25000);
+      const urls = [...camera.snapshotUris, ...camera.streamUris].filter(Boolean).slice(0, 4);
+      const response = await fetch(apiUrl("/api/thumbnail"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(request),
-        signal: abortController.signal
-      });
+        body: JSON.stringify({
+          urls,
+          size: 512,
+          timeoutMs: 3000,
+          fastAuth: true,
+          fresh,
+          credentials: camera.credentials
+        }),
+        signal: controller.signal
+      }).finally(() => window.clearTimeout(timer));
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error ?? `Scan fehlgeschlagen (HTTP ${res.status}).`);
-      }
-
-      const contentType = res.headers.get("content-type") ?? "";
-      if (contentType.includes("text/event-stream") && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const event = JSON.parse(line.slice(6));
-                if (event.type === "item" && event.item?.ip) {
-                  const item: ScanResult = event.item;
-                  setData((prev) => {
-                    const existingResults = prev?.results ? [...prev.results] : [];
-                    const idx = existingResults.findIndex((x) => x.ip === item.ip);
-                    if (idx >= 0) {
-                      existingResults[idx] = { ...existingResults[idx], ...item };
-                    } else {
-                      existingResults.push(item);
-                    }
-                    const updatedResponse: ScanResponse = {
-                      meta: prev?.meta ?? { mode: "auto", startedAt: new Date().toISOString(), durationMs: 0 },
-                      results: existingResults,
-                      warnings: prev?.warnings
-                    };
-                    indexResultsForThumbs(updatedResponse);
-                    if (!thumbnailsOnExpandOnly) {
-                      enqueueThumb(item.ip);
-                    }
-                    return updatedResponse;
-                  });
-                } else if (event.type === "progress") {
-                  if (event.total > 0) {
-                    setScanProgress({ done: event.done, total: event.total, phase: event.phase });
-                  }
-                  if (event.message && event.message !== "ping") {
-                    setScanStatus(event.message);
-                  }
-                } else if (event.type === "phase") {
-                  if (event.message) {
-                    setScanStatus(event.message);
-                  }
-                } else if (event.type === "result") {
-                  setData(event.result);
-                  indexResultsForThumbs(event.result);
-                  enqueueInitialThumbs(event.result);
-                } else if (event.type === "error") {
-                  setError(event.error);
-                }
-              } catch {
-                // ignore partial JSON chunk
-              }
-            }
-          }
+      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+      if (!response.ok || contentType.includes("application/json")) {
+        const detail = await response.json().catch(() => null);
+        const isAuthError = detail?.log?.some((line: string) => 
+          line.includes("Status: 401") || 
+          line.includes("Hinweis: Authentifizierung") || 
+          line.includes("Hinweis: Digest auth nötig")
+        );
+        if (isAuthError) {
+          throw new Error("AUTH_REQUIRED");
         }
-      } else {
-        const json = (await res.json().catch(() => ({}))) as ScanResponse;
-        if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
-        setData(json);
-        indexResultsForThumbs(json);
-        enqueueInitialThumbs(json);
+        throw new Error(detail?.error ?? `Bild nicht verfügbar (HTTP ${response.status})`);
       }
-    } catch (e) {
-      if (abortController.signal.aborted) {
-        setError("Scan abgebrochen.");
-        toast.info("Scan abgebrochen.");
-      } else {
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(msg);
-        toast.error(`Scan fehlgeschlagen: ${msg}`);
-      }
+
+      const blob = await response.blob();
+      const src = URL.createObjectURL(blob);
+      const previous = objectUrlsRef.current[camera.id];
+      if (previous) URL.revokeObjectURL(previous);
+      objectUrlsRef.current[camera.id] = src;
+      const sourceUri = response.headers.get("x-thumbnail-source") ?? camera.snapshotUris[0];
+      setImages((current) => ({
+        ...current,
+        [camera.id]: { src, sourceUri, state: "ok", updatedAt: new Date() }
+      }));
+    } catch (error) {
+      const message = error instanceof DOMException && error.name === "AbortError"
+        ? "Zeitüberschreitung"
+        : error instanceof Error ? error.message : "Bild nicht verfügbar";
+      setImages((current) => ({
+        ...current,
+        [camera.id]: { ...current[camera.id], state: "error", message }
+      }));
     } finally {
-      setLoading(false);
-      setScanStatus(null);
-      setScanProgress(null);
+      runningRef.current.delete(camera.id);
     }
-  }
+  }, []);
 
-  function stopScan() {
-    toast.info("Scan wird gestoppt...");
-    abortRef.current?.abort();
-  }
-
-  function handleDetailsToggle(ip: string, open: boolean) {
-    setExpandedIps((prev) => ({ ...prev, [ip]: open }));
-    if (!includeThumbnails) return;
-    if (!thumbnailsOnExpandOnly) return;
-    if (!open) return;
-    // Enqueue thumbnail when a row is expanded.
-    enqueueThumb(ip);
-  }
-
-  function addCredsIfWanted(url: string, cameraCreds?: Credentials): string {
-    if (!copyWithCreds) return url;
-    const effUser = cameraCreds?.username || username.trim() || "admin";
-    const effPass = cameraCreds?.password !== undefined ? cameraCreds.password : password;
-    if (!effUser && !effPass) return url;
+  const refreshCameraList = useCallback(async (cameraList: WallCamera[], fresh = false) => {
+    if (refreshRunningRef.current) return;
+    refreshRunningRef.current = true;
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(2, cameraList.length) }, async () => {
+      while (nextIndex < cameraList.length) {
+        const camera = cameraList[nextIndex++];
+        if (!liveCamerasRef.current.has(camera.id)) await loadCamera(camera, fresh);
+      }
+    });
     try {
-      const u = new URL(url);
-      if (u.username || u.password) return url;
-      if (u.searchParams.has("user") || u.searchParams.has("password")) return url;
-      if (effUser) u.username = effUser;
-      if (effPass) u.password = effPass;
-      return u.toString();
-    } catch {
-      // non-standard URLs (some RTSP variants) are left untouched
-      return url;
+      await Promise.all(workers);
+    } finally {
+      refreshRunningRef.current = false;
     }
-  }
+  }, [loadCamera]);
 
-  async function copy(text: string) {
+  const refreshAll = useCallback(async (fresh = false) => {
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success("In die Zwischenablage kopiert!");
-    } catch {
-      const el = document.createElement("textarea");
-      el.value = text;
-      el.style.position = "fixed";
-      el.style.left = "-9999px";
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-      toast.success("In die Zwischenablage kopiert!");
+      const data = await loadWallData();
+      setCameras(data.cameras);
+      await refreshCameraList(data.cameras, fresh);
+    } catch (e) {
+      console.error("Failed to refresh wall data", e);
+    }
+  }, [refreshCameraList]);
+
+  useEffect(() => {
+    if (!cameras.length || initialRefreshDoneRef.current) return;
+    initialRefreshDoneRef.current = true;
+    void refreshCameraList(cameras);
+  }, [cameras, refreshCameraList]);
+
+  useEffect(() => {
+    if (refreshSeconds <= 0 || !cameras.length) return;
+    const timer = window.setInterval(() => void refreshAll(false), refreshSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [cameras.length, refreshAll, refreshSeconds]);
+
+  function persist(next: WallCamera[]) {
+    setCameras(next);
+    saveWallData({ cameras: next, columns, refresh: refreshSeconds });
+  }
+
+  function changeColumns(value: number) {
+    setColumns(value);
+    saveWallData({ cameras, columns: value, refresh: refreshSeconds });
+  }
+
+  function changeRefresh(value: number) {
+    setRefreshSeconds(value);
+    saveWallData({ cameras, columns, refresh: value });
+  }
+
+  function changeMobileColumns(value: number) {
+    setMobileColumns(value);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("wall_mobile_columns", value.toString());
     }
   }
 
-  function PreviewThumb(props: { result: ScanResult; compact?: boolean; large?: boolean }) {
-    const r = props.result;
-    const size = props.large ? "h-48 w-full aspect-video" : props.compact ? "h-20 w-28" : "h-14 w-24";
-    if (thumbnails[r.ip]) {
-      return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={thumbnails[r.ip]}
-          alt={`Preview ${r.ip}`}
-          className={`${size} rounded-xl border border-white/10 object-cover shadow-lg transition-transform hover:scale-[1.01]`}
-        />
+  function moveCamera(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= cameras.length) return;
+    const next = [...cameras];
+    [next[index], next[target]] = [next[target], next[index]];
+    persist(next);
+  }
+
+  function openEditor(camera: WallCamera) {
+    setEditingCameraId(camera.id);
+    setEditDraft({
+      name: camera.name,
+      snapshotUris: camera.snapshotUris.join("\n"),
+      streamUris: camera.streamUris.join("\n"),
+      username: camera.credentials?.username ?? "",
+      password: camera.credentials?.password ?? "",
+      group: camera.group ?? "",
+      overlayPosition: camera.overlayPosition ?? "top-left",
+      recordEnabled: Boolean(camera.recordEnabled),
+      recordSegmentMinutes: camera.recordSegmentMinutes || 15,
+      storageTargetId: camera.storageTargetId || "",
+    });
+    setShowPassword(false);
+  }
+
+  function closeEditor() {
+    setEditingCameraId(null);
+    setEditDraft(null);
+    setShowPassword(false);
+  }
+
+  async function toggleRecord(camera: WallCamera) {
+    const nextState = !camera.recordEnabled;
+    setRecordLoading((prev) => new Set(prev).add(camera.id));
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: camera.id, recordEnabled: nextState }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Fehler beim Ändern der Aufnahme");
+
+      const next = cameras.map((c) => (c.id === camera.id ? { ...c, recordEnabled: nextState } : c));
+      persist(next);
+      toast.success(
+        nextState
+          ? `🔴 Daueraufnahme für "${camera.name}" gestartet.`
+          : `Aufnahme für "${camera.name}" beendet.`
       );
+    } catch (err: any) {
+      toast.error(err.message || "Fehler beim Ändern der Aufnahme.");
+    } finally {
+      setRecordLoading((prev) => {
+        const copy = new Set(prev);
+        copy.delete(camera.id);
+        return copy;
+      });
     }
-
-    const log = thumbnailLog[r.ip] ?? "";
-    const lower = log.toLowerCase();
-    let label = "Kein Bild";
-    if (thumbnailState[r.ip] === "loading") label = "Lädt…";
-    else if (lower.includes("digest") && lower.includes("401")) label = "Digest nötig";
-    else if (lower.includes("401")) label = "Auth nötig";
-    else if (
-      includeThumbnails &&
-      thumbnailsOnExpandOnly &&
-      !expandedIps[r.ip] &&
-      !initialThumbIpsRef.current.has(r.ip)
-    ) {
-      label = "Aufklappen";
-    }
-
-    return (
-      <div className={`${size} flex items-center justify-center rounded-xl border border-white/5 bg-white/5 text-center text-[10px] font-medium uppercase tracking-wider text-slate-500`}>
-        {label}
-      </div>
-    );
   }
 
-  function UrlRow(props: { label: string; url: string; isApi?: boolean; cameraCreds?: Credentials }) {
-    const effective = addCredsIfWanted(props.url, props.cameraCreds);
-    return (
-      <div className="flex flex-col gap-1.5 rounded-lg border border-white/5 bg-white/[0.03] p-2 sm:flex-row sm:items-center sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0">
-        <div className="shrink-0 text-xs font-semibold text-slate-400 sm:w-28 sm:font-normal">{props.label}</div>
-        {props.isApi ? (
-          <span
-            className="min-w-0 flex-1 break-all font-mono text-[11px] text-slate-500 sm:truncate"
-            title={effective}
-          >
-            {effective}
-          </span>
-        ) : (
-          <a
-            className="min-w-0 flex-1 break-all font-mono text-[11px] text-indigo-300 hover:text-indigo-200 sm:truncate"
-            href={effective}
-            target="_blank"
-            rel="noreferrer"
-            title={effective}
-          >
-            {effective}
-          </a>
-        )}
-        <button
-          className="self-start rounded-md border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-200 hover:bg-slate-900 sm:self-auto"
-          onClick={() => copy(effective)}
-          type="button"
-        >
-          Kopieren
-        </button>
-      </div>
-    );
+  async function toggleAllRecord(enable: boolean) {
+    if (enable && cameras.length === 0) return;
+    if (!enable && !confirm("Möchtest du wirklich alle laufenden Daueraufnahmen beenden?")) {
+      return;
+    }
+    setBatchRecordLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true, recordEnabled: enable }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Fehler bei der Aufnahmesteuerung");
+
+      const next = cameras.map((c) => ({ ...c, recordEnabled: enable }));
+      persist(next);
+      toast.success(
+        enable
+          ? `🔴 Daueraufnahme für alle ${cameras.length} Kameras gestartet.`
+          : `Alle Kamera-Aufnahmen beendet.`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Fehler bei der Aufnahmesteuerung.");
+    } finally {
+      setBatchRecordLoading(false);
+    }
+  }
+
+  function removeCamera(id: string) {
+    const cam = cameras.find((item) => item.id === id);
+    const next = cameras.filter((item) => item.id !== id);
+    if (expandedCameraId === id) closeExpanded();
+    if (liveCameras.has(id)) {
+      setLiveCameras((prev) => {
+        const nextLive = new Set(prev);
+        nextLive.delete(id);
+        return nextLive;
+      });
+    }
+    const previousSrc = objectUrlsRef.current[id];
+    if (previousSrc) URL.revokeObjectURL(previousSrc);
+    delete objectUrlsRef.current[id];
+    setImages((current) => {
+      const updated = { ...current };
+      delete updated[id];
+      return updated;
+    });
+    persist(next);
+    toast.success(`Kamera "${cam?.name || id}" von den Monitoren entfernt.`);
+  }
+
+  function saveCameraDetails() {
+    if (!editingCameraId || !editDraft) return;
+    const lines = (value: string) => Array.from(new Set(value.split("\n").map((line) => line.trim()).filter(Boolean)));
+    const currentCam = cameras.find((camera) => camera.id === editingCameraId);
+    const next = cameras.map((camera) => camera.id === editingCameraId ? {
+      ...camera,
+      name: editDraft.name.trim() || `Kamera ${camera.ip}`,
+      snapshotUris: lines(editDraft.snapshotUris),
+      streamUris: lines(editDraft.streamUris),
+      credentials: editDraft.username.trim()
+        ? { username: editDraft.username.trim(), password: editDraft.password }
+        : undefined,
+      group: editDraft.group.trim() || undefined,
+      overlayPosition: editDraft.overlayPosition,
+      recordEnabled: editDraft.recordEnabled,
+      recordSegmentMinutes: editDraft.recordSegmentMinutes,
+      storageTargetId: editDraft.storageTargetId || null,
+    } : camera);
+
+    void fetch("/api/nvr/cameras", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editingCameraId,
+        recordEnabled: editDraft.recordEnabled,
+        recordSegmentMinutes: editDraft.recordSegmentMinutes,
+        storageTargetId: editDraft.storageTargetId || null,
+      })
+    });
+
+    const previousSrc = objectUrlsRef.current[editingCameraId];
+    if (previousSrc) URL.revokeObjectURL(previousSrc);
+    delete objectUrlsRef.current[editingCameraId];
+    setImages((current) => {
+      const updated = { ...current };
+      delete updated[editingCameraId];
+      return updated;
+    });
+    persist(next);
+    closeEditor();
+    toast.success(`Kamera "${editDraft.name.trim() || currentCam?.name}" gespeichert.`);
+  }
+
+  async function enterMonitorMode() {
+    setControlsVisible(false);
+    await wallRef.current?.requestFullscreen();
+  }
+
+  async function leaveFullscreen() {
+    if (document.fullscreenElement) await document.exitFullscreen();
+  }
+
+  async function toggleLive(cameraId: string) {
+    const cam = cameras.find((c) => c.id === cameraId);
+    if (liveCameras.has(cameraId)) {
+      setLiveCameras((current) => {
+        const next = new Set(current);
+        next.delete(cameraId);
+        return next;
+      });
+      toast.info(`Live-Stream für "${cam?.name || cameraId}" gestoppt.`);
+      return;
+    }
+
+    setLiveErrors((current) => ({ ...current, [cameraId]: "" }));
+    setLiveLoading((current) => new Set(current).add(cameraId));
+    try {
+      const response = await fetch(apiUrl("/api/stream/prepare"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cameraId })
+      });
+      const result = (await response.json().catch(() => null)) as { playbackUrl?: string; error?: string } | null;
+      if (!response.ok || !result?.playbackUrl) {
+        throw new Error(result?.error ?? `Live-Stream konnte nicht gestartet werden (HTTP ${response.status}).`);
+      }
+      setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
+      setLiveCameras((current) => new Set(current).add(cameraId));
+      toast.success(`Live-Stream für "${cam?.name || cameraId}" aktiv.`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Live-Stream konnte nicht gestartet werden.";
+      setLiveErrors((current) => ({
+        ...current,
+        [cameraId]: msg
+      }));
+      toast.error(msg);
+    } finally {
+      setLiveLoading((current) => {
+        const next = new Set(current);
+        next.delete(cameraId);
+        return next;
+      });
+    }
+  }
+
+  function toggleAllLive() {
+    const allIds = cameras.map(c => c.id);
+    const anyNotLive = allIds.some(id => !liveCameras.has(id));
+    
+    if (anyNotLive) {
+      toast.info("Starte alle Live-Streams...");
+      for (const id of allIds) {
+        if (!liveCameras.has(id) && !liveLoading.has(id)) {
+          void toggleLive(id);
+        }
+      }
+    } else {
+      setLiveCameras(new Set());
+      toast.info("Alle Live-Streams gestoppt.");
+    }
   }
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-6">
-      <section className="glass-panel relative overflow-visible rounded-2xl p-4 sm:p-6 shadow-xl">
-        {/* Decorative background glow */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
+    <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6">
+      <div className={`mb-4 sm:mb-6 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Monitore</h1>
+            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
+              {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
+            </span>
+            {cameras.filter((c) => c.recordEnabled).length > 0 ? (
+              <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300 shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <span>{cameras.filter((c) => c.recordEnabled).length} REC aktiv</span>
+                <button
+                  type="button"
+                  disabled={batchRecordLoading}
+                  onClick={() => void toggleAllRecord(false)}
+                  className="rounded bg-rose-950/70 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-500/40 hover:bg-rose-900 transition disabled:opacity-50"
+                  title="Alle laufenden Daueraufnahmen beenden"
+                >
+                  Alle stoppen
+                </button>
+                <Link
+                  href="/wiedergabe"
+                  className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-white/20 transition hidden sm:inline-block"
+                  title="Zum Video-Archiv wechseln"
+                >
+                  Archiv ↗
+                </Link>
+              </div>
+            ) : cameras.length > 0 ? (
+              <button
+                type="button"
+                disabled={batchRecordLoading}
+                onClick={() => void toggleAllRecord(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 px-2.5 py-1 text-xs font-semibold text-slate-300 transition shadow-sm disabled:opacity-50"
+                title="Daueraufnahme für alle Kameras starten"
+              >
+                <span className="text-rose-400">⏺</span>
+                <span>Alle aufnehmen</span>
+              </button>
+            ) : null}
+          </div>
 
-        <div className="relative z-10 flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-3">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">
-                Netzwerk-Scanner
-              </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                ONVIF & RTSP Kameras im lokalen Netzwerk automatisch erkennen
-              </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
+              <span className="text-slate-400">Raster:</span>
+              <select
+                aria-label="Anzahl der Spalten"
+                value={columns}
+                onChange={(event) => changeColumns(Number(event.target.value))}
+                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+              >
+                {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value} Spalten</option>)}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
+              <span className="text-slate-400">Intervall:</span>
+              <select
+                aria-label="Aktualisierungsintervall"
+                value={refreshSeconds}
+                onChange={(event) => changeRefresh(Number(event.target.value))}
+                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+              >
+                <option value={0}>Manuell</option>
+                <option value={5}>5s</option>
+                <option value={10}>10s</option>
+                <option value={30}>30s</option>
+                <option value={60}>60s</option>
+              </select>
             </div>
 
             <button
               type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="self-start sm:self-auto text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1.5 transition"
+              onClick={() => void refreshAll(true)}
+              className="touch-manipulation rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 transition"
+              title="Alle Kamerabilder jetzt aktualisieren"
             >
-              <span>⚙️</span>
-              <span>{showAdvanced ? "Weniger Optionen" : "Erweiterte Optionen"}</span>
+              ↻ Refresh
             </button>
-          </div>
 
-          {/* Primary Quick-Scan Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-            {/* IP / Subnet */}
-            <div className="sm:col-span-5 flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-slate-300">
-                IP-Bereich / Subnetz
-              </label>
-              <input
-                className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none font-mono"
-                value={cidr}
-                placeholder="z. B. 192.168.1.0/24"
-                onChange={(e) => setCidr(e.target.value)}
-              />
-              {detectedSubnets.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                  <span className="text-[10px] text-slate-500 font-medium">Netz:</span>
-                  {detectedSubnets.map((sub) => (
-                    <button
-                      key={`${sub.interfaceName}-${sub.cidr}`}
-                      type="button"
-                      onClick={() => setCidr(sub.cidr)}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition border ${
-                        cidr === sub.cidr
-                          ? "bg-indigo-500/30 text-indigo-200 border-indigo-500/50 font-bold shadow-sm"
-                          : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white"
-                      }`}
-                      title={`Interface ${sub.interfaceName} (${sub.ip})`}
-                    >
-                      {sub.cidr}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={toggleAllLive}
+              disabled={cameras.length === 0}
+              className={`touch-manipulation rounded-lg px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 ${
+                cameras.length > 0 && cameras.every(c => liveCameras.has(c.id))
+                  ? "border border-amber-500/50 bg-amber-500/15 text-amber-200"
+                  : "border border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+              }`}
+            >
+              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? "■ Alle stoppen" : "▶ Alle Live"}
+            </button>
 
-            {/* Optional Credentials */}
-            <div className="sm:col-span-4 grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium text-slate-300">
-                  Benutzer
-                </label>
-                <input
-                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
-                  autoComplete="username"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium text-slate-300">
-                  Passwort
-                </label>
-                <input
-                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••"
-                  autoComplete="current-password"
-                />
-              </div>
-            </div>
-
-            {/* Scan Button */}
-            <div className="sm:col-span-3 flex items-center gap-2">
+            {isFullscreen ? (
               <button
-                className="w-full inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow-lg shadow-indigo-950 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-50"
-                onClick={runScan}
-                disabled={loading}
+                type="button"
+                onClick={leaveFullscreen}
+                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
               >
-                {loading ? (
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                )}
-                <span>{loading ? "Sucht…" : "Scannen"}</span>
+                Vollbild beenden
               </button>
-
-              {loading && (
-                <button
-                  type="button"
-                  onClick={stopScan}
-                  className="h-10 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 text-xs font-semibold text-rose-300 hover:bg-rose-950/60 transition"
-                >
-                  Stop
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Progress Indicator */}
-          {loading && (
-            <div className="overflow-hidden rounded-xl border border-indigo-500/30 bg-slate-950/60 p-3 shadow-lg">
-              <div className="flex items-center justify-between text-xs text-indigo-300 font-medium">
-                <span className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-indigo-400 animate-ping" />
-                  {scanStatus ?? "Scan läuft…"}
-                </span>
-                {scanProgress && scanProgress.total > 0 ? (
-                  <span className="font-mono text-slate-400">
-                    {Math.round((scanProgress.done / scanProgress.total) * 100)}% ({scanProgress.done}/{scanProgress.total})
-                  </span>
-                ) : (
-                  <span className="text-slate-400">{data?.results.length ?? 0} Kamera(s) gefunden</span>
-                )}
-              </div>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 transition-all duration-300"
-                  style={{ width: `${scanProgress && scanProgress.total > 0 ? Math.min(100, Math.max(3, (scanProgress.done / scanProgress.total) * 100)) : 40}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Collapsible Advanced Options Drawer */}
-          {showAdvanced && (
-            <div className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3.5 animate-fadeIn">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-slate-400">Ports (kommagetrennt)</span>
-                  <input
-                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none font-mono"
-                    value={ports}
-                    onChange={(e) => setPorts(e.target.value)}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-slate-400">Timeout (ms)</span>
-                  <input
-                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                    type="number"
-                    min={200}
-                    max={10000}
-                    step={100}
-                    value={timeoutMs}
-                    onChange={(e) => setTimeoutMs(Number(e.target.value))}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-slate-400">Gleichzeitige Anfragen</span>
-                  <input
-                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none"
-                    type="number"
-                    min={1}
-                    value={concurrency}
-                    onChange={(e) => setConcurrency(Number(e.target.value))}
-                  />
-                </label>
-              </div>
-
-              {/* Password List */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-slate-400">Passwort-Liste (ein Passwort pro Zeile)</span>
-                  {parsedCredsList.length > 0 && (
-                    <span className="text-[10px] text-indigo-300 font-semibold">{parsedCredsList.length} aktiv</span>
-                  )}
-                </div>
-                <textarea
-                  rows={2}
-                  value={multiCredsText}
-                  onChange={(e) => setMultiCredsText(e.target.value)}
-                  placeholder={"12345\nadmin123\nadmin:admin\nroot:root"}
-                  className="glass-input w-full font-mono text-xs rounded-lg p-2 resize-y outline-none"
-                />
-              </div>
-
-              {/* Checkboxes */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <OptionCheck
-                  checked={includeThumbnails}
-                  label="Vorschaubilder"
-                  tip="Ruft Schnappschüsse der Kameras für das Dashboard ab."
-                  onChange={setIncludeThumbnails}
-                />
-                <OptionCheck
-                  checked={deepProbe}
-                  label="Tiefenanalyse (ONVIF)"
-                  tip="Fragt zusätzliche ONVIF/RTSP Stream-Profile ab."
-                  onChange={setDeepProbe}
-                />
-                <OptionCheck
-                  checked={copyWithCreds}
-                  label="Logins in Stream-URLs"
-                  tip="Fügt Benutzer/Passwort beim Kopieren in die RTSP-URL ein."
-                  onChange={setCopyWithCreds}
-                />
-                <OptionCheck
-                  checked={verboseLog}
-                  label="Ausführliches Log"
-                  tip="Protokolliert detaillierte Verbindungsversuche."
-                  onChange={setVerboseLog}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {error ? (
-          <div className="mt-4 rounded-xl border border-red-900/50 bg-red-950/40 p-3 text-xs text-red-200">
-            {error}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="glass-panel overflow-hidden relative rounded-3xl p-4 sm:p-6 md:p-8 mt-4">
-        <div className="relative z-10">
-          <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">
-                Ergebnisse
-              </h2>
-              {data?.results ? (
-                <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("table")}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                      viewMode === "table" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <span>📋</span> Liste
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode("grid")}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                      viewMode === "grid" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"
-                    }`}
-                  >
-                    <span>🖼️</span> Dashboard
-                  </button>
-                </div>
-              ) : null}
-            </div>
-
-            {data?.results ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => saveToWall(data.results)}
-                  className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
-                  title="Alle gefundenen Kameras unter Monitore speichern"
-                >
-                  <span>＋</span>
-                  <span>Alle zu Monitore</span>
-                </button>
-                <Link
-                  href="/monitore"
-                  className="touch-manipulation cursor-pointer relative z-10 flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95"
-                >
-                  Monitore öffnen
-                </Link>
-                <button
-                  type="button"
-                  onClick={refreshAllThumbnails}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
-                  title="Alle Vorschaubilder jetzt neu laden"
-                >
-                  <span className={Object.values(thumbnailState).some((s) => s === "loading") ? "animate-spin" : ""}>🔄</span>
-                  <span>Refresh</span>
-                </button>
-                <select
-                  value={autoRefreshSec}
-                  onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
-                  className="rounded-xl border border-white/10 bg-slate-900 px-2 py-1.5 text-xs font-semibold text-slate-300 outline-none hover:border-white/20"
-                >
-                  <option value={0}>Auto: Aus</option>
-                  <option value={10}>Auto: 10s</option>
-                  <option value={30}>Auto: 30s</option>
-                  <option value={60}>Auto: 60s</option>
-                </select>
-                <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-                  <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"}`}></span>
-                  {data.results.length} Gerät(e) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
-                  {includeThumbnails ? (
-                    <span className="text-slate-300/80">
-                      • Preview{" "}
-                      {Object.values(thumbnailState).filter((s) => s === "ok").length}/
-                      {data.results.length}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
             ) : (
-              <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">{loading ? "Scan läuft…" : "Warte auf Eingabe"}</div>
+              <button
+                type="button"
+                onClick={enterMonitorMode}
+                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+                title="Vollbild-Überwachungsmodus"
+              >
+                ▣ Vollbild
+              </button>
             )}
           </div>
+        </div>
+      </div>
 
-          {!data ? (
-            <div className="mt-12 mb-8 flex flex-col items-center justify-center text-center opacity-60">
-              <div className="w-20 h-20 mb-4 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-3xl shadow-xl">
-                🔎
-              </div>
-              <div className="text-slate-300 font-medium">Noch kein Scan ausgeführt</div>
-              <div className="text-sm text-slate-500 mt-1">Starte oben den Suchlauf, um Geräte zu finden.</div>
-            </div>
-          ) : (
-            <>
-            {viewMode === "grid" ? (
-              <div className="mt-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4">
-                {data.results.map((r) => (
-                  <article
-                    key={`grid-${r.ip}`}
-                    className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md p-3.5 shadow-xl transition-all duration-200 hover:border-indigo-500/40 hover:bg-black/40"
+      {isFullscreen ? (
+        <button type="button" onClick={() => setControlsVisible((value) => !value)} className={`fixed right-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur-md transition-opacity ${controlsVisible ? "opacity-100" : "opacity-0 hover:opacity-100 focus:opacity-100"}`}>
+          {controlsVisible ? "Bedienung ausblenden" : "Bedienung"}
+        </button>
+      ) : null}
+
+      {!cameras.length ? (
+        <div className="flex min-h-[55vh] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.02] px-6 text-center">
+          <div className="mb-4 text-5xl">▦</div>
+          <h2 className="text-xl font-semibold text-white">Noch keine Kamera gespeichert</h2>
+          <p className="mt-2 max-w-md text-sm text-slate-400">Starte einen Scan und speichere einzelne Kameras oder die gesamte Ergebnisliste für die Monitore.</p>
+          <Link href="/" className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Scanner öffnen</Link>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-8">
+          {Object.entries(
+            cameras.reduce((acc, camera) => {
+              const g = camera.group?.trim() || "Ungruppiert";
+              if (!acc[g]) acc[g] = [];
+              acc[g].push(camera);
+              return acc;
+            }, {} as Record<string, WallCamera[]>)
+          ).sort((a, b) => a[0] === "Ungruppiert" ? 1 : b[0] === "Ungruppiert" ? -1 : a[0].localeCompare(b[0])).map(([groupName, groupCameras]) => (
+            <div key={groupName} className="flex flex-col gap-3">
+              {groupName !== "Ungruppiert" && (
+                <h2 className="px-2 text-lg font-semibold text-white/90 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                  {groupName}
+                </h2>
+              )}
+              <div className="wall-grid" style={{ "--wall-columns": columns, "--wall-columns-mobile": mobileColumns } as CSSProperties}>
+                {groupCameras.map((camera) => {
+                  const index = cameras.findIndex(c => c.id === camera.id);
+            const image = images[camera.id];
+            const isLive = liveCameras.has(camera.id);
+            const isOffline = camera.status && camera.status.isOnline === false;
+            return (
+              <article 
+                key={camera.id} 
+                draggable={!isFullscreen}
+                onDragStart={(e) => {
+                  setDraggedIndex(index);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedIndex === null || draggedIndex === index) return;
+                  setDragOverIndex(index);
+                }}
+                onDragLeave={() => {
+                  if (dragOverIndex === index) setDragOverIndex(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverIndex(null);
+                  if (draggedIndex === null || draggedIndex === index) return;
+                  const next = [...cameras];
+                  const [moved] = next.splice(draggedIndex, 1);
+                  next.splice(index, 0, moved);
+                  persist(next);
+                  setDraggedIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                className={`group overflow-hidden transition-all flex flex-col justify-center ${
+                  expandedCameraId === camera.id 
+                    ? 'fixed inset-0 z-[99999] bg-black' 
+                    : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-2 ring-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.25)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                }`}
+              >
+                <div 
+                  onClick={() => {
+                    const now = Date.now();
+                    const last = lastClickRef.current;
+                    if (last.id === camera.id && now - last.time < 350) {
+                      // Double click detected!
+                      if (expandedCameraId === camera.id) {
+                        closeExpanded();
+                      } else {
+                        openExpanded(camera.id);
+                      }
+                      lastClickRef.current = { id: "", time: 0 };
+                    } else {
+                      lastClickRef.current = { id: camera.id, time: now };
+                    }
+                  }}
+                  className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
+                >
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (expandedCameraId === camera.id) {
+                        closeExpanded();
+                      } else {
+                        openExpanded(camera.id);
+                      }
+                    }}
+                    className={`absolute top-2 right-2 z-10 p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    title={expandedCameraId === camera.id ? "Vollbild schließen" : "Vollbild öffnen"}
                   >
-                    <div className="relative overflow-hidden rounded-xl bg-slate-950/80">
-                      <PreviewThumb result={r} large />
-                      
-                      {/* Top Badges */}
-                      <div className="absolute top-2 left-2 flex flex-wrap gap-1 z-10">
-                        {r.primaryResolution && (
-                          <span className="rounded bg-black/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-400/30 shadow">
-                            📷 {r.primaryResolution}
-                          </span>
-                        )}
-                        {r.ptz && (
-                          <span className="rounded bg-black/80 backdrop-blur-md px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-400/30 shadow">
-                            🎮 PTZ
-                          </span>
-                        )}
-                        {r.credentials && (
-                          <span className="rounded bg-black/80 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-mono text-emerald-300 border border-emerald-400/30 shadow flex items-center gap-1" title={`Erfolgreicher Login: ${r.credentials.username}`}>
-                            🔑 {r.credentials.username}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
-                        <RecordingBadge ip={r.ip} />
-                        <WallSaveButton result={r} compact />
-                      </div>
-
-                      {/* Bottom-right Quick Stream Copy */}
-                      {r.streamUris?.[0] && (
-                        <div className="absolute bottom-2 right-2 z-10">
-                          <button
-                            type="button"
-                            onClick={() => copy(addCredsIfWanted(r.streamUris![0], r.credentials))}
-                            className="rounded-lg bg-black/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:text-white border border-white/20 transition shadow"
-                          >
-                            Stream kopieren
-                          </button>
+                    {expandedCameraId === camera.id ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20H5v-4m14-5v4h-4M5 9V5h4m5-4h4v4" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                    )}
+                  </button>
+                  {isLive ? (
+                     <iframe 
+                        src={livePlaybackUrls[camera.id]}
+                        title={`Live-Stream ${camera.name}`}
+                        className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
+                        allow="autoplay; fullscreen"
+                     />
+                  ) : image?.src ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image.src}
+                        alt={camera.name}
+                        className={`w-full h-full block transition-all duration-500 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
+                          image.state === "error" ? "opacity-30 grayscale" : 
+                          (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
+                        }`}
+                      />
+                      {image.state === "error" && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+                           {image.message === "AUTH_REQUIRED" ? (
+                             <>
+                               <span className="text-4xl">🔒</span>
+                               <span className="text-xs font-semibold text-white bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">Zugangsdaten benötigt</span>
+                             </>
+                           ) : (
+                             <>
+                               <span className="text-4xl text-amber-500 drop-shadow-md">⚠️</span>
+                               <span className="text-xs font-semibold text-white bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">Verbindung verloren</span>
+                             </>
+                           )}
                         </div>
                       )}
+                    </>
+                  ) : (
+                    <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 text-slate-500">
+                      {image?.message === "AUTH_REQUIRED" ? (
+                        <>
+                          <span className="text-4xl">🔒</span>
+                          <span className="px-4 text-center text-xs font-semibold">Zugangsdaten benötigt</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className={image?.state === "loading" ? "animate-pulse text-2xl" : "text-2xl"}>
+                            {image?.state === "error" ? "⚠️" : "◉"}
+                          </span>
+                          <span className="px-4 text-center text-xs">{image?.state === "loading" ? "Bild wird geladen…" : image?.state === "error" ? (image?.message || "Verbindung fehlgeschlagen") : ((camera.snapshotUris.length || camera.streamUris.length) ? "Noch kein Bild" : "Keine Bild- oder Stream-URL vorhanden")}</span>
+                        </>
+                      )}
                     </div>
+                  )}
 
-                    <div className="mt-3 flex flex-1 flex-col justify-between">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm font-bold text-white">{r.ip}</span>
-                          {r.mac && <span className="font-mono text-[10px] text-slate-400">{r.mac}</span>}
-                        </div>
-                        <div className="mt-1 truncate text-xs font-semibold text-slate-200">
-                          {[r.manufacturer, r.model].filter(Boolean).join(" ") || "Kamera"}
-                        </div>
-                        <div className="truncate text-[11px] text-slate-500">
-                          {r.hostname ?? "Kein Hostname"}
-                        </div>
-                      </div>
+                  {image?.src && camera.overlayPosition && (
+                    <div className={`absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
+                      ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
+                      ${camera.overlayPosition === "top-right" ? "top-0 right-0" : ""}
+                      ${camera.overlayPosition === "bottom-left" ? "bottom-0 left-0" : ""}
+                      ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
+                    `}>
+                      <span className="truncate">{camera.name}</span>
+                      {camera.recordEnabled && (
+                        <span className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 text-[9px] font-bold leading-tight">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                          </span>
+                          REC
+                        </span>
+                      )}
+                      {isOffline ? <span className="shrink-0 rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider font-bold leading-tight">Offline</span> : null}
+                      {isLive && !isOffline ? <span className="shrink-0 w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span> : null}
+                    </div>
+                  )}
+                </div>
 
-                      <div className="mt-3 border-t border-white/5 pt-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex gap-1.5">
-                            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
-                              {r.streamUris?.length ?? 0} Stream
-                            </span>
-                            <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
-                              {r.snapshotUris?.length ?? 0} Snap
-                            </span>
-                          </div>
-                        </div>
+                {!isFullscreen || controlsVisible ? (
+                  <div className="bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
+                    <div className="flex items-center gap-1 min-w-0 shrink flex-nowrap">
+                      {/* Live Stream Button */}
+                      <button
+                        type="button"
+                        disabled={liveLoading.has(camera.id)}
+                        onClick={() => void toggleLive(camera.id)}
+                        className={`touch-manipulation rounded px-2 py-1 text-xs font-medium transition-colors shrink-0 flex items-center gap-1 disabled:cursor-wait disabled:opacity-60 ${
+                          isLive 
+                            ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' 
+                            : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                        }`}
+                        title="Live-Stream an/aus"
+                      >
+                        <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
+                        <span className="hidden sm:inline">{liveLoading.has(camera.id) ? "Laden…" : isLive ? "Stop" : "Live"}</span>
+                      </button>
 
-                        {/* Collapsible details for streams & log */}
-                        <details
-                          className="group/details mt-2 rounded-lg border border-white/10 bg-white/5 p-2 transition-all open:bg-black/40"
-                          onToggle={(e) =>
-                            handleDetailsToggle(
-                              r.ip,
-                              (e.currentTarget as HTMLDetailsElement).open
-                            )
-                          }
+                      {/* 1-Click Recording Button */}
+                      <button
+                        type="button"
+                        disabled={recordLoading.has(camera.id)}
+                        onClick={() => void toggleRecord(camera)}
+                        className={`touch-manipulation rounded px-2 py-1 text-xs font-bold transition-all shrink-0 flex items-center gap-1 disabled:cursor-wait disabled:opacity-60 ${
+                          camera.recordEnabled
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400/50'
+                            : 'bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30 border border-white/10'
+                        }`}
+                        title={camera.recordEnabled ? `Daueraufnahme für "${camera.name}" beenden` : `Daueraufnahme für "${camera.name}" starten`}
+                      >
+                        <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
+                        </span>
+                        <span>
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "REC Stop" : "Aufnahme"}
+                        </span>
+                      </button>
+
+                      {/* Quick jump to archive if recording - compact icon button */}
+                      {camera.recordEnabled && (
+                        <Link
+                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
+                          className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-slate-300 hover:text-white transition shrink-0"
+                          title="Gespeicherte Aufnahmen dieser Kamera im Archiv ansehen"
                         >
-                          <summary className="flex cursor-pointer select-none items-center justify-between text-[11px] font-semibold text-slate-300 hover:text-white">
-                            Details & URLs
-                            <span className="text-indigo-400 transition-transform group-open/details:rotate-180">▼</span>
-                          </summary>
-                          <div className="mt-2 flex flex-col gap-2 border-t border-white/5 pt-2 text-xs">
-                            {r.resolutions?.length ? (
-                              <div className="flex flex-wrap gap-1">
-                                {r.resolutions.map((res, ridx) => (
-                                  <span key={`grid-res-${ridx}`} className="rounded bg-black/40 border border-white/10 px-1.5 py-0.5 text-[10px] font-mono text-slate-300">
-                                    {res.label ?? `${res.width}×${res.height}`}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
+                          🎞️
+                        </Link>
+                      )}
 
-                            {r.streamUris?.map((u, idx) => (
-                              <UrlRow key={`grid-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} cameraCreds={r.credentials} />
-                            ))}
-
-                            {r.snapshotUris?.map((u, idx) => (
-                              <UrlRow key={`grid-snap-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} cameraCreds={r.credentials} />
-                            ))}
-
-                            <div className="mt-1 text-[10px] text-slate-400">
-                              {r.onvif?.ok ? "ONVIF: OK" : r.onvif ? "ONVIF: Fehler" : "ONVIF: —"} • {r.rtsp?.ok ? "RTSP: OK" : r.rtsp ? "RTSP: Fehler" : "RTSP: —"}
-                            </div>
-                          </div>
-                        </details>
-                      </div>
+                      {liveErrors[camera.id] ? (
+                        <span className="truncate text-[10px] text-red-300 max-w-[80px]" title={liveErrors[camera.id]}>
+                          Fehler
+                        </span>
+                      ) : null}
                     </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <>
-            <div className="mt-4 flex flex-col gap-3 lg:hidden">
-              {data.results.map((r) => (
-                <article key={`mobile-${r.ip}`} className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-xl">
-                  <div className="flex gap-3">
-                    <PreviewThumb result={r} compact />
-                    <div className="min-w-0 flex-1">
-                      <div className="font-mono text-base text-slate-100 flex flex-wrap items-center gap-2">
-                        <span>{r.ip}</span>
-                        {r.mac && (
-                          <span className="rounded bg-slate-800/80 px-1.5 py-0.2 font-mono text-[10px] text-slate-400 border border-slate-700/50">
-                            {r.mac}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-slate-500">
-                        {r.hostname ?? "Hostname unbekannt"}
-                      </div>
-                      <div className="mt-2 text-sm font-semibold text-white">
-                        {[r.manufacturer, r.model].filter(Boolean).join(" ") || "Unbekannt"}
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {r.primaryResolution && (
-                          <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
-                            <span>📷</span> {r.primaryResolution}
-                          </span>
-                        )}
-                        {r.ptz && (
-                          <span className="rounded bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-500/30 flex items-center gap-1 shadow-sm">
-                            <span>🎮</span> PTZ
-                          </span>
-                        )}
-                        <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
-                          {r.streamUris?.length ?? 0} Stream
-                        </span>
-                        <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
-                          {r.snapshotUris?.length ?? 0} Snapshot
-                        </span>
-                        <RecordingBadge ip={r.ip} />
-                        <WallSaveButton result={r} compact />
-                      </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditor(camera)}
+                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-indigo-950/60 border border-indigo-800/40 text-indigo-200 hover:bg-indigo-900/80 hover:text-white"
+                        title="Kamera bearbeiten"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => moveCamera(index, -1)}
+                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-20"
+                        title="Nach vorne"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === cameras.length - 1}
+                        onClick={() => moveCamera(index, 1)}
+                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-20"
+                        title="Nach hinten"
+                      >
+                        →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
+                            removeCamera(camera.id);
+                          }
+                        }}
+                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-red-950/40 border border-red-900/40 text-red-400 hover:bg-red-900/70 hover:text-red-200"
+                        title="Kamera von den Monitoren entfernen"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
-
-                  <details
-                    className="group mt-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-all open:bg-black/35"
-                    onToggle={(e) =>
-                      handleDetailsToggle(
-                        r.ip,
-                        (e.currentTarget as HTMLDetailsElement).open
-                      )
-                    }
-                  >
-                    <summary className="flex cursor-pointer select-none items-center justify-between text-sm font-semibold text-slate-300">
-                      URLs & Log
-                      <span className="text-indigo-400 transition-transform group-open:rotate-180">▼</span>
-                    </summary>
-
-                    <div className="mt-4 flex flex-col gap-4 border-t border-white/5 pt-4">
-                      <div className="text-xs text-slate-400">
-                        {r.onvif
-                          ? r.onvif.ok
-                            ? "ONVIF: OK"
-                            : r.onvif.discoveryOnly
-                              ? "ONVIF: gefunden (ungetestet)"
-                              : `ONVIF: Fehler${r.onvif.error ? ` (${r.onvif.error})` : ""}`
-                          : "ONVIF: —"}
-                        {" • "}
-                        {r.rtsp
-                          ? r.rtsp.ok
-                            ? "RTSP: OK"
-                            : r.rtsp.discoveryOnly
-                              ? "RTSP: Kandidaten"
-                              : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
-                          : "RTSP: —"}
-                      </div>
-
-                      {r.resolutions?.length ? (
-                        <div className="flex flex-col gap-1.5">
-                          <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-300">Profile & Auflösungen</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {r.resolutions.map((res, ridx) => (
-                              <span
-                                key={`mob-res-${ridx}-${res.width}x${res.height}`}
-                                className="rounded bg-black/40 border border-white/10 px-2 py-0.5 text-[11px] font-mono text-slate-300 flex items-center gap-1.5"
-                              >
-                                <span className="font-semibold text-white">{res.label ?? `${res.width}×${res.height}`}</span>
-                                {res.encoding && <span className="text-[9px] text-amber-300 uppercase">{res.encoding}</span>}
-                                {res.fps ? <span className="text-[9px] text-slate-400">{res.fps}fps</span> : null}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="flex flex-col gap-2">
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">Stream & Snapshot URLs</div>
-                        {r.streamUris?.length ? (
-                          r.streamUris.map((u, idx) => (
-                            <UrlRow key={`mobile-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} cameraCreds={r.credentials} />
-                          ))
-                        ) : (
-                          <div className="text-xs text-slate-500">Keine Stream-URL erkannt.</div>
-                        )}
-                        {r.snapshotUris?.length ? (
-                          r.snapshotUris.map((u, idx) => (
-                            <UrlRow key={`mobile-snapshot-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} cameraCreds={r.credentials} />
-                          ))
-                        ) : (
-                          <div className="text-xs text-slate-500">Keine Snapshot-URL erkannt.</div>
-                        )}
-                      </div>
-
-                      <pre className="max-h-44 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
-{[
-  "Kurzstatus:",
-  ...buildCameraSummary(r, thumbnailLog[r.ip]).map((line) => `- ${line}`),
-  ...(verboseLog
-    ? [
-        "",
-        "Technisches Log:",
-        ...(r.onvif?.log ?? []),
-        ...(r.rtsp?.log ?? []),
-        ...(r.vendor?.log ?? []),
-        ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
-      ]
-    : [])
-].join("\n")}
-                      </pre>
-                    </div>
-                  </details>
-                </article>
-              ))}
-            </div>
-
-            <div className="mt-6 hidden overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-md shadow-2xl lg:block">
-              <table className="w-full text-left text-sm border-collapse">
-                <thead>
-                  <tr className="bg-white/5 border-b border-white/10 text-xs font-bold uppercase tracking-widest text-slate-400">
-                    <th className="py-3 pr-4 pl-4">Preview</th>
-	                  <th className="py-3 pr-4">Gerät (IP & Hostname)</th>
-                  <th className="py-3 pr-4">Hersteller & Modell</th>
-                  <th className="py-3 pr-4 w-1/2">URLs & Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                  {data.results.map((r, i) => (
-                    <tr key={r.ip} className={`align-top transition-colors hover:bg-white/[0.03] ${i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-transparent'}`}>
-                      <td className="p-4 align-middle">
-                        <PreviewThumb result={r} />
-                      </td>
-                      
-                      <td className="p-4 align-middle">
-                        <div className="font-mono text-sm text-slate-200">{r.ip}</div>
-                        <div className="mt-1 text-xs text-slate-500 font-medium">
-                          {r.hostname ?? "Hostname unbekannt"}
-                        </div>
-                        {r.mac && (
-                          <div className="mt-1 font-mono text-[11px] text-slate-400">
-                            MAC: {r.mac}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="p-4 align-middle">
-                        <div className="flex flex-col gap-1.5">
-	                          {r.manufacturer || r.model ? (
-	                            <span className="text-sm font-bold text-white tracking-wide">
-	                              {[r.manufacturer, r.model].filter(Boolean).join(" ")}
-	                            </span>
-	                          ) : (
-	                            <span className="text-sm font-medium text-slate-500">Unbekannt</span>
-	                          )}
-	                          <div className="flex flex-wrap items-center gap-2">
-                              {r.primaryResolution && (
-                                <span className="rounded bg-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 shadow-sm">
-                                  <span>📷</span> {r.primaryResolution}
-                                </span>
-                              )}
-                              {r.ptz && (
-                                <span className="rounded bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-bold text-fuchsia-300 border border-fuchsia-500/30 flex items-center gap-1 shadow-sm">
-                                  <span>🎮</span> PTZ
-                                </span>
-                              )}
-                              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300 border border-emerald-500/25">
-                                {r.streamUris?.length ?? 0} Stream
-                              </span>
-                              <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
-                                {r.snapshotUris?.length ?? 0} Snapshot
-                              </span>
-                              <RecordingBadge ip={r.ip} />
-                              <WallSaveButton result={r} compact />
-                            </div>
-                        </div>
-                      </td>
-
-                      <td className="p-4">
-                        <details
-                          className="group rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm shadow-xl transition-all open:bg-black/40"
-                          onToggle={(e) =>
-                            handleDetailsToggle(
-                              r.ip,
-                              (e.currentTarget as HTMLDetailsElement).open
-                            )
-                          }
-                        >
-                          <summary className="cursor-pointer select-none text-sm font-semibold text-slate-300 hover:text-white transition flex items-center justify-between">
-                            URLs & Log einblenden
-                            <span className="text-indigo-400 transition-transform group-open:rotate-180">▼</span>
-                          </summary>
-
-                          <div className="mt-5 flex flex-col gap-5 border-t border-white/5 pt-4">
-                            {/* Status */}
-                            <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-slate-300 pb-1">Status</div>
-                              <div className="text-xs text-slate-400">
-                                {r.onvif
-                                  ? r.onvif.ok
-                                    ? "ONVIF: OK"
-                                    : r.onvif.discoveryOnly
-                                      ? "ONVIF: gefunden (ungetestet)"
-                                    : `ONVIF: Fehler${r.onvif.error ? ` (${r.onvif.error})` : ""}`
-                                  : "ONVIF: —"}
-                                {" • "}
-                                {r.rtsp
-                                  ? r.rtsp.ok
-                                    ? "RTSP: OK"
-                                    : r.rtsp.discoveryOnly
-                                      ? "RTSP: Kandidaten (ungetestet)"
-                                    : `RTSP: Fehler${r.rtsp.error ? ` (${r.rtsp.error})` : ""}`
-                                  : "RTSP: —"}
-                              </div>
-                            </div>
-
-                            {/* Resolutions / Profiles */}
-                            {r.resolutions?.length ? (
-                              <div className="flex flex-col gap-2">
-                                <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-300 pb-0.5">
-                                  Erkannte Auflösungen & Profile
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {r.resolutions.map((res, ridx) => (
-                                    <span
-                                      key={`desk-res-${ridx}-${res.width}x${res.height}`}
-                                      className="rounded-lg bg-black/40 border border-white/10 px-2.5 py-1 text-xs font-mono text-slate-300 flex items-center gap-2"
-                                    >
-                                      <span className="font-semibold text-white">{res.label ?? `${res.width}×${res.height}`}</span>
-                                      {res.encoding && <span className="text-[10px] text-amber-300 uppercase">{res.encoding}</span>}
-                                      {res.fps ? <span className="text-[10px] text-slate-400">{res.fps} fps</span> : null}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : null}
-
-                            {/* Media / Streams */}
-                            <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400 pb-1">Stream & Snapshot URLs</div>
-                              {r.streamUris?.length ? (
-                                r.streamUris.map((u, idx) => (
-                                  <UrlRow
-                                    key={`stream-${idx}-${u}`}
-                                    label={idx === 0 ? "Stream" : `Stream ${idx + 1}`}
-                                    url={u}
-                                    cameraCreds={r.credentials}
-                                  />
-                                ))
-                              ) : (
-                                <div className="text-xs text-slate-500">
-                                  Keine Stream-URL erkannt.
-                                </div>
-                              )}
-
-                              {r.snapshotUris?.length ? (
-                                r.snapshotUris.map((u, idx) => (
-                                  <UrlRow
-                                    key={`snapshot-${idx}-${u}`}
-                                    label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`}
-                                    url={u}
-                                    cameraCreds={r.credentials}
-                                  />
-                                ))
-                              ) : (
-                                <div className="text-xs text-slate-500">
-                                  Keine Snapshot-URL erkannt.
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Log */}
-                            <div className="flex flex-col gap-2.5">
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 pb-1">Log</div>
-                              {buildCameraSummary(r, thumbnailLog[r.ip]).length ? (
-                                <pre className="max-h-48 overflow-auto rounded-lg border border-white/10 bg-black/40 p-3 text-[11px] leading-snug text-slate-200">
-{[
-  "Kurzstatus:",
-  ...buildCameraSummary(r, thumbnailLog[r.ip]).map((line) => `- ${line}`),
-  ...(verboseLog
-    ? [
-        "",
-        "Technisches Log:",
-        ...(r.onvif?.log ?? []),
-        ...(r.rtsp?.log ?? []),
-        ...(r.vendor?.log ?? []),
-        ...(thumbnailLog[r.ip] ? [`Thumbnail: ${thumbnailLog[r.ip]}`] : [])
-      ]
-    : [])
-].join("\n")}
-                                </pre>
-                              ) : (
-                                <div className="text-xs text-slate-500">Kein Log verfügbar.</div>
-                              )}
-                            </div>
-                          </div>
-                        </details>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            </>
-            )}
-            {data.warnings?.length ? (
-              <div className="mt-4 rounded-lg border border-amber-900/40 bg-amber-950/30 p-4 text-sm text-amber-200">
-                <div className="font-medium">Hinweise</div>
-                <ul className="mt-2 list-disc pl-5 text-amber-100/90">
-                  {data.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
+                ) : null}
+              </article>
+                );
+              })}
               </div>
-            ) : null}
-            </>
-        )}
+            </div>
+          ))}
         </div>
-      </section>
+      )}
+
+      {editingCameraId && editDraft && mounted ? createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="camera-edit-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeEditor();
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveCameraDetails();
+            }}
+            className="relative flex flex-col w-full max-w-xl max-h-[88vh] rounded-2xl border border-white/15 bg-slate-950 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          >
+            {/* Sticky Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-slate-900/80">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 id="camera-edit-title" className="text-base sm:text-lg font-bold text-white truncate">
+                    Kamera bearbeiten
+                  </h2>
+                  {cameras.find((c) => c.id === editingCameraId)?.resolution && (
+                    <span className="shrink-0 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 text-[10px] font-mono">
+                      {cameras.find((c) => c.id === editingCameraId)?.resolution}
+                    </span>
+                  )}
+                </div>
+                <p className="font-mono text-xs text-slate-400">
+                  {cameras.find((camera) => camera.id === editingCameraId)?.ip}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditor}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                aria-label="Schließen"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-xs">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5">
+                  <span className="font-semibold text-slate-300">Anzeigename</span>
+                  <input
+                    value={editDraft.name}
+                    onChange={(event) => setEditDraft({ ...editDraft, name: event.target.value })}
+                    className="glass-input rounded-lg px-3 py-2 text-sm outline-none"
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="font-semibold text-slate-300">Gruppe (z. B. Garten, Haus)</span>
+                  <input
+                    value={editDraft.group}
+                    onChange={(event) => setEditDraft({ ...editDraft, group: event.target.value })}
+                    className="glass-input rounded-lg px-3 py-2 text-sm outline-none"
+                    placeholder="Ungruppiert"
+                  />
+                </label>
+              </div>
+
+              <label className="grid gap-1.5">
+                <span className="font-semibold text-slate-300">
+                  Snapshot-URLs <span className="font-normal text-slate-500">(erste erreichbare URL wird genutzt)</span>
+                </span>
+                <textarea
+                  value={editDraft.snapshotUris}
+                  onChange={(event) => setEditDraft({ ...editDraft, snapshotUris: event.target.value })}
+                  rows={2}
+                  spellCheck={false}
+                  className="glass-input resize-y rounded-lg px-3 py-2 font-mono text-xs outline-none"
+                  placeholder="http://192.168.1.10/snapshot.jpg"
+                />
+              </label>
+
+              {images[editingCameraId]?.sourceUri ? (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                    Aktive Bild-Quelle
+                  </div>
+                  <div className="mt-0.5 break-all font-mono text-[11px] text-slate-300">
+                    {images[editingCameraId].sourceUri}
+                  </div>
+                </div>
+              ) : null}
+
+              <label className="grid gap-1.5">
+                <span className="font-semibold text-slate-300">
+                  Stream-URLs <span className="font-normal text-slate-500">(RTSP-Stream für Live & NVR)</span>
+                </span>
+                <textarea
+                  value={editDraft.streamUris}
+                  onChange={(event) => setEditDraft({ ...editDraft, streamUris: event.target.value })}
+                  rows={2}
+                  spellCheck={false}
+                  className="glass-input resize-y rounded-lg px-3 py-2 font-mono text-xs outline-none"
+                  placeholder="rtsp://192.168.1.10/stream"
+                />
+              </label>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                <div className="mb-2.5">
+                  <div className="font-semibold text-slate-200">Zugangsdaten</div>
+                  <div className="text-[11px] text-amber-200/70">
+                    Werden lokal auf diesem Server gespeichert.
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1">
+                    <span className="text-slate-400">Benutzername</span>
+                    <input
+                      value={editDraft.username}
+                      onChange={(event) => setEditDraft({ ...editDraft, username: event.target.value })}
+                      autoComplete="username"
+                      className="glass-input rounded-lg px-3 py-1.5 text-xs outline-none"
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-slate-400">Passwort</span>
+                    <div className="flex rounded-lg border border-white/10 bg-white/5 focus-within:border-indigo-500/50">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={editDraft.password}
+                        onChange={(event) => setEditDraft({ ...editDraft, password: event.target.value })}
+                        autoComplete="current-password"
+                        className="min-w-0 flex-1 bg-transparent px-3 py-1.5 text-xs text-white outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        className="px-2 text-[10px] font-semibold text-indigo-300 hover:text-white"
+                      >
+                        {showPassword ? "Verbergen" : "Anzeigen"}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 items-center">
+                <label className="grid gap-1.5">
+                  <span className="font-semibold text-slate-300">Name im Bild (Overlay)</span>
+                  <select
+                    value={editDraft.overlayPosition}
+                    onChange={(event) =>
+                      setEditDraft({
+                        ...editDraft,
+                        overlayPosition: event.target.value as CameraEditDraft["overlayPosition"]
+                      })
+                    }
+                    className="glass-input rounded-lg px-3 py-2 text-xs outline-none bg-slate-900"
+                  >
+                    <option value="top-left">Oben Links</option>
+                    <option value="top-right">Oben Rechts</option>
+                    <option value="bottom-left">Unten Links</option>
+                    <option value="bottom-right">Unten Rechts</option>
+                  </select>
+                </label>
+
+                <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 flex flex-col gap-2.5">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.recordEnabled}
+                      onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked })}
+                      className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="font-semibold text-white block text-xs">🔴 24/7 NVR-Daueraufnahme</span>
+                      <span className="text-[10px] text-slate-400 block truncate">RTSP-Stream automatisch aufzeichnen</span>
+                    </div>
+                  </label>
+
+                  {editDraft.recordEnabled && (
+                    <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t border-rose-500/20 text-xs">
+                      <label className="grid gap-1">
+                        <span className="text-slate-400 text-[11px]">Speicherziel:</span>
+                        <select
+                          value={editDraft.storageTargetId}
+                          onChange={(e) => setEditDraft({ ...editDraft, storageTargetId: e.target.value })}
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
+                        >
+                          <option value="">Standard-Speicherziel</option>
+                          {storageTargets.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} {t.isDefault ? "(Standard)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="text-slate-400 text-[11px]">Segmentlänge:</span>
+                        <select
+                          value={editDraft.recordSegmentMinutes}
+                          onChange={(e) => setEditDraft({ ...editDraft, recordSegmentMinutes: Number(e.target.value) || 15 })}
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
+                        >
+                          <option value={5}>5 Minuten</option>
+                          <option value={15}>15 Minuten (Standard)</option>
+                          <option value={30}>30 Minuten</option>
+                          <option value={60}>60 Minuten</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sensitivity & Camera Web GUI shortcut */}
+              {editingCameraId && cameras.find((c) => c.id === editingCameraId)?.ip && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                  <div>
+                    <span className="font-semibold text-emerald-300 flex items-center gap-1.5">
+                      <span>🌿</span>
+                      <span>Empfindlichkeit & Pflanzen-Erkennung anpassen</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      Die Erkennung läuft direkt auf dem Chip der Kamera. Öffne die Kamera-Weboberfläche ({cameras.find((c) => c.id === editingCameraId)?.ip}), um Zonen einzuzeichnen, Blätter/Bäume auszuschließen oder die Empfindlichkeit zu senken.
+                    </span>
+                  </div>
+                  <a
+                    href={`http://${cameras.find((c) => c.id === editingCameraId)?.ip}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 text-xs transition shadow-md shadow-emerald-600/30 active:scale-95"
+                  >
+                    <span>🌐 Weboberfläche öffnen</span>
+                    <span>➔</span>
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-t border-white/10 px-5 py-3.5 bg-slate-900/80">
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Möchtest du "${editDraft.name}" wirklich von den Monitoren entfernen?`)) {
+                    removeCamera(editingCameraId);
+                    closeEditor();
+                  }
+                }}
+                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 active:scale-95 transition-all text-left sm:text-center"
+              >
+                🗑 Von den Monitoren entfernen
+              </button>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeEditor}
+                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/30 transition-all"
+                >
+                  Speichern & Bild testen
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>,
+        document.body
+      ) : null}
     </div>
   );
 }

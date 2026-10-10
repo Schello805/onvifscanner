@@ -35,19 +35,6 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   {
     href: "/",
-    label: "Scanner",
-    mobileLabel: "Scanner",
-    description: "Netzwerk nach ONVIF & RTSP Kameras durchsuchen",
-    icon: Radar,
-    color: "text-indigo-400",
-    activeBg: "bg-indigo-500/15",
-    activeBorder: "border-indigo-500/40",
-    activeText: "text-indigo-200",
-    dotColor: "bg-indigo-500",
-    matchExact: true,
-  },
-  {
-    href: "/monitore",
     label: "Monitore",
     mobileLabel: "Monitore",
     description: "Live-Kameraansicht, Raster & Aufnahmesteuerung",
@@ -57,6 +44,19 @@ const NAV_ITEMS: NavItem[] = [
     activeBorder: "border-emerald-500/40",
     activeText: "text-emerald-200",
     dotColor: "bg-emerald-500",
+    matchExact: true,
+  },
+  {
+    href: "/scanner",
+    label: "Scanner",
+    mobileLabel: "Scanner",
+    description: "Netzwerk nach ONVIF & RTSP Kameras durchsuchen",
+    icon: Radar,
+    color: "text-indigo-400",
+    activeBg: "bg-indigo-500/15",
+    activeBorder: "border-indigo-500/40",
+    activeText: "text-indigo-200",
+    dotColor: "bg-indigo-500",
   },
   {
     href: "/wiedergabe",
@@ -149,8 +149,8 @@ export function Navigation({
     if (item.matchExact) {
       return pathname === item.href;
     }
-    if (item.href === "/monitore") {
-      return pathname.startsWith("/monitore") || pathname.startsWith("/wall") || pathname.startsWith("/recordings") || pathname.startsWith("/aufnahmen");
+    if (item.href === "/") {
+      return pathname === "/" || pathname.startsWith("/wall") || pathname.startsWith("/recordings") || pathname.startsWith("/aufnahmen");
     }
     return pathname.startsWith(item.href);
   };
@@ -212,7 +212,7 @@ export function Navigation({
                     }`}
                   />
                   <span>{item.label}</span>
-                  {item.href === "/monitore" && recordingCount > 0 && (
+                  {item.href === "/" && recordingCount > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 shadow-sm animate-pulse">
                       <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                       <span>{recordingCount} REC</span>
@@ -305,7 +305,7 @@ export function Navigation({
                             <span className="font-semibold text-sm text-white">
                               {item.label}
                             </span>
-                            {item.href === "/monitore" && recordingCount > 0 && (
+                            {item.href === "/" && recordingCount > 0 && (
                               <span className="rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
                                 ● {recordingCount} REC aktiv
                               </span>
@@ -403,7 +403,7 @@ export function Navigation({
                         active ? `${item.color} scale-105` : "text-slate-400"
                       }`}
                     />
-                    {item.href === "/monitore" && recordingCount > 0 && (
+                    {item.href === "/" && recordingCount > 0 && (
                       <span className="absolute -top-1 -right-1.5 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 border border-slate-950"></span>

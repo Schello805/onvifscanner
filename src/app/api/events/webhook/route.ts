@@ -67,12 +67,13 @@ export async function POST(req: Request) {
     }
 
     if (matchedCamera) {
-      // Anti-flood debounce: Don't log if there was an alarm for this camera in the last 4 seconds
+      // Anti-flood debounce: Don't log if there was an alarm for this camera in the configured cooldown period
+      const cooldownSec = matchedCamera.alarmCooldownSeconds || 30;
       const recent = await prisma.alarmLog.findFirst({
         where: {
           cameraId: matchedCamera.id,
           timestamp: {
-            gte: new Date(Date.now() - 4_000),
+            gte: new Date(Date.now() - cooldownSec * 1000),
           },
         },
       });
@@ -85,11 +86,31 @@ export async function POST(req: Request) {
             timestamp: new Date(),
           },
         });
+
+        // Send push notification via ntfy if configured
+        try {
+          const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+          if (settings?.ntfyTopic) {
+            const ntfyUrl = `https://ntfy.sh/${settings.ntfyTopic}`;
+            await fetch(ntfyUrl, {
+              method: "POST",
+              body: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
+              headers: {
+                Title: "🚨 ONVIFscanner Alarm",
+                Priority: "high",
+                Tags: "rotating_light,video_camera",
+              },
+            });
+          }
+        } catch (pushErr) {
+          console.error("Fehler beim Senden der ntfy Push-Benachrichtigung:", pushErr);
+        }
       }
 
       return NextResponse.json({
         ok: true,
         recorded: !recent,
+        cooldownSeconds: cooldownSec,
         cameraId: matchedCamera.id,
         cameraName: matchedCamera.name,
       });

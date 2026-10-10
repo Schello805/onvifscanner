@@ -71,6 +71,7 @@ type CameraSimple = {
   name: string;
   ip: string;
   recordEnabled?: boolean;
+  recordSegmentMinutes?: number;
 };
 
 type RecordingClip = {
@@ -152,11 +153,15 @@ function formatSeconds(totalSec: number): string {
 function getMotionEventsForClip(
   clip: RecordingClip,
   events: MotionEvent[],
-  videoDuration = 0
+  videoDuration = 0,
+  fallbackDurationSec = 900
 ): ClipMotionEvent[] {
   if (!clip || !events || events.length === 0) return [];
   const clipStartSec = parseTimeToSeconds(clip.timeStr);
-  const maxDuration = videoDuration > 0 ? videoDuration : 900; // Standardsegment ca. 15 Min
+  
+  // NVR API doesn't return exact duration for all clips yet, 
+  // but if video is loaded we have videoDuration. Otherwise default to fallback.
+  const maxDuration = videoDuration > 0 ? videoDuration : fallbackDurationSec; 
 
   const matched: ClipMotionEvent[] = [];
   const seenSeconds = new Set<number>();
@@ -217,14 +222,20 @@ function formatBytes(bytes: number): string {
 }
 
 function getTodayStr(): string {
-  const now = new Date();
-  return now.toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function getYesterdayStr(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export default function PlaybackPage() {
@@ -354,6 +365,7 @@ export default function PlaybackPage() {
             name: c.name,
             ip: c.ip,
             recordEnabled: Boolean(c.recordEnabled),
+            recordSegmentMinutes: c.recordSegmentMinutes,
           }))
         );
       }
@@ -411,10 +423,12 @@ export default function PlaybackPage() {
   const clipMotionMap = useMemo(() => {
     const map = new Map<string, ClipMotionEvent[]>();
     for (const clip of clips) {
-      map.set(clip.id, getMotionEventsForClip(clip, motionEvents));
+      const cam = cameras.find((c) => c.id === clip.cameraId);
+      const fallback = (cam?.recordSegmentMinutes || 15) * 60;
+      map.set(clip.id, getMotionEventsForClip(clip, motionEvents, 0, fallback));
     }
     return map;
-  }, [clips, motionEvents]);
+  }, [clips, motionEvents, cameras]);
 
   const motionClipsCount = useMemo(() => {
     let count = 0;
@@ -495,8 +509,10 @@ export default function PlaybackPage() {
   // Motion events for the currently active clip
   const activeClipMotionEvents = useMemo(() => {
     if (!activeClip) return [];
-    return getMotionEventsForClip(activeClip, motionEvents, videoDuration);
-  }, [activeClip, motionEvents, videoDuration]);
+    const cam = cameras.find((c) => c.id === activeClip.cameraId);
+    const fallback = (cam?.recordSegmentMinutes || 15) * 60;
+    return getMotionEventsForClip(activeClip, motionEvents, videoDuration, fallback);
+  }, [activeClip, motionEvents, videoDuration, cameras]);
 
   // Open clip handlers
   const openClip = (clip: RecordingClip) => {
@@ -800,6 +816,17 @@ export default function PlaybackPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeClip, jumpToNextMotion, jumpToPrevMotion]);
+
+  useEffect(() => {
+    if (!showStatsModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowStatsModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showStatsModal]);
 
   const toggleFullscreen = () => {
     if (!playerContainerRef.current) return;
@@ -1161,7 +1188,7 @@ export default function PlaybackPage() {
 
               {/* KPI Cards */}
               {activityStats && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3.5">
                     <span className="text-[11px] font-medium text-slate-400 block mb-1">Gesamte Bewegungen</span>
                     <span className="text-2xl font-extrabold text-white flex items-center gap-1.5">
@@ -1192,17 +1219,6 @@ export default function PlaybackPage() {
                     </span>
                     <span className="text-[11px] text-slate-400 mt-0.5 block font-mono">
                       {activityStats.peakHourCount > 0 ? `${activityStats.peakHourCount} Bewegungen` : "–"}
-                    </span>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3.5">
-                    <span className="text-[11px] font-medium text-slate-400 block mb-1">Pflanzen-Sensitivität</span>
-                    <span className="text-sm font-semibold text-emerald-300 flex items-center gap-1">
-                      <span>🌿</span>
-                      <span>Kamera-Zonen</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      AcuSense & Masken aktiv
                     </span>
                   </div>
                 </div>
@@ -2019,7 +2035,8 @@ export default function PlaybackPage() {
               const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
               const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
               const clipStartMin = hh * 60 + mm + ss / 60;
-              const clipDurationMin = 15;
+              const camInfo = cameras.find((c) => c.id === clip.cameraId);
+              const clipDurationMin = camInfo?.recordSegmentMinutes || 15;
               const clipEndMin = clipStartMin + clipDurationMin;
 
               if (clipEndMin < vStart || clipStartMin > vEnd) return null;
@@ -2381,23 +2398,32 @@ export default function PlaybackPage() {
                         </button>
                       </td>
 
-                      {/* Play Button */}
-                      <td className="py-2 px-3 text-center">
-                        <button
-                          onClick={() =>
-                            clipMotions.length > 0
-                              ? openClipWithOffset(clip, clipMotions[0].offsetSec)
-                              : openClip(clip)
-                          }
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold"
-                          title={
-                            clipMotions.length > 0
-                              ? `Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`
-                              : "Abspielen"
-                          }
-                        >
-                          <Play className="h-3 w-3 fill-current ml-0.5" />
-                        </button>
+                      {/* Play Button & Thumbnail */}
+                      <td className="py-2 px-3">
+                        <div className="relative h-12 w-20 bg-slate-900 rounded overflow-hidden group/thumb flex items-center justify-center shrink-0 border border-slate-700/50">
+                          <video
+                            src={`${clip.streamUrl}#t=0.1`}
+                            preload="metadata"
+                            className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity"
+                            muted
+                            playsInline
+                          />
+                          <button
+                            onClick={() =>
+                              clipMotions.length > 0
+                                ? openClipWithOffset(clip, clipMotions[0].offsetSec)
+                                : openClip(clip)
+                            }
+                            className="relative z-10 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold opacity-0 group-hover/thumb:opacity-100"
+                            title={
+                              clipMotions.length > 0
+                                ? `Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`
+                                : "Abspielen"
+                            }
+                          >
+                            <Play className="h-3 w-3 fill-current ml-0.5" />
+                          </button>
+                        </div>
                       </td>
 
                       {/* Kamera */}
@@ -2523,6 +2549,26 @@ export default function PlaybackPage() {
                 }`}
               >
                 <div>
+                  <div className="relative w-full h-28 bg-slate-900 rounded-lg overflow-hidden mb-3 border border-slate-700/50 group/thumb flex items-center justify-center">
+                    <video
+                      src={`${clip.streamUrl}#t=0.1`}
+                      preload="metadata"
+                      className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity pointer-events-none"
+                      muted
+                      playsInline
+                    />
+                    <button
+                      onClick={() =>
+                        clipMotions.length > 0
+                          ? openClipWithOffset(clip, clipMotions[0].offsetSec)
+                          : openClip(clip)
+                      }
+                      className="relative z-10 inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold opacity-0 group-hover/thumb:opacity-100"
+                      title="Abspielen"
+                    >
+                      <Play className="h-4 w-4 fill-current ml-1" />
+                    </button>
+                  </div>
                   <div className="flex items-start justify-between gap-1.5 mb-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <button

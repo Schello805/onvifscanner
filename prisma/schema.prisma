@@ -25,6 +25,7 @@ model Camera {
   
   recordEnabled        Boolean  @default(false)
   recordSegmentMinutes Int      @default(15)
+  alarmCooldownSeconds Int      @default(30)
   storageTargetId      String?
   storageTarget        StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
 
@@ -60,6 +61,7 @@ model Settings {
   columns     Int?
   refresh     Int?
   autoCleanup Boolean? @default(true)
+  ntfyTopic   String?
 }
 
 model DiscoveredDevice {
