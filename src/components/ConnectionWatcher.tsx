@@ -11,7 +11,7 @@ export function ConnectionWatcher() {
     const timeout = setTimeout(() => {
       const interval = setInterval(async () => {
         try {
-          const res = await fetch("/api/version", { 
+          const res = await fetch("/api/health", { 
             cache: "no-store",
             // Short timeout to quickly detect if server is gone
             signal: AbortSignal.timeout(3000) 
