@@ -664,18 +664,13 @@ export default function CameraWallPage() {
                   )}
 
                   {image?.src && camera.overlayPosition && (
-                    <div className={`absolute m-2 px-2 py-0.5 text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1.5 pointer-events-none select-none max-w-[85%] truncate
+                    <div className={`absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
                       ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
                       ${camera.overlayPosition === "top-right" ? "top-0 right-0" : ""}
                       ${camera.overlayPosition === "bottom-left" ? "bottom-0 left-0" : ""}
                       ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
                     `}>
                       <span className="truncate">{camera.name}</span>
-                      {camera.resolution && (
-                        <span className="shrink-0 rounded bg-indigo-500/30 text-indigo-200 border border-indigo-500/40 px-1 text-[9px] font-mono leading-tight">
-                          {camera.resolution}
-                        </span>
-                      )}
                       {camera.recordEnabled && (
                         <span className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 text-rose-300 border border-rose-500/40 px-1 text-[9px] font-bold leading-tight">
                           <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>

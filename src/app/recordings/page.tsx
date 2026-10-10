@@ -614,11 +614,14 @@ export default function RecordingsConfigPage() {
                       className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500"
                     >
                       <option value="">Standard-Speicher</option>
-                      {storageTargets.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.name} {st.isDefault ? "(Standard)" : ""}
-                        </option>
-                      ))}
+                      {storageTargets.map((st) => {
+                        const cleanName = st.name.replace(/\s*\(Standard\)\s*/gi, "").trim();
+                        return (
+                          <option key={st.id} value={st.id}>
+                            {cleanName} {st.isDefault ? "(Standard)" : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 

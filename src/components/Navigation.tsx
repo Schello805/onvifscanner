@@ -15,6 +15,7 @@ import {
   ExternalLink,
   ChevronRight,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 
 type NavItem = {
@@ -347,6 +348,26 @@ export function Navigation({
             </div>
 
             <div className="pt-6 pb-20 border-t border-white/10 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    if ("caches" in window) {
+                      caches.keys().then((keys) => {
+                        keys.forEach((k) => caches.delete(k));
+                      }).catch(() => {});
+                    }
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("_v", Date.now().toString());
+                    window.location.replace(url.toString());
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 py-2.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition-colors active:scale-98"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>App aktualisieren (Cache leeren)</span>
+              </button>
+
               <a
                 href={repoUrl}
                 target="_blank"
@@ -357,7 +378,7 @@ export function Navigation({
                 <ExternalLink className="h-3.5 w-3.5 opacity-70" />
               </a>
               <p className="text-center text-[11px] text-slate-400">
-                Tipp: Nutze auch die Schnellnavigation unten auf dem Smartphone!
+                Tipp: Einmal nach unten ziehen (Pull-to-Refresh) aktualisiert die App ebenfalls.
               </p>
             </div>
           </div>

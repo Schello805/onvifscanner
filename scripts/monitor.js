@@ -1,7 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
+const { OnvifEventManager } = require('./onvif-events');
 
 const prisma = new PrismaClient();
+const onvifEvents = new OnvifEventManager(prisma);
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
 const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION === 'true';
@@ -91,6 +93,13 @@ async function runMonitorCycle() {
 
     // Phase 3: Sync to MediaMTX
     await syncMediaMtxPaths(cameras);
+
+    // Phase 4: Sync ONVIF Event Pull workers (low resource, event-driven)
+    try {
+      void onvifEvents.syncCameras(cameras.filter((c) => Boolean(c.ip)));
+    } catch (e) {
+      // quiet
+    }
 
     if (motionDetectionEnabled) await runMotionDetection(cameras);
   } catch (e) {
@@ -436,8 +445,11 @@ function startMonitor() {
   isMonitoring = true;
   
   console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
-  if (!motionDetectionEnabled) console.log('Motion detection is disabled.');
+  if (!motionDetectionEnabled) console.log('Legacy Jimp snapshot motion detection is disabled.');
   
+  // Start ONVIF event listener
+  onvifEvents.start();
+
   // Run immediately, then every 60 seconds
   void runMonitorCycle();
   monitorTimers.push(setInterval(() => void runMonitorCycle(), monitorIntervalMs));
@@ -453,6 +465,7 @@ function startMonitor() {
 }
 
 async function stopMonitor() {
+  onvifEvents.stop();
   for (const timer of monitorTimers) clearTimeout(timer);
   monitorTimers.length = 0;
   isMonitoring = false;

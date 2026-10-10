@@ -44,8 +44,17 @@ export function PullToRefresh({ children }: { children: React.ReactNode }) {
       
       if (pullDistance > 60) {
         setIsRefreshing(true);
-        // Seite neu laden (aktualisiert Bilder & Zustand)
-        window.location.reload();
+        // Caches leeren & erzwungener Neuladen
+        if (typeof window !== "undefined") {
+          if ("caches" in window) {
+            caches.keys().then((keys) => {
+              keys.forEach((k) => caches.delete(k));
+            }).catch(() => {});
+          }
+          const url = new URL(window.location.href);
+          url.searchParams.set("_v", Date.now().toString());
+          window.location.replace(url.toString());
+        }
       } else {
         setPullDistance(0);
       }
