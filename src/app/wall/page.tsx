@@ -405,56 +405,86 @@ export default function CameraWallPage() {
 
   return (
     <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6">
-      <div className={`mb-4 sm:mb-5 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">Monitore</h1>
-              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
-                {cameras.length} Kameras
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-slate-400">Gespeicherte Kameras als automatisch aktualisiertes Monitor-Dashboard.</p>
+      <div className={`mb-4 sm:mb-6 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Monitore</h1>
+            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
+              {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
+            </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
-            <label className="hidden sm:flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
-              Spalten (Desktop)
-              <select aria-label="Anzahl der Spalten Desktop" value={columns} onChange={(event) => changeColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
-                {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value}</option>)}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
+              <span className="text-slate-400">Raster:</span>
+              <select
+                aria-label="Anzahl der Spalten"
+                value={columns}
+                onChange={(event) => changeColumns(Number(event.target.value))}
+                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+              >
+                {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value} Spalten</option>)}
               </select>
-            </label>
-            <label className="flex sm:hidden min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
-              Spalten (Mobil)
-              <select aria-label="Anzahl der Spalten Mobile" value={mobileColumns} onChange={(event) => changeMobileColumns(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
-                {[1, 2].map((value) => <option key={value} value={value}>{value}</option>)}
-              </select>
-            </label>
-            <label className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-slate-300 sm:py-2">
-              Aktualisieren
-              <select aria-label="Aktualisierungsintervall" value={refreshSeconds} onChange={(event) => changeRefresh(Number(event.target.value))} className="min-w-0 bg-slate-900 text-white outline-none">
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
+              <span className="text-slate-400">Intervall:</span>
+              <select
+                aria-label="Aktualisierungsintervall"
+                value={refreshSeconds}
+                onChange={(event) => changeRefresh(Number(event.target.value))}
+                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+              >
                 <option value={0}>Manuell</option>
-                <option value={5}>5 Sek.</option>
-                <option value={10}>10 Sek.</option>
-                <option value={30}>30 Sek.</option>
-                <option value={60}>60 Sek.</option>
+                <option value={5}>5s</option>
+                <option value={10}>10s</option>
+                <option value={30}>30s</option>
+                <option value={60}>60s</option>
               </select>
-            </label>
-            <button type="button" onClick={() => void refreshAll(true)} className="touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 sm:py-2">↻ Jetzt laden</button>
-            <button type="button" onClick={toggleAllLive} disabled={cameras.length === 0} className="touch-manipulation rounded-xl border border-sky-500/50 bg-sky-500/10 px-3 py-2.5 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 sm:py-2 disabled:opacity-50">
-              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? "■ Alle stoppen" : "▶ Alle streamen"}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void refreshAll(true)}
+              className="touch-manipulation rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 transition"
+              title="Alle Kamerabilder jetzt aktualisieren"
+            >
+              ↻ Refresh
             </button>
+
+            <button
+              type="button"
+              onClick={toggleAllLive}
+              disabled={cameras.length === 0}
+              className={`touch-manipulation rounded-lg px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 ${
+                cameras.length > 0 && cameras.every(c => liveCameras.has(c.id))
+                  ? "border border-amber-500/50 bg-amber-500/15 text-amber-200"
+                  : "border border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+              }`}
+            >
+              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? "■ Alle stoppen" : "▶ Alle Live"}
+            </button>
+
             {isFullscreen ? (
-              <button type="button" onClick={leaveFullscreen} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">Vollbild verlassen</button>
+              <button
+                type="button"
+                onClick={leaveFullscreen}
+                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+              >
+                Vollbild beenden
+              </button>
             ) : (
-              <button type="button" onClick={enterMonitorMode} className="touch-manipulation rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 sm:py-2">▣ <span className="sm:hidden">Monitor</span><span className="hidden sm:inline">Überwachungsmodus</span></button>
+              <button
+                type="button"
+                onClick={enterMonitorMode}
+                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+                title="Vollbild-Überwachungsmodus"
+              >
+                ▣ Vollbild
+              </button>
             )}
-            <Link href="/" className="col-span-2 touch-manipulation rounded-xl border border-white/10 px-3 py-2.5 text-center text-xs font-semibold text-slate-300 hover:bg-white/5 sm:py-2">Zum Scanner</Link>
           </div>
         </div>
-        {cameras.some((camera) => camera.credentials) ? (
-          <p className="mt-3 text-[11px] text-amber-200/70">Zugangsdaten werden ausschließlich lokal auf diesem ONVIFscanner-Server gespeichert.</p>
-        ) : null}
       </div>
 
       {isFullscreen ? (

@@ -68,6 +68,7 @@ export default function HomePage() {
   const [timeoutMs, setTimeoutMs] = useState(1200);
   const [concurrency, setConcurrency] = useState(128);
   const [ack, setAck] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedCameraIps, setSavedCameraIps] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(false);
@@ -771,267 +772,239 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-8">
-      <section className="glass-panel relative overflow-visible rounded-2xl p-3 sm:p-5 md:p-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <section className="glass-panel relative overflow-visible rounded-2xl p-4 sm:p-6 shadow-xl">
         {/* Decorative background glow */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
-        
-	        <div className="relative z-10 flex flex-col border-b border-white/5 pb-3 mb-3 gap-2 sm:gap-4">
-	          <div>
-	            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">Kameras im Netzwerk finden</h1>
-	            <p className="mt-1 text-xs text-slate-400 font-medium max-w-xl leading-relaxed">
-	              Auto-Scan kombiniert ONVIF/WS-Discovery mit IP-/Port-Scan und versucht danach Hersteller, Modell, Stream-URLs und Snapshot-URLs zu ermitteln.
-	            </p>
-	          </div>
-	        </div>
 
-        <div className="relative z-10 grid gap-4 sm:gap-6 md:grid-cols-12">
-          
-          <div className="md:col-span-5 flex flex-col gap-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Scan-Einstellungen</h3>
-            <div className="grid grid-cols-2 gap-2 sm:gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">IP oder Suchbereich</span>
-                  <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={cidr}
-                    placeholder="z.B. 192.168.1.100 oder 192.168.1.0/24"
-                    onChange={(e) => setCidr(e.target.value)}
-                  />
-                </label>
-                {detectedSubnets.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10px] text-slate-500 font-medium">Erkannt:</span>
-                    {detectedSubnets.map((sub) => (
-                      <button
-                        key={`${sub.interfaceName}-${sub.cidr}`}
-                        type="button"
-                        onClick={() => setCidr(sub.cidr)}
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition border ${
-                          cidr === sub.cidr
-                            ? "bg-indigo-500/30 text-indigo-200 border-indigo-500/50 font-bold shadow-sm"
-                            : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white"
-                        }`}
-                        title={`Interface ${sub.interfaceName} (${sub.ip})`}
-                      >
-                        {sub.cidr} ({sub.interfaceName})
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Timeout (ms)</span>
-                <input
-                  className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                  type="number"
-                  min={200}
-                  max={10000}
-                  step={100}
-                  value={timeoutMs}
-                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
-                />
-              </label>
+        <div className="relative z-10 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-3">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">
+                Netzwerk-Scanner
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                ONVIF & RTSP Kameras im lokalen Netzwerk automatisch erkennen
+              </p>
             </div>
 
-            <details className="mt-1 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <summary className="cursor-pointer select-none text-xs font-semibold text-slate-300">Erweiterte Scan-Einstellungen</summary>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3">
-                <label className="flex flex-col gap-1.5 md:col-span-2">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Ports</span>
-                  <input className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none" value={ports} onChange={(e) => setPorts(e.target.value)} />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Concurrency</span>
-                  <input className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none" type="number" min={1} value={concurrency} onChange={(e) => setConcurrency(Number(e.target.value))} />
-                </label>
-              </div>
-            </details>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="self-start sm:self-auto text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1.5 transition"
+            >
+              <span>⚙️</span>
+              <span>{showAdvanced ? "Weniger Optionen" : "Erweiterte Optionen"}</span>
+            </button>
           </div>
 
-          <div className="md:col-span-7 flex flex-col gap-3">
-             <div className="flex items-center justify-between">
-               <h3 className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Authentifizierung</h3>
-               <button
-                 type="button"
-                 onClick={() => setShowMultiCreds(!showMultiCreds)}
-                 className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1"
-               >
-                 <span>{showMultiCreds ? "▲ Weniger" : "+ Passwort-Liste"}</span>
-                 {parsedCredsList.length > 0 && (
-                   <span className="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[9px] text-indigo-300 border border-indigo-500/30">
-                     {parsedCredsList.length} aktiv
-                   </span>
-                 )}
-               </button>
-             </div>
-             <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Benutzername</span>
+          {/* Primary Quick-Scan Bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            {/* IP / Subnet */}
+            <div className="sm:col-span-5 flex flex-col gap-1.5">
+              <label className="text-[11px] font-medium text-slate-300">
+                IP-Bereich / Subnetz
+              </label>
+              <input
+                className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none font-mono"
+                value={cidr}
+                placeholder="z. B. 192.168.1.0/24"
+                onChange={(e) => setCidr(e.target.value)}
+              />
+              {detectedSubnets.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  <span className="text-[10px] text-slate-500 font-medium">Netz:</span>
+                  {detectedSubnets.map((sub) => (
+                    <button
+                      key={`${sub.interfaceName}-${sub.cidr}`}
+                      type="button"
+                      onClick={() => setCidr(sub.cidr)}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-mono transition border ${
+                        cidr === sub.cidr
+                          ? "bg-indigo-500/30 text-indigo-200 border-indigo-500/50 font-bold shadow-sm"
+                          : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-white"
+                      }`}
+                      title={`Interface ${sub.interfaceName} (${sub.ip})`}
+                    >
+                      {sub.cidr}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Optional Credentials */}
+            <div className="sm:col-span-4 grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-medium text-slate-300">
+                  Benutzer
+                </label>
+                <input
+                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin"
+                  autoComplete="username"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-medium text-slate-300">
+                  Passwort
+                </label>
+                <input
+                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+            </div>
+
+            {/* Scan Button */}
+            <div className="sm:col-span-3 flex items-center gap-2">
+              <button
+                className="w-full inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow-lg shadow-indigo-950 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-50"
+                onClick={runScan}
+                disabled={loading}
+              >
+                {loading ? (
+                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                )}
+                <span>{loading ? "Sucht…" : "Scannen"}</span>
+              </button>
+
+              {loading && (
+                <button
+                  type="button"
+                  onClick={stopScan}
+                  className="h-10 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 text-xs font-semibold text-rose-300 hover:bg-rose-950/60 transition"
+                >
+                  Stop
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Progress Indicator */}
+          {loading && (
+            <div className="overflow-hidden rounded-xl border border-indigo-500/30 bg-slate-950/60 p-3 shadow-lg">
+              <div className="flex items-center justify-between text-xs text-indigo-300 font-medium">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-indigo-400 animate-ping" />
+                  {scanStatus ?? "Scan läuft…"}
+                </span>
+                {scanProgress && scanProgress.total > 0 ? (
+                  <span className="font-mono text-slate-400">
+                    {Math.round((scanProgress.done / scanProgress.total) * 100)}% ({scanProgress.done}/{scanProgress.total})
+                  </span>
+                ) : (
+                  <span className="text-slate-400">{data?.results.length ?? 0} Kamera(s) gefunden</span>
+                )}
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 transition-all duration-300"
+                  style={{ width: `${scanProgress && scanProgress.total > 0 ? Math.min(100, Math.max(3, (scanProgress.done / scanProgress.total) * 100)) : 40}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible Advanced Options Drawer */}
+          {showAdvanced && (
+            <div className="rounded-xl border border-white/10 bg-black/40 p-4 space-y-3.5 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">Ports (kommagetrennt)</span>
                   <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="admin"
-                    autoComplete="username"
+                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none font-mono"
+                    value={ports}
+                    onChange={(e) => setPorts(e.target.value)}
                   />
                 </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 ml-1">Passwort</span>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">Timeout (ms)</span>
                   <input
-                    className="glass-input rounded-lg px-3 py-1.5 text-sm outline-none"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    autoComplete="current-password"
+                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    type="number"
+                    min={200}
+                    max={10000}
+                    step={100}
+                    value={timeoutMs}
+                    onChange={(e) => setTimeoutMs(Number(e.target.value))}
                   />
                 </label>
-             </div>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">Gleichzeitige Anfragen</span>
+                  <input
+                    className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none"
+                    type="number"
+                    min={1}
+                    value={concurrency}
+                    onChange={(e) => setConcurrency(Number(e.target.value))}
+                  />
+                </label>
+              </div>
 
-             {showMultiCreds && (
-               <div className="rounded-xl border border-indigo-500/20 bg-black/40 p-3 flex flex-col gap-2">
-                 <div className="flex items-center justify-between">
-                   <span className="text-[10px] font-bold text-slate-300">Mehrere Logins / Passwort-Liste</span>
-                   <span className="text-[9px] text-slate-400">Passwörter oder user:pass</span>
-                 </div>
-                 <textarea
-                   rows={3}
-                   value={multiCredsText}
-                   onChange={(e) => setMultiCredsText(e.target.value)}
-                   placeholder={"12345\nadmin123\nadmin:admin\nroot:root"}
-                   className="glass-input w-full font-mono text-xs rounded-lg p-2.5 resize-y outline-none"
-                 />
-                 <div className="text-[10px] text-slate-400 leading-tight">
-                   Tipp: Einfach ein Passwort pro Zeile eingeben (wird automatisch mit dem Benutzer oben getestet) oder als <code>user:pass</code>.
-                 </div>
-               </div>
-             )}
-             
-             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-               <OptionCheck
-                 checked={copyWithCreds}
-                 label="Credentials anhängen"
-                 tip='Beim Kopieren werden Benutzername und Passwort in die URL eingebettet (z. B. "http://user:pass@ip/..."). Vorsicht: sensibel.'
-                 onChange={setCopyWithCreds}
-               />
-               <OptionCheck
-                 checked={includeThumbnails}
-                 label="Vorschau-Bilder laden"
-                 tip="Lädt Snapshot/ISAPI-Bilder als kleine Vorschau. Manche Kameras benötigen Digest/Basic Auth; das kann länger dauern."
-                 onChange={setIncludeThumbnails}
-               />
-               <OptionCheck
-                 checked={thumbnailsOnExpandOnly}
-                 disabled={!includeThumbnails}
-                 label="Previews erst in Details"
-                 tip="Lädt Vorschauen erst, wenn du eine Kamera-Zeile aufklappst. Das ist schneller und schont die Kameras."
-                 onChange={setThumbnailsOnExpandOnly}
-               />
-               <OptionCheck
-                 checked={verboseLog}
-                 label="Verbose Log"
-                 tip="Zeigt mehr Details wie Digest/401, Timeouts und genutzte Snapshot-URLs. Hilft beim Debuggen, erzeugt aber mehr Text."
-                 onChange={setVerboseLog}
-               />
-               <OptionCheck
-                 checked={deepProbe}
-                 label="Erweiterte Analyse"
-                 tip="Führt zusätzliche ONVIF-SOAP-Abfragen und RTSP-Tests aus, um echte Stream/Snapshot-URLs zu finden. Kann deutlich länger dauern."
-                 onChange={setDeepProbe}
-               />
-               <OptionCheck
-                 checked={ack}
-                 label="Netzwerk bestätigt"
-                 tip="Bestätigt, dass der Scan in deinem eigenen Heimnetz/LAN läuft."
-                 onChange={setAck}
-               />
-             </div>
+              {/* Password List */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-slate-400">Passwort-Liste (ein Passwort pro Zeile)</span>
+                  {parsedCredsList.length > 0 && (
+                    <span className="text-[10px] text-indigo-300 font-semibold">{parsedCredsList.length} aktiv</span>
+                  )}
+                </div>
+                <textarea
+                  rows={2}
+                  value={multiCredsText}
+                  onChange={(e) => setMultiCredsText(e.target.value)}
+                  placeholder={"12345\nadmin123\nadmin:admin\nroot:root"}
+                  className="glass-input w-full font-mono text-xs rounded-lg p-2 resize-y outline-none"
+                />
+              </div>
 
-               <div className="mt-5 flex items-center gap-3">
-                 <button
-                   className="w-full group relative inline-flex h-12 sm:h-10 items-center justify-center overflow-hidden rounded-lg bg-indigo-600 px-6 font-medium text-white shadow-lg transition-all duration-300 disabled:pointer-events-none disabled:opacity-50 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
-                   onClick={runScan}
-                   disabled={loading || !ack}
-                   title={!ack ? "Bitte zuerst dein Heimnetz/LAN bestätigen." : undefined}
-                 >
-                   <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
-                     <div className="relative h-full w-8 bg-white/20" />
-                   </div>
-                   <span className="relative flex items-center gap-2 text-sm">
-                     {loading ? (
-                       <svg
-                         className="animate-spin -ml-1 mr-2 h-3.5 w-3.5 text-white"
-                         xmlns="http://www.w3.org/2000/svg"
-                         fill="none"
-                         viewBox="0 0 24 24"
-                       >
-                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                         <path
-                           className="opacity-75"
-                           fill="currentColor"
-                           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                         ></path>
-                       </svg>
-                     ) : (
-                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                       </svg>
-                     )}
-                     {loading ? "Sucht…" : "Scan Starten"}
-                   </span>
-                 </button>
-                 {loading ? (
-                   <button
-                     className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-red-500/40 bg-red-950/30 px-4 text-sm font-medium text-red-200 hover:bg-red-950/50"
-                     onClick={stopScan}
-                     type="button"
-                   >
-                     Stop
-                   </button>
-                 ) : null}
-               </div>
-
-               {loading ? (
-                 <div className="mt-4 overflow-hidden rounded-xl border border-indigo-500/30 bg-slate-950/60 p-4 shadow-xl backdrop-blur-md">
-                   <div className="flex items-center justify-between gap-3 text-xs">
-                     <div className="flex items-center gap-2 font-medium text-indigo-300">
-                       <span className="relative flex h-2.5 w-2.5">
-                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
-                         <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
-                       </span>
-                       <span>{scanStatus ?? "Scan läuft…"}</span>
-                     </div>
-                     {scanProgress && scanProgress.total > 0 ? (
-                       <span className="font-mono text-[11px] font-bold text-slate-400">
-                         {Math.round((scanProgress.done / scanProgress.total) * 100)}% ({scanProgress.done}/{scanProgress.total})
-                       </span>
-                     ) : (
-                       <span className="text-[11px] text-slate-500">{data?.results.length ?? 0} Kamera(s) gefunden</span>
-                     )}
-                   </div>
-
-                   {scanProgress && scanProgress.total > 0 ? (
-                     <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                       <div
-                         className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 transition-all duration-300"
-                         style={{ width: `${Math.min(100, Math.max(3, (scanProgress.done / scanProgress.total) * 100))}%` }}
-                       />
-                     </div>
-                   ) : (
-                     <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                       <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" />
-                     </div>
-                   )}
-                 </div>
-               ) : null}
-	          </div>
-	          
-	        </div>
+              {/* Checkboxes */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <OptionCheck
+                  checked={includeThumbnails}
+                  label="Vorschaubilder"
+                  tip="Ruft Schnappschüsse der Kameras für das Dashboard ab."
+                  onChange={setIncludeThumbnails}
+                />
+                <OptionCheck
+                  checked={deepProbe}
+                  label="Tiefenanalyse (ONVIF)"
+                  tip="Fragt zusätzliche ONVIF/RTSP Stream-Profile ab."
+                  onChange={setDeepProbe}
+                />
+                <OptionCheck
+                  checked={copyWithCreds}
+                  label="Logins in Stream-URLs"
+                  tip="Fügt Benutzer/Passwort beim Kopieren in die RTSP-URL ein."
+                  onChange={setCopyWithCreds}
+                />
+                <OptionCheck
+                  checked={verboseLog}
+                  label="Ausführliches Log"
+                  tip="Protokolliert detaillierte Verbindungsversuche."
+                  onChange={setVerboseLog}
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
         {error ? (
-          <div className="mt-5 rounded-lg border border-red-900/50 bg-red-950/40 p-4 text-sm text-red-200">
+          <div className="mt-4 rounded-xl border border-red-900/50 bg-red-950/40 p-3 text-xs text-red-200">
             {error}
           </div>
         ) : null}

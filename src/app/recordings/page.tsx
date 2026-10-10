@@ -308,39 +308,43 @@ export default function RecordingsConfigPage() {
   const defaultStorage = storageTargets.find((s) => s.isDefault) || storageTargets[0];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-4">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Radio className="h-6 w-6 text-rose-500 animate-pulse" />
-              NVR Aufnahme-Steuerung
-            </h1>
-            <span className="rounded-full bg-rose-500/10 border border-rose-500/30 px-2.5 py-0.5 text-xs font-semibold text-rose-300">
-              {activeCount} von {cameras.length} aktiv
-            </span>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            24/7 Daueraufzeichnung für IP-Kameras konfigurieren, Segmentlängen anpassen und Speicherziele zuweisen.
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            <Radio className="h-5 w-5 text-rose-500 animate-pulse" />
+            Aufnahmen
+          </h1>
+          <span className="rounded-full bg-rose-500/10 border border-rose-500/30 px-2.5 py-0.5 text-xs font-semibold text-rose-300">
+            {activeCount} von {cameras.length} aufnehmend
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchCameras}
-            disabled={refreshing}
-            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 active:scale-95 transition-all"
+            onClick={() => handleBatchToggleRecord(true, true)}
+            disabled={batchLoading}
+            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-semibold shadow-sm active:scale-95 transition-all"
+            title="Alle im System gespeicherten Kameras auf Daueraufnahme schalten"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin text-rose-400" : ""}`} />
-            Aktualisieren
+            <Radio className="h-3.5 w-3.5" />
+            Alle aufnehmen
+          </button>
+          <button
+            onClick={() => handleBatchToggleRecord(false, true)}
+            disabled={batchLoading}
+            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-medium transition-all"
+            title="Alle aktiven Daueraufnahmen stoppen"
+          >
+            Alle stoppen
           </button>
           <Link
             href="/wiedergabe"
             className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/20 active:scale-95 transition-all"
           >
             <Film className="h-3.5 w-3.5" />
-            Zur Video-Wiedergabe ➔
+            Wiedergabe ➔
           </Link>
           <Link
             href="/nvr/storage"
@@ -352,132 +356,16 @@ export default function RecordingsConfigPage() {
         </div>
       </div>
 
-      {/* KPI Dashboard Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
-              Daueraufnahme Status
-            </span>
-            <div className="text-lg font-bold text-white mt-1 flex items-center gap-2">
-              <span className={`h-2.5 w-2.5 rounded-full ${activeCount > 0 ? "bg-rose-500 animate-pulse" : "bg-slate-600"}`} />
-              {activeCount > 0 ? `${activeCount} Kameras nehmen auf` : "Keine Aufnahme aktiv"}
-            </div>
-            <span className="text-xs text-slate-500 mt-0.5 block">
-              {cameras.length - activeCount} Kameras pausiert
-            </span>
-          </div>
-          <div className="rounded-xl bg-rose-500/10 p-3 text-rose-400 border border-rose-500/20">
-            <Radio className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
-              Standard-Speicherort
-            </span>
-            <div className="text-lg font-bold text-white mt-1 truncate max-w-[200px]">
-              {defaultStorage?.name || "Lokaler Speicher"}
-            </div>
-            <span className="text-xs text-slate-500 mt-0.5 font-mono truncate block max-w-[200px]" title={defaultStorage?.path}>
-              {defaultStorage?.path || "/data/recordings"}
-            </span>
-          </div>
-          <div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-400 border border-cyan-500/20">
-            <HardDrive className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
-              Aufnahme-Engine
-            </span>
-            <div className="text-lg font-bold text-white mt-1">
-              TCP Direct Stream
-            </div>
-            <span className="text-xs text-emerald-400 mt-0.5 block flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Verlustfrei (Direct fmp4 copy)
-            </span>
-          </div>
-          <div className="rounded-xl bg-emerald-500/10 p-3 text-emerald-400 border border-emerald-500/20">
-            <Clock className="h-5 w-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Global 1-Click Action Bar */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-300 mr-1 flex items-center gap-1.5">
-            <SlidersHorizontal className="h-4 w-4 text-indigo-400" />
-            1-Klick Steuerungen:
-          </span>
-
-          <button
-            onClick={() => handleBatchToggleRecord(true, true)}
-            disabled={batchLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-semibold shadow-sm active:scale-95 transition-all"
-            title="Alle im System gespeicherten Kameras auf Daueraufnahme schalten"
-          >
-            <Radio className="h-3.5 w-3.5" />
-            Alle Kameras aufnehmen
-          </button>
-
-          <button
-            onClick={() => handleBatchToggleRecord(false, true)}
-            disabled={batchLoading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-medium transition-all"
-            title="Alle aktiven Daueraufnahmen stoppen"
-          >
-            Alle Aufnahmen stoppen
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <select
-            onChange={(e) => {
-              if (e.target.value) handleBatchSetCameraSegment(Number(e.target.value), true);
-            }}
-            defaultValue=""
-            className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none"
-          >
-            <option value="" disabled>Segmentdauer für alle...</option>
-            <option value="5">5 Minuten für alle</option>
-            <option value="15">15 Minuten für alle</option>
-            <option value="30">30 Minuten für alle</option>
-            <option value="60">60 Minuten für alle</option>
-          </select>
-
-          <select
-            onChange={(e) => {
-              if (e.target.value) handleBatchSetCameraStorage(e.target.value, true);
-            }}
-            defaultValue=""
-            className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none"
-          >
-            <option value="" disabled>Speicher für alle zuweisen...</option>
-            {storageTargets.map((st) => (
-              <option key={st.id} value={st.id}>
-                {st.name} {st.isDefault ? "(Standard)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Filter & Camera Selection Toolbar */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3.5 shadow-md space-y-3">
+      {/* Filter & Search Toolbar */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 shadow-md space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex flex-wrap items-center gap-2">
             {/* Search Input */}
-            <div className="relative min-w-[200px] sm:min-w-[260px]">
+            <div className="relative min-w-[200px] sm:min-w-[240px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Kamera nach Name oder IP suchen..."
+                placeholder="Kamera suchen..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded-lg border border-slate-800 bg-slate-950 pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-500 focus:border-rose-500 focus:outline-none"
@@ -512,7 +400,7 @@ export default function RecordingsConfigPage() {
                     : "border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
                 }`}
               >
-                🔴 Aufnehmend ({activeCount})
+                🔴 Aktiv ({activeCount})
               </button>
               <button
                 onClick={() => setFilterMode("inactive")}

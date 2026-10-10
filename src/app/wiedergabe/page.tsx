@@ -345,20 +345,15 @@ export default function PlaybackPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Film className="h-6 w-6 text-amber-400" />
-              NVR Video-Wiedergabe & Archiv
-            </h1>
-            <span className="rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
-              {filteredClips.length} {filteredClips.length === 1 ? "Segment" : "Segmente"}
-            </span>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Aufgezeichnete Videosegmente durchsuchen, nach Datum/Kamera filtern, mit variabler Geschwindigkeit abspielen und herunterladen.
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            <Film className="h-5 w-5 text-amber-400" />
+            Wiedergabe
+          </h1>
+          <span className="rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
+            {filteredClips.length} {filteredClips.length === 1 ? "Clip" : "Clips"}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">

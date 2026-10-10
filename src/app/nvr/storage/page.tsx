@@ -437,13 +437,10 @@ export default function StorageManagementPage() {
               Zurück zu Aufnahmen
             </Link>
           </div>
-          <h1 className="text-2xl font-bold text-white sm:text-3xl flex items-center gap-2.5 mt-1">
-            <HardDrive className="h-7 w-7 text-cyan-400" />
-            NVR-Speichermedien
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2 mt-1">
+            <HardDrive className="h-5 w-5 text-cyan-400" />
+            Speichermedien
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Festplatten, USB-Laufwerke, Proxmox-Mounts und SMB/NFS-Netzwerkfreigaben für die 24/7-Kameraaufzeichnung.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
