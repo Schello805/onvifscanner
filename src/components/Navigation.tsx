@@ -258,6 +258,7 @@ export function Navigation({
           </div>
         </div>
 
+      </header>
         {/* ─── MOBILE SLIDE-DOWN DRAWER ────────────────────────────── */}
         {mobileMenuOpen && (
           <div className="md:hidden fixed inset-x-0 top-[57px] bottom-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex flex-col justify-between border-t border-white/10 p-4 overflow-y-auto animate-in fade-in slide-in-from-top-3 duration-200">
@@ -270,7 +271,6 @@ export function Navigation({
                   Alle Seiten & Module
                 </span>
               </div>
-
               <div className="grid gap-2">
                 {NAV_ITEMS.map((item) => {
                   const active = isItemActive(item);
@@ -331,7 +331,6 @@ export function Navigation({
                 })}
               </div>
             </div>
-
             <div className="pt-6 pb-20 border-t border-white/10 space-y-3">
               <button
                 type="button"
@@ -352,7 +351,6 @@ export function Navigation({
                 <RefreshCw className="h-3.5 w-3.5" />
                 <span>App aktualisieren (Cache leeren)</span>
               </button>
-
               <a
                 href={repoUrl}
                 target="_blank"
@@ -368,7 +366,7 @@ export function Navigation({
             </div>
           </div>
         )}
-      </header>
+
 
       {/* ─── MOBILE BOTTOM NAVIGATION BAR ─────────────────────────── */}
       {!isFullscreen && (
@@ -376,7 +374,7 @@ export function Navigation({
           className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-800/80 bg-slate-950/90 backdrop-blur-2xl px-2 pt-1.5 pb-[max(0.6rem,env(safe-area-inset-bottom,0px))] shadow-[0_-8px_30px_rgba(0,0,0,0.7)]"
           aria-label="Mobile Schnellnavigation"
         >
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             {NAV_ITEMS.map((item) => {
               const active = isItemActive(item);
               const Icon = item.icon;
