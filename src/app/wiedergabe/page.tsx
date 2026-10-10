@@ -223,6 +223,7 @@ export default function PlaybackPage() {
   const [showEventLog, setShowEventLog] = useState<boolean>(true);
   const [eventLogSearch, setEventLogSearch] = useState<string>("");
   const [eventLogTimeOfDay, setEventLogTimeOfDay] = useState<"all" | "night" | "morning" | "afternoon" | "evening">("all");
+  const [showVideoTrack, setShowVideoTrack] = useState<boolean>(true);
 
   // Clip Selection & Batch Delete
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
@@ -1495,15 +1496,24 @@ export default function PlaybackPage() {
               ))}
             </div>
 
-            {/* Visual Legend */}
-            <div className="hidden lg:flex items-center gap-2.5 text-[11px] text-slate-400 font-medium bg-slate-950/70 border border-slate-800 px-2.5 py-1 rounded-lg">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-sm bg-sky-500" />
-                Video
-              </span>
-              <span className="flex items-center gap-1">
+            {/* Visual Legend & Spur-Schalter */}
+            <div className="flex items-center gap-1.5 text-[11px] font-medium bg-slate-950/70 border border-slate-800 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setShowVideoTrack(!showVideoTrack)}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs transition ${
+                  showVideoTrack
+                    ? "text-sky-300 bg-sky-500/20 border border-sky-500/40 font-semibold"
+                    : "text-slate-500 hover:text-slate-300 border border-transparent opacity-60"
+                }`}
+                title="Blaue Video-Spur ein- oder ausblenden"
+              >
+                <span className={`h-1.5 w-2 rounded-sm ${showVideoTrack ? "bg-sky-400 shadow-[0_0_6px_#38bdf8]" : "bg-slate-600"}`} />
+                <span>Video-Spur</span>
+              </button>
+              <span className="flex items-center gap-1 px-1.5 py-0.5 text-amber-300 font-semibold">
                 <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
-                Bewegung
+                <span>Bewegung</span>
               </span>
             </div>
           </div>
@@ -1607,48 +1617,49 @@ export default function PlaybackPage() {
             })()
           )}
 
-          {/* Recorded Clips as a sleek modern continuous video track */}
-          {timelineClips.map((clip) => {
-            const spanMin = timelineZoom * 60;
-            const vStart = timelineStartMin;
-            const vEnd = timelineStartMin + spanMin;
-            const timeParts = clip.timeStr.split(":").map(Number);
-            const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
-            const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
-            const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
-            const clipStartMin = hh * 60 + mm + ss / 60;
-            const clipDurationMin = 15;
-            const clipEndMin = clipStartMin + clipDurationMin;
+          {/* Recorded Clips as a sleek modern slim baseline track */}
+          {showVideoTrack &&
+            timelineClips.map((clip) => {
+              const spanMin = timelineZoom * 60;
+              const vStart = timelineStartMin;
+              const vEnd = timelineStartMin + spanMin;
+              const timeParts = clip.timeStr.split(":").map(Number);
+              const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
+              const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
+              const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
+              const clipStartMin = hh * 60 + mm + ss / 60;
+              const clipDurationMin = 15;
+              const clipEndMin = clipStartMin + clipDurationMin;
 
-            if (clipEndMin < vStart || clipStartMin > vEnd) return null;
+              if (clipEndMin < vStart || clipStartMin > vEnd) return null;
 
-            const rStart = Math.max(vStart, clipStartMin);
-            const rEnd = Math.min(vEnd, clipEndMin);
-            const leftPct = ((rStart - vStart) / spanMin) * 100;
-            const widthPct = Math.max(0.6, ((rEnd - rStart) / spanMin) * 100);
-            const isCurrentPlaying = activeClip?.id === clip.id;
+              const rStart = Math.max(vStart, clipStartMin);
+              const rEnd = Math.min(vEnd, clipEndMin);
+              const leftPct = ((rStart - vStart) / spanMin) * 100;
+              const widthPct = Math.max(0.4, ((rEnd - rStart) / spanMin) * 100);
+              const isCurrentPlaying = activeClip?.id === clip.id;
 
-            return (
-              <div
-                key={clip.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openClip(clip);
-                }}
-                className={`absolute top-2 bottom-2 rounded-sm transition-all cursor-pointer z-10 ${
-                  isCurrentPlaying
-                    ? "bg-cyan-400 ring-2 ring-white shadow-lg shadow-cyan-500/50 z-20"
-                    : "bg-sky-500/80 hover:bg-sky-400/95 border-y border-sky-400/30 hover:scale-y-105 shadow-sm"
-                }`}
-                style={{
-                  left: `${leftPct}%`,
-                  width: `${widthPct}%`,
-                  minWidth: "3px",
-                }}
-                title={`${clip.cameraName} · ${clip.timeStr} Uhr (${formatBytes(clip.sizeBytes)}) - Klick zum Abspielen`}
-              />
-            );
-          })}
+              return (
+                <div
+                  key={clip.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openClip(clip);
+                  }}
+                  className={`absolute bottom-1 h-2 rounded-sm transition-all cursor-pointer z-10 ${
+                    isCurrentPlaying
+                      ? "bg-cyan-400 ring-2 ring-white shadow-md shadow-cyan-500/50 z-20 h-2.5"
+                      : "bg-sky-500/25 hover:bg-sky-400/60 border border-sky-400/30 hover:scale-y-125 shadow-sm"
+                  }`}
+                  style={{
+                    left: `${leftPct}%`,
+                    width: `${widthPct}%`,
+                    minWidth: "2px",
+                  }}
+                  title={`${clip.cameraName} · ${clip.timeStr} Uhr (${formatBytes(clip.sizeBytes)}) - Klick zum Abspielen`}
+                />
+              );
+            })}
 
           {/* Motion Event Markers Layer */}
           {motionEvents.map((ev) => {
@@ -1668,26 +1679,26 @@ export default function PlaybackPage() {
                   e.stopPropagation();
                   playEvent(ev);
                 }}
-                className={`group/ev absolute top-0 bottom-0 z-25 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform ${
+                className={`group/ev absolute top-1 bottom-3 z-25 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform ${
                   isHighZoom ? "w-4 -ml-2 hover:scale-125" : "w-2.5 -ml-[5px] hover:scale-110"
                 }`}
                 style={{ left: `${leftPct}%` }}
                 title={`⚡ ${ev.timeStr} Uhr: ${ev.message} (${ev.cameraName}) - Klick zum Abspielen`}
               >
                 <div
-                  className={`rounded-full bg-amber-400 border border-white shadow-[0_0_10px_#f59e0b] group-hover/ev:scale-125 transition-transform mt-0.5 flex items-center justify-center ${
+                  className={`rounded-full bg-amber-400 border border-white shadow-[0_0_10px_#f59e0b] group-hover/ev:scale-125 transition-transform flex items-center justify-center ${
                     isHighZoom ? "h-3.5 w-3.5" : "h-2 w-2"
                   }`}
                 >
                   {isHighZoom && <Zap className="h-2 w-2 text-slate-950 fill-slate-950" />}
                 </div>
                 <div
-                  className={`flex-1 bg-amber-400 shadow-[0_0_6px_#f59e0b] ${
+                  className={`flex-1 bg-amber-400/80 shadow-[0_0_6px_#f59e0b] ${
                     isHighZoom ? "w-1 bg-amber-300" : "w-0.5"
                   }`}
                 />
                 <div
-                  className={`rounded-full bg-amber-400 mb-0.5 ${
+                  className={`rounded-full bg-amber-400 ${
                     isHighZoom ? "h-2 w-2" : "h-1.5 w-1.5"
                   }`}
                 />
