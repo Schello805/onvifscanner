@@ -179,7 +179,7 @@ export async function probeOnvifFromXaddr(args: {
             ? "http://www.onvif.org/ver20/media/wsdl/GetStreamUri"
             : "http://www.onvif.org/ver10/media/wsdl/GetStreamUri",
           timeoutMs: args.timeoutMs,
-          credentials: args.credentials,
+          credentials: workingCreds,
           timeOffsetMs,
           body: isMedia2
             ? `<tr2:GetStreamUri xmlns:tr2="http://www.onvif.org/ver20/media/wsdl">
@@ -221,7 +221,7 @@ export async function probeOnvifFromXaddr(args: {
             ? "http://www.onvif.org/ver20/media/wsdl/GetSnapshotUri"
             : "http://www.onvif.org/ver10/media/wsdl/GetSnapshotUri",
           timeoutMs: args.timeoutMs,
-          credentials: args.credentials,
+          credentials: workingCreds,
           timeOffsetMs,
           body: isMedia2
             ? `<tr2:GetSnapshotUri xmlns:tr2="http://www.onvif.org/ver20/media/wsdl">
@@ -254,6 +254,7 @@ export async function probeOnvifFromXaddr(args: {
 
     return {
       ok: true,
+      credentials: workingCreds,
       xaddrs: args.xaddrs.map((x) => normalizeUriHost(x, args.ip, log, "XAddr")),
       deviceServiceUrl,
       mediaServiceUrl: mediaServiceUrl ?? undefined,

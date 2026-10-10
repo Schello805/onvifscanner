@@ -245,6 +245,7 @@ export async function runScan(
           result: r,
           timeoutMs: req.timeoutMs,
           credentials: req.credentials,
+          credentialsList: credsList.length ? credsList : undefined,
           signal
         });
       } catch (e) {
@@ -460,6 +461,11 @@ function finalizeCameraResult(result: ScanResult) {
     result.manufacturer;
   result.model = info?.model ?? result.vendor?.deviceInformation?.model ?? result.model;
   result.hostname = info?.hostname ?? result.vendor?.deviceInformation?.hostname ?? result.hostname;
+  result.credentials =
+    result.onvif?.credentials ??
+    result.rtsp?.credentials ??
+    result.vendor?.credentials ??
+    result.credentials;
   result.ptz = Boolean(result.onvif?.ptz);
   const sortedOnvifRtspUris = [...(result.onvif?.rtspUris ?? [])].sort((a, b) => {
     // MediaMTX WebRTC doesn't support H265 natively, so we prefer H264.

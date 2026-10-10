@@ -57,6 +57,7 @@ export type OnvifResult = {
     serialNumber?: string;
     hardwareId?: string;
   };
+  credentials?: Credentials;
   error?: string;
 };
 
@@ -70,6 +71,7 @@ export type RtspResult = {
   log?: string[];
   authTried?: "none" | "basic" | "digest";
   statusLine?: string;
+  credentials?: Credentials;
   error?: string;
 };
 
@@ -83,6 +85,7 @@ export type VendorUrlResult = {
   rtspUris?: string[];
   httpStreamUris?: string[];
   snapshotUris?: string[];
+  credentials?: Credentials;
   log?: string[];
 };
 
@@ -101,6 +104,7 @@ export type ScanResult = {
   onvif?: OnvifResult;
   rtsp?: RtspResult;
   vendor?: VendorUrlResult;
+  credentials?: Credentials;
 };
 
 export type ScanResponse = {

@@ -107,7 +107,12 @@ export function wallCameraFromScan(result: ScanResult, credentials?: Credentials
     resolution: result.primaryResolution,
     snapshotUris,
     streamUris: Array.from(new Set(result.streamUris ?? [])),
-    credentials: credentials?.username ? credentials : undefined,
+    credentials:
+      result.credentials?.username || result.credentials?.password
+        ? result.credentials
+        : credentials?.username || credentials?.password
+        ? credentials
+        : undefined,
     savedAt: new Date().toISOString()
   };
 }

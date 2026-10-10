@@ -107,8 +107,8 @@ function sanitizeCredentials(
   const username = typeof c.username === "string" ? c.username.trim() : "";
   const password = typeof c.password === "string" ? c.password : "";
   if (!username && !password) return undefined;
-  if (!username) return undefined;
-  return { username, password };
+  const effectiveUsername = username || "admin";
+  return { username: effectiveUsername, password };
 }
 
 function sanitizeCredentialsList(

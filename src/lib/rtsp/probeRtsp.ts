@@ -47,7 +47,7 @@ export async function probeRtsp(args: {
       });
       lastRes = res;
       if (res.ok) {
-        return { ...res, log: limitLog(res.log ?? log) };
+        return { ...res, credentials: cred, log: limitLog(res.log ?? log) };
       }
     } catch (e) {
       log.push(`Exception (${cred?.username || "unauth"}): ${e instanceof Error ? e.message : String(e)}`);

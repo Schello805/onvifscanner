@@ -7,6 +7,7 @@ export async function probeVendorUrls(args: {
   result: ScanResult;
   timeoutMs: number;
   credentials?: { username: string; password: string };
+  credentialsList?: Array<{ username: string; password: string }>;
   signal?: AbortSignal;
 }): Promise<VendorUrlResult | undefined> {
   const manufacturer = args.result.onvif?.deviceInformation?.manufacturer;
@@ -23,6 +24,22 @@ export async function probeVendorUrls(args: {
   const deadlineAt = Date.now() + clampInt(process.env.VENDOR_PROBE_CAMERA_BUDGET_MS ?? "2500", 900, 8000);
   let matchedProfile = "Vendor-Katalog";
 
+  const credCandidates: Array<{ username: string; password: string } | undefined> = [];
+  if (args.credentials?.username || args.credentials?.password) {
+    credCandidates.push(args.credentials);
+  }
+  if (args.credentialsList?.length) {
+    for (const c of args.credentialsList) {
+      if (!credCandidates.some((x) => x?.username === c.username && x?.password === c.password)) {
+        credCandidates.push(c);
+      }
+    }
+  }
+  if (credCandidates.length === 0) {
+    credCandidates.push(undefined);
+  }
+  let workingCred: { username: string; password: string } | undefined = credCandidates[0];
+
   for (const profile of profiles) {
     if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
     if (Date.now() >= deadlineAt) {
@@ -33,23 +50,27 @@ export async function probeVendorUrls(args: {
     let profileHit = false;
 
     if (profile.id === "hikvision") {
-      const isapiInfo = await probeHikvisionDeviceInfo({
-        httpBase,
-        timeoutMs: args.timeoutMs,
-        credentials: args.credentials,
-        signal: args.signal,
-        log
-      });
-      if (isapiInfo.exists) {
-        profileHit = true;
-        matchedProfile = profile.label;
-        deviceInformation = {
-          manufacturer: "Hikvision",
-          model: isapiInfo.model,
-          hostname: isapiInfo.hostname
-        };
+      for (const cred of credCandidates) {
+        const isapiInfo = await probeHikvisionDeviceInfo({
+          httpBase,
+          timeoutMs: args.timeoutMs,
+          credentials: cred,
+          signal: args.signal,
+          log
+        });
+        if (isapiInfo.exists) {
+          profileHit = true;
+          matchedProfile = profile.label;
+          if (cred) workingCred = cred;
+          deviceInformation = {
+            manufacturer: "Hikvision",
+            model: isapiInfo.model,
+            hostname: isapiInfo.hostname
+          };
+          break;
+        }
       }
-      if (!isapiInfo.exists) {
+      if (!profileHit) {
         log.push("Hikvision: DeviceInfo nicht erkannt, bekannte ISAPI Stream/Snapshot-Pfade werden trotzdem geprüft.");
       }
     }
@@ -58,21 +79,25 @@ export async function probeVendorUrls(args: {
       if (snapshotUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`Snapshot probe: ${candidate.label} ${url}`);
-      const probe = await probeHttpUrl({
-        url: withReolinkQueryCredentials(url, args.credentials),
-        purpose: "snapshot",
-        timeoutMs: args.timeoutMs,
-        credentials: args.credentials,
-        signal: args.signal,
-        log
-      });
-      const isMatched =
-        probe.ok ||
-        (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
-      if (isMatched) {
-        snapshotUris.push(withReolinkQueryCredentials(url, args.credentials));
-        profileHit = true;
-        log.push(`${probe.ok ? "Snapshot OK" : "Snapshot-Endpunkt erkannt (Login nötig)"}: ${url}`);
+      for (const cred of credCandidates) {
+        const probe = await probeHttpUrl({
+          url: withReolinkQueryCredentials(url, cred),
+          purpose: "snapshot",
+          timeoutMs: args.timeoutMs,
+          credentials: cred,
+          signal: args.signal,
+          log
+        });
+        const isMatched =
+          probe.ok ||
+          (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
+        if (isMatched) {
+          snapshotUris.push(withReolinkQueryCredentials(url, cred));
+          profileHit = true;
+          if (probe.ok && cred) workingCred = cred;
+          log.push(`${probe.ok ? "Snapshot OK" : "Snapshot-Endpunkt erkannt (Login nötig)"}: ${url}`);
+          break;
+        }
       }
     }
 
@@ -80,21 +105,25 @@ export async function probeVendorUrls(args: {
       if (httpStreamUris.length >= 1 || Date.now() >= deadlineAt) break;
       const url = `${httpBase}${candidate.path}`;
       log.push(`HTTP stream probe: ${candidate.label} ${url}`);
-      const probe = await probeHttpUrl({
-        url: withReolinkQueryCredentials(url, args.credentials),
-        purpose: "stream",
-        timeoutMs: args.timeoutMs,
-        credentials: args.credentials,
-        signal: args.signal,
-        log
-      });
-      const isMatchedStream =
-        probe.ok ||
-        (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
-      if (isMatchedStream) {
-        httpStreamUris.push(withReolinkQueryCredentials(url, args.credentials));
-        profileHit = true;
-        log.push(`${probe.ok ? "HTTP stream OK" : "HTTP-Stream-Endpunkt erkannt (Login nötig)"}: ${url}`);
+      for (const cred of credCandidates) {
+        const probe = await probeHttpUrl({
+          url: withReolinkQueryCredentials(url, cred),
+          purpose: "stream",
+          timeoutMs: args.timeoutMs,
+          credentials: cred,
+          signal: args.signal,
+          log
+        });
+        const isMatchedStream =
+          probe.ok ||
+          (profile.id !== "generic" && probe.exists && (hasVendorHint || probe.vendorVerified));
+        if (isMatchedStream) {
+          httpStreamUris.push(withReolinkQueryCredentials(url, cred));
+          profileHit = true;
+          if (probe.ok && cred) workingCred = cred;
+          log.push(`${probe.ok ? "HTTP stream OK" : "HTTP-Stream-Endpunkt erkannt (Login nötig)"}: ${url}`);
+          break;
+        }
       }
     }
 
@@ -108,12 +137,14 @@ export async function probeVendorUrls(args: {
         port: rtspPort,
         uri: url,
         timeoutMs: args.timeoutMs,
-        credentials: args.credentials
+        credentials: workingCred ?? args.credentials,
+        credentialsList: args.credentialsList
       });
       log.push(...(rtsp.log ?? []).slice(0, 8));
       if (rtsp.ok) {
         rtspUris.push(rtsp.uriTried ?? url);
         profileHit = true;
+        if (rtsp.credentials) workingCred = rtsp.credentials;
         log.push(`RTSP OK: ${rtsp.uriTried ?? url}`);
       }
     }
@@ -141,6 +172,7 @@ export async function probeVendorUrls(args: {
     rtspUris: rtspUris.length ? unique(rtspUris) : undefined,
     httpStreamUris: httpStreamUris.length ? unique(httpStreamUris) : undefined,
     snapshotUris: snapshotUris.length ? unique(snapshotUris) : undefined,
+    credentials: workingCred,
     log: limitLog(log)
   };
 }

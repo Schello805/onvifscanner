@@ -185,6 +185,13 @@ export default function HomePage() {
     try {
       const ac = new AbortController();
       const t = window.setTimeout(() => ac.abort(), 3500);
+      const camResult = data?.results?.find((r) => r.ip === ip);
+      const thumbCreds =
+        camResult?.credentials ??
+        (username.trim() || password.trim()
+          ? { username: username.trim() || "admin", password }
+          : undefined);
+
       const thumbRes = await fetch(apiUrl("/api/thumbnail"), {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -193,10 +200,8 @@ export default function HomePage() {
           size: 200,
           timeoutMs: 1500,
           fastAuth: true,
-          credentials:
-            username.trim() && password
-              ? { username: username.trim(), password }
-              : undefined
+          credentials: thumbCreds,
+          credentialsList: parsedCredsList.length ? parsedCredsList : undefined
         }),
         signal: ac.signal
       }).finally(() => window.clearTimeout(t));
@@ -438,20 +443,33 @@ export default function HomePage() {
     if (!multiCredsText.trim()) return [];
     const lines = multiCredsText.split("\n");
     const list: Credentials[] = [];
+    const baseUser = username.trim() || "admin";
+
     for (const l of lines) {
       const trimmed = l.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
       const colon = trimmed.indexOf(":");
       if (colon >= 0) {
         const u = trimmed.slice(0, colon).trim();
         const p = trimmed.slice(colon + 1);
-        if (u || p) list.push({ username: u, password: p });
+        const finalUser = u || baseUser;
+        list.push({ username: finalUser, password: p });
       } else {
-        list.push({ username: trimmed, password: "" });
+        // Line has no colon: The user entered just a password!
+        list.push({ username: baseUser, password: trimmed });
+        if (baseUser !== "admin") {
+          list.push({ username: "admin", password: trimmed });
+        }
       }
     }
-    return list;
-  }, [multiCredsText]);
+    const deduped: Credentials[] = [];
+    for (const c of list) {
+      if (!deduped.some((x) => x.username === c.username && x.password === c.password)) {
+        deduped.push(c);
+      }
+    }
+    return deduped;
+  }, [multiCredsText, username]);
 
   const isSingleIp = useMemo(() => {
     const pfx = cidr.trim().split("/")[1];
@@ -465,7 +483,7 @@ export default function HomePage() {
       ports: parsePorts(ports),
       credentials:
         username.trim() || password.trim()
-          ? { username: username.trim(), password }
+          ? { username: username.trim() || "admin", password }
           : undefined,
       credentialsList: parsedCredsList.length ? parsedCredsList : undefined,
       timeoutMs,
@@ -647,16 +665,17 @@ export default function HomePage() {
     enqueueThumb(ip);
   }
 
-  function addCredsIfWanted(url: string): string {
+  function addCredsIfWanted(url: string, cameraCreds?: Credentials): string {
     if (!copyWithCreds) return url;
-    if (!username.trim()) return url;
-    if (!password) return url;
+    const effUser = cameraCreds?.username || username.trim() || "admin";
+    const effPass = cameraCreds?.password !== undefined ? cameraCreds.password : password;
+    if (!effUser && !effPass) return url;
     try {
       const u = new URL(url);
       if (u.username || u.password) return url;
       if (u.searchParams.has("user") || u.searchParams.has("password")) return url;
-      u.username = username.trim();
-      u.password = password;
+      if (effUser) u.username = effUser;
+      if (effPass) u.password = effPass;
       return u.toString();
     } catch {
       // non-standard URLs (some RTSP variants) are left untouched
@@ -717,8 +736,8 @@ export default function HomePage() {
     );
   }
 
-  function UrlRow(props: { label: string; url: string; isApi?: boolean }) {
-    const effective = addCredsIfWanted(props.url);
+  function UrlRow(props: { label: string; url: string; isApi?: boolean; cameraCreds?: Credentials }) {
+    const effective = addCredsIfWanted(props.url, props.cameraCreds);
     return (
       <div className="flex flex-col gap-1.5 rounded-lg border border-white/5 bg-white/[0.03] p-2 sm:flex-row sm:items-center sm:gap-2 sm:border-0 sm:bg-transparent sm:p-0">
         <div className="shrink-0 text-xs font-semibold text-slate-400 sm:w-28 sm:font-normal">{props.label}</div>
@@ -875,17 +894,17 @@ export default function HomePage() {
                <div className="rounded-xl border border-indigo-500/20 bg-black/40 p-3 flex flex-col gap-2">
                  <div className="flex items-center justify-between">
                    <span className="text-[10px] font-bold text-slate-300">Mehrere Logins / Passwort-Liste</span>
-                   <span className="text-[9px] text-slate-500">Format: user:pass</span>
+                   <span className="text-[9px] text-slate-400">Passwörter oder user:pass</span>
                  </div>
                  <textarea
                    rows={3}
                    value={multiCredsText}
                    onChange={(e) => setMultiCredsText(e.target.value)}
-                   placeholder={"admin:admin\nadmin:12345\nadmin:\nroot:root"}
+                   placeholder={"12345\nadmin123\nadmin:admin\nroot:root"}
                    className="glass-input w-full font-mono text-xs rounded-lg p-2.5 resize-y outline-none"
                  />
                  <div className="text-[10px] text-slate-400 leading-tight">
-                   Wird nacheinander bei jeder Kamera getestet, falls der Standard-Login fehlschlägt.
+                   Tipp: Einfach ein Passwort pro Zeile eingeben (wird automatisch mit dem Benutzer oben getestet) oder als <code>user:pass</code>.
                  </div>
                </div>
              )}
@@ -1134,6 +1153,11 @@ export default function HomePage() {
                             🎮 PTZ
                           </span>
                         )}
+                        {r.credentials && (
+                          <span className="rounded bg-black/80 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-mono text-emerald-300 border border-emerald-400/30 shadow flex items-center gap-1" title={`Erfolgreicher Login: ${r.credentials.username}`}>
+                            🔑 {r.credentials.username}
+                          </span>
+                        )}
                       </div>
 
                       <div className="absolute right-2 top-2 z-10">
@@ -1145,7 +1169,7 @@ export default function HomePage() {
                         <div className="absolute bottom-2 right-2 z-10">
                           <button
                             type="button"
-                            onClick={() => copy(addCredsIfWanted(r.streamUris![0]))}
+                            onClick={() => copy(addCredsIfWanted(r.streamUris![0], r.credentials))}
                             className="rounded-lg bg-black/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:text-white border border-white/20 transition shadow"
                           >
                             Stream kopieren
@@ -1206,11 +1230,11 @@ export default function HomePage() {
                             ) : null}
 
                             {r.streamUris?.map((u, idx) => (
-                              <UrlRow key={`grid-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} />
+                              <UrlRow key={`grid-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} cameraCreds={r.credentials} />
                             ))}
 
                             {r.snapshotUris?.map((u, idx) => (
-                              <UrlRow key={`grid-snap-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} />
+                              <UrlRow key={`grid-snap-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} cameraCreds={r.credentials} />
                             ))}
 
                             <div className="mt-1 text-[10px] text-slate-400">
@@ -1322,14 +1346,14 @@ export default function HomePage() {
                         <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">Stream & Snapshot URLs</div>
                         {r.streamUris?.length ? (
                           r.streamUris.map((u, idx) => (
-                            <UrlRow key={`mobile-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} />
+                            <UrlRow key={`mobile-stream-${idx}-${u}`} label={idx === 0 ? "Stream" : `Stream ${idx + 1}`} url={u} cameraCreds={r.credentials} />
                           ))
                         ) : (
                           <div className="text-xs text-slate-500">Keine Stream-URL erkannt.</div>
                         )}
                         {r.snapshotUris?.length ? (
                           r.snapshotUris.map((u, idx) => (
-                            <UrlRow key={`mobile-snapshot-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} />
+                            <UrlRow key={`mobile-snapshot-${idx}-${u}`} label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`} url={u} cameraCreds={r.credentials} />
                           ))
                         ) : (
                           <div className="text-xs text-slate-500">Keine Snapshot-URL erkannt.</div>
@@ -1486,6 +1510,7 @@ export default function HomePage() {
                                     key={`stream-${idx}-${u}`}
                                     label={idx === 0 ? "Stream" : `Stream ${idx + 1}`}
                                     url={u}
+                                    cameraCreds={r.credentials}
                                   />
                                 ))
                               ) : (
@@ -1500,6 +1525,7 @@ export default function HomePage() {
                                     key={`snapshot-${idx}-${u}`}
                                     label={idx === 0 ? "Snapshot" : `Snapshot ${idx + 1}`}
                                     url={u}
+                                    cameraCreds={r.credentials}
                                   />
                                 ))
                               ) : (

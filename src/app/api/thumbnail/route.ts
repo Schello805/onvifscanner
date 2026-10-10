@@ -17,6 +17,7 @@ type Body = {
   fastAuth?: boolean;
   fresh?: boolean;
   credentials?: { username: string; password: string };
+  credentialsList?: Array<{ username: string; password: string }>;
 };
 
 type SharpModule = typeof import("sharp");
@@ -149,6 +150,21 @@ export async function POST(req: Request) {
     let attempts = 0;
     let authFailures = 0;
 
+    const credCandidates: Array<{ username: string; password: string } | undefined> = [];
+    if (body.credentials?.username || body.credentials?.password) {
+      credCandidates.push(body.credentials);
+    }
+    if (body.credentialsList?.length) {
+      for (const c of body.credentialsList) {
+        if (!credCandidates.some((x) => x?.username === c.username && x?.password === c.password)) {
+          credCandidates.push(c);
+        }
+      }
+    }
+    if (credCandidates.length === 0) {
+      credCandidates.push(undefined);
+    }
+
     await acquireSlot(maxConcurrency, req.signal);
     acquired = true;
 
@@ -169,90 +185,91 @@ export async function POST(req: Request) {
       }
 
       attemptLog.push(`Try: ${url.toString()}`);
-      if (body.credentials?.username) {
-        attemptLog.push(`Creds: username=${body.credentials.username}`);
-      } else {
-        attemptLog.push("Creds: none");
-      }
-      const debugLog: string[] = [];
-      let ab: ArrayBuffer;
+      let ab: ArrayBuffer | undefined;
       let contentType = "";
+
       if (url.protocol === "rtsp:") {
         attemptLog.push("Protocol: RTSP (using ffmpeg)");
-        try {
-          let rtspUrl = url.toString();
-          if (body.credentials?.username) {
-            const authUrl = new URL(rtspUrl);
-            authUrl.username = body.credentials.username;
-            authUrl.password = body.credentials.password ?? "";
-            rtspUrl = authUrl.toString();
+        for (const cred of credCandidates) {
+          try {
+            let rtspUrl = url.toString();
+            if (cred?.username) {
+              const authUrl = new URL(rtspUrl);
+              authUrl.username = cred.username;
+              authUrl.password = cred.password ?? "";
+              rtspUrl = authUrl.toString();
+            }
+            const args = [
+              "-y",
+              "-rtsp_transport", "tcp",
+              "-t", String(Math.ceil(timeoutMs / 1000) + 1),
+              "-i", rtspUrl,
+              "-vframes", "1",
+              "-q:v", "4",
+              "-f", "image2",
+              "-"
+            ];
+            const { stdout } = await execFileAsync("ffmpeg", args, {
+              encoding: "buffer",
+              timeout: timeoutMs + 2000,
+              signal: req.signal as any
+            });
+            if (stdout.length === 0) throw new Error("ffmpeg returned empty output");
+            ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength);
+            contentType = "image/jpeg";
+            attemptLog.push(`Status: ffmpeg success (${cred?.username || "unauth"})`);
+            break;
+          } catch (e) {
+            attemptLog.push(`ffmpeg error (${cred?.username || "unauth"}): ${e instanceof Error ? e.message : "Unknown"}`);
           }
-          const args = [
-            "-y",
-            "-rtsp_transport", "tcp",
-            "-t", String(Math.ceil(timeoutMs / 1000) + 1),
-            "-i", rtspUrl,
-            "-vframes", "1",
-            "-q:v", "4",
-            "-f", "image2",
-            "-"
-          ];
-          const { stdout } = await execFileAsync("ffmpeg", args, {
-            encoding: "buffer",
-            timeout: timeoutMs + 2000,
-            signal: req.signal as any
-          });
-          if (stdout.length === 0) throw new Error("ffmpeg returned empty output");
-          ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength);
-          contentType = "image/jpeg";
-          attemptLog.push("Status: ffmpeg success");
-        } catch (e) {
-          attemptLog.push(`ffmpeg error: ${e instanceof Error ? e.message : "Unknown"}`);
-          continue;
         }
+        if (!ab) continue;
       } else {
-        const res = await fetchWithDigestAuth({
-          url: url.toString(),
-          method: "GET",
-          timeoutMs,
-          credentials: body.credentials,
-          signal: req.signal,
-          fastMode: fastAuth,
-          headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
-          debugLog
-        });
+        const debugLog: string[] = [];
+        for (const cred of credCandidates) {
+          const res = await fetchWithDigestAuth({
+            url: url.toString(),
+            method: "GET",
+            timeoutMs,
+            credentials: cred,
+            signal: req.signal,
+            fastMode: fastAuth,
+            headers: { accept: "image/*", "user-agent": "ONVIFscanner/0.1" },
+            debugLog
+          });
 
-        attemptLog.push(`Status: ${res.status}`);
-        attempts += 1;
-        if (res.status === 401) authFailures += 1;
-        const www = res.headers.get("www-authenticate");
-        if (res.status === 401 && www && /digest/i.test(www) && !body.credentials?.username) {
-          attemptLog.push("Hinweis: Digest auth nötig (Credentials fehlen).");
-        } else if (res.status === 401 && body.credentials?.username) {
-          attemptLog.push("Hinweis: Authentifizierung fehlgeschlagen (Credentials wurden von der Kamera abgelehnt).");
-        }
-        for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
-        if (!res.ok) continue;
+          attemptLog.push(`Status: ${res.status} (${cred?.username || "unauth"})`);
+          attempts += 1;
+          if (res.status === 401) {
+            authFailures += 1;
+            continue;
+          }
+          for (const line of debugLog.slice(0, 12)) attemptLog.push(line);
+          if (!res.ok) continue;
 
-        contentType = (res.headers.get("content-type") ?? "").toLowerCase();
-        if (!contentType.startsWith("image/")) {
-          attemptLog.push("Not an image");
-          continue;
-        }
+          const cType = (res.headers.get("content-type") ?? "").toLowerCase();
+          if (!cType.startsWith("image/")) {
+            attemptLog.push("Not an image");
+            continue;
+          }
 
-        const maxBytes = 6_000_000;
-        const contentLength = Number(res.headers.get("content-length") ?? "0");
-        if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-          attemptLog.push("Too large (content-length)");
-          continue;
-        }
+          const maxBytes = 6_000_000;
+          const contentLength = Number(res.headers.get("content-length") ?? "0");
+          if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+            attemptLog.push("Too large (content-length)");
+            continue;
+          }
 
-        const resBuf = await res.arrayBuffer();
-        if (resBuf.byteLength <= 0 || resBuf.byteLength > maxBytes) {
-          attemptLog.push("Too large (body)");
-          continue;
+          const resBuf = await res.arrayBuffer();
+          if (resBuf.byteLength <= 0 || resBuf.byteLength > maxBytes) {
+            attemptLog.push("Too large (body)");
+            continue;
+          }
+          ab = resBuf;
+          contentType = cType;
+          break;
         }
-        ab = resBuf;
+        if (!ab) continue;
       }
 
       const input = Buffer.from(ab);
