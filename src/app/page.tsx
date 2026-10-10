@@ -70,6 +70,7 @@ export default function HomePage() {
   const [ack, setAck] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedCameraIps, setSavedCameraIps] = useState<Set<string>>(new Set());
+  const [recordingCameraIps, setRecordingCameraIps] = useState<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -340,8 +341,9 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    loadWallData().then(data => {
+    loadWallData().then((data) => {
       setSavedCameraIps(new Set(data.cameras.map((camera) => camera.ip)));
+      setRecordingCameraIps(new Set(data.cameras.filter((c) => c.recordEnabled).map((c) => c.ip)));
     });
     fetch("/api/network")
       .then((r) => r.json())
@@ -364,6 +366,7 @@ export default function HomePage() {
       const next = upsertWallCameras(current.cameras, additions);
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
       setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
       if (results.length === 1) {
         toast.success(`Kamera ${results[0].ip} zu den Monitoren hinzugefügt.`);
       } else {
@@ -381,10 +384,28 @@ export default function HomePage() {
       const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
       setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
+      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
       toast.info(`Kamera ${ip} von den Monitoren entfernt.`);
     } catch {
       toast.error("Fehler beim Entfernen von den Monitoren.");
     }
+  }
+
+  function RecordingBadge({ ip }: { ip: string }) {
+    if (!recordingCameraIps.has(ip)) return null;
+    return (
+      <Link
+        href={`/wiedergabe?search=${encodeURIComponent(ip)}`}
+        className="inline-flex items-center gap-1 rounded bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/30 transition shadow-sm animate-pulse"
+        title="Daueraufnahme aktiv – Klick zum Aufnahmen-Archiv"
+      >
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+        </span>
+        <span>REC Aktiv</span>
+      </Link>
+    );
   }
 
   function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
@@ -1133,7 +1154,8 @@ export default function HomePage() {
                         )}
                       </div>
 
-                      <div className="absolute right-2 top-2 z-10">
+                      <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
+                        <RecordingBadge ip={r.ip} />
                         <WallSaveButton result={r} compact />
                       </div>
 
@@ -1259,6 +1281,7 @@ export default function HomePage() {
                         <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
                           {r.snapshotUris?.length ?? 0} Snapshot
                         </span>
+                        <RecordingBadge ip={r.ip} />
                         <WallSaveButton result={r} compact />
                       </div>
                     </div>
@@ -1410,8 +1433,9 @@ export default function HomePage() {
                               <span className="rounded bg-cyan-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-500/25">
                                 {r.snapshotUris?.length ?? 0} Snapshot
                               </span>
-	                              <WallSaveButton result={r} compact />
-	                          </div>
+                              <RecordingBadge ip={r.ip} />
+                              <WallSaveButton result={r} compact />
+                            </div>
                         </div>
                       </td>
 

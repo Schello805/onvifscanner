@@ -40,6 +40,7 @@ type CameraSimple = {
   id: string;
   name: string;
   ip: string;
+  recordEnabled?: boolean;
 };
 
 type RecordingClip = {
@@ -114,7 +115,14 @@ export default function PlaybackPage() {
       const res = await fetch("/api/nvr/cameras", { cache: "no-store" });
       const data = await res.json();
       if (data.cameras) {
-        setCameras(data.cameras.map((c: any) => ({ id: c.id, name: c.name, ip: c.ip })));
+        setCameras(
+          data.cameras.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            ip: c.ip,
+            recordEnabled: Boolean(c.recordEnabled),
+          }))
+        );
       }
     } catch {}
   };
@@ -448,7 +456,7 @@ export default function PlaybackPage() {
                 <option value="">Alle Kameras</option>
                 {cameras.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.recordEnabled ? `🔴 ${c.name} (REC)` : c.name}
                   </option>
                 ))}
               </select>
@@ -1118,8 +1126,19 @@ export default function PlaybackPage() {
 
                       {/* Kamera */}
                       <td className="py-2 px-3">
-                        <div className="font-semibold text-white truncate max-w-[180px]">
-                          {clip.cameraName}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-semibold text-white truncate max-w-[180px]">
+                            {clip.cameraName}
+                          </span>
+                          {cameras.find((c) => c.id === clip.cameraId)?.recordEnabled && (
+                            <span
+                              className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 border border-rose-500/40 px-1.5 py-0.5 text-[9px] font-bold text-rose-300"
+                              title="Diese Kamera zeichnet aktuell auf"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                              REC
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -1214,6 +1233,15 @@ export default function PlaybackPage() {
                       <h4 className="text-xs font-bold text-white truncate" title={clip.cameraName}>
                         {clip.cameraName}
                       </h4>
+                      {cameras.find((c) => c.id === clip.cameraId)?.recordEnabled && (
+                        <span
+                          className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 border border-rose-500/40 px-1 py-0.2 text-[9px] font-bold text-rose-300"
+                          title="Diese Kamera zeichnet aktuell auf"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                          REC
+                        </span>
+                      )}
                     </div>
                     <span className="shrink-0 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-300">
                       {formatBytes(clip.sizeBytes)}

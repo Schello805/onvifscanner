@@ -105,6 +105,29 @@ export function Navigation({
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [recordingCount, setRecordingCount] = useState<number>(0);
+
+  // Poll active recording count every 15s to keep navigation live
+  useEffect(() => {
+    let mounted = true;
+    const checkRecordings = async () => {
+      try {
+        const res = await fetch("/api/nvr/cameras", { cache: "no-store" });
+        const data = await res.json();
+        if (mounted && data.cameras && Array.isArray(data.cameras)) {
+          const count = data.cameras.filter((c: any) => c.recordEnabled).length;
+          setRecordingCount(count);
+        }
+      } catch {}
+    };
+
+    void checkRecordings();
+    const interval = setInterval(checkRecordings, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Close mobile drawer on route change
   useEffect(() => {
@@ -203,7 +226,13 @@ export function Navigation({
                     }`}
                   />
                   <span>{item.label}</span>
-                  {active && (
+                  {item.href === "/recordings" && recordingCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 shadow-sm animate-pulse">
+                      <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                      <span>{recordingCount} REC</span>
+                    </span>
+                  )}
+                  {active && item.href !== "/recordings" && (
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${item.dotColor} animate-pulse`}
                     />
@@ -290,6 +319,11 @@ export function Navigation({
                             <span className="font-semibold text-sm text-white">
                               {item.label}
                             </span>
+                            {item.href === "/recordings" && recordingCount > 0 && (
+                              <span className="rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
+                                ● {recordingCount} REC aktiv
+                              </span>
+                            )}
                             {active && (
                               <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
                                 Aktiv
@@ -357,11 +391,19 @@ export function Navigation({
                     />
                   )}
 
-                  <Icon
-                    className={`h-5 w-5 transition-transform duration-200 group-hover:scale-110 ${
-                      active ? `${item.color} scale-105` : "text-slate-400"
-                    }`}
-                  />
+                  <div className="relative">
+                    <Icon
+                      className={`h-5 w-5 transition-transform duration-200 group-hover:scale-110 ${
+                        active ? `${item.color} scale-105` : "text-slate-400"
+                      }`}
+                    />
+                    {item.href === "/recordings" && recordingCount > 0 && (
+                      <span className="absolute -top-1 -right-1.5 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 border border-slate-950"></span>
+                      </span>
+                    )}
+                  </div>
                   <span
                     className={`mt-1 text-[10px] tracking-tight truncate max-w-full leading-none transition-colors ${
                       active ? "font-bold text-white" : "font-medium text-slate-400"

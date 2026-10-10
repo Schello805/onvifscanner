@@ -538,7 +538,7 @@ export default function RecordingsConfigPage() {
                   isSelected
                     ? "border-indigo-500/80 bg-indigo-950/15"
                     : cam.recordEnabled
-                    ? "border-rose-500/30 shadow-rose-950/10"
+                    ? "border-rose-500/70 ring-2 ring-rose-500/30 bg-gradient-to-b from-rose-950/25 via-slate-900 to-slate-950 shadow-[0_0_22px_rgba(244,63,94,0.2)]"
                     : "border-slate-800/80"
                 }`}
               >
@@ -558,8 +558,14 @@ export default function RecordingsConfigPage() {
                     </button>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm sm:text-base font-bold text-white truncate">{cam.name}</h3>
+                        {cam.recordEnabled && (
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-200 shadow-sm animate-pulse">
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                            REC
+                          </span>
+                        )}
                         <span
                           className={`h-2.5 w-2.5 rounded-full shrink-0 ${
                             cam.isOnline ? "bg-emerald-400" : "bg-slate-600"

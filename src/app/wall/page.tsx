@@ -412,6 +412,19 @@ export default function CameraWallPage() {
             <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
               {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
             </span>
+            {cameras.filter((c) => c.recordEnabled).length > 0 && (
+              <Link
+                href="/recordings"
+                className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-0.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition shadow-sm"
+                title={`${cameras.filter((c) => c.recordEnabled).length} Kamera(s) nehmen gerade auf – Klick zur Steuerung`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <span>{cameras.filter((c) => c.recordEnabled).length} REC aktiv</span>
+              </Link>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -556,7 +569,7 @@ export default function CameraWallPage() {
                 className={`group overflow-hidden transition-all flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl ${isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                    : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-2 ring-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.25)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
                 <div 
@@ -573,6 +586,17 @@ export default function CameraWallPage() {
                   }}
                   className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
                 >
+                  {/* Unconditional prominent REC badge in top-left corner */}
+                  {camera.recordEnabled && (
+                    <div className="absolute top-2.5 left-2.5 z-20 pointer-events-none select-none inline-flex items-center gap-1.5 rounded-full bg-black/85 border border-rose-500/80 px-2.5 py-1 text-[11px] font-bold text-rose-200 shadow-xl backdrop-blur-md">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                      </span>
+                      <span>REC</span>
+                    </div>
+                  )}
+
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -683,12 +707,15 @@ export default function CameraWallPage() {
                       </button>
                       {camera.recordEnabled && (
                         <Link
-                          href={`/recordings?cameraId=${camera.id}`}
-                          className="touch-manipulation rounded bg-rose-950/40 border border-rose-800/40 px-1.5 py-1 text-xs text-rose-300 hover:bg-rose-900/60 shrink-0 flex items-center gap-1"
-                          title="Aufnahmen dieser Kamera ansehen"
+                          href={`/wiedergabe?search=${encodeURIComponent(camera.name)}`}
+                          className="touch-manipulation rounded-md bg-rose-500/25 border border-rose-500/50 px-2 py-1 text-xs font-bold text-rose-200 hover:bg-rose-500/40 transition shrink-0 flex items-center gap-1.5 shadow-sm"
+                          title="Kamera nimmt auf – Klick zum Ansehen der Aufnahmen"
                         >
-                          <span>🎬</span>
-                          <span className="hidden lg:inline text-[11px]">Clips</span>
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
+                          </span>
+                          <span className="text-[11px]">REC Aktiv</span>
                         </Link>
                       )}
                       {liveErrors[camera.id] ? (
