@@ -50,25 +50,13 @@ const NAV_ITEMS: NavItem[] = [
     href: "/monitore",
     label: "Monitore",
     mobileLabel: "Monitore",
-    description: "Live-Kameraansicht, Raster & Vollbild-Überwachung",
+    description: "Live-Kameraansicht, Raster & Aufnahmesteuerung",
     icon: LayoutGrid,
     color: "text-emerald-400",
     activeBg: "bg-emerald-500/15",
     activeBorder: "border-emerald-500/40",
     activeText: "text-emerald-200",
     dotColor: "bg-emerald-500",
-  },
-  {
-    href: "/recordings",
-    label: "Aufnahmen",
-    mobileLabel: "Aufnahmen",
-    description: "Kamera-Daueraufnahmen, Steuerung & Speicherzuweisung",
-    icon: Radio,
-    color: "text-rose-400",
-    activeBg: "bg-rose-500/15",
-    activeBorder: "border-rose-500/40",
-    activeText: "text-rose-200",
-    dotColor: "bg-rose-500",
   },
   {
     href: "/wiedergabe",
@@ -162,10 +150,7 @@ export function Navigation({
       return pathname === item.href;
     }
     if (item.href === "/monitore") {
-      return pathname.startsWith("/monitore") || pathname.startsWith("/wall");
-    }
-    if (item.href === "/recordings") {
-      return pathname.startsWith("/recordings") || pathname.startsWith("/aufnahmen");
+      return pathname.startsWith("/monitore") || pathname.startsWith("/wall") || pathname.startsWith("/recordings") || pathname.startsWith("/aufnahmen");
     }
     return pathname.startsWith(item.href);
   };
@@ -227,13 +212,13 @@ export function Navigation({
                     }`}
                   />
                   <span>{item.label}</span>
-                  {item.href === "/recordings" && recordingCount > 0 && (
+                  {item.href === "/monitore" && recordingCount > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-1.5 py-0.5 text-[10px] font-bold text-rose-300 shadow-sm animate-pulse">
                       <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                       <span>{recordingCount} REC</span>
                     </span>
                   )}
-                  {active && item.href !== "/recordings" && (
+                  {active && (
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${item.dotColor} animate-pulse`}
                     />
@@ -320,7 +305,7 @@ export function Navigation({
                             <span className="font-semibold text-sm text-white">
                               {item.label}
                             </span>
-                            {item.href === "/recordings" && recordingCount > 0 && (
+                            {item.href === "/monitore" && recordingCount > 0 && (
                               <span className="rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
                                 ● {recordingCount} REC aktiv
                               </span>
@@ -418,7 +403,7 @@ export function Navigation({
                         active ? `${item.color} scale-105` : "text-slate-400"
                       }`}
                     />
-                    {item.href === "/recordings" && recordingCount > 0 && (
+                    {item.href === "/monitore" && recordingCount > 0 && (
                       <span className="absolute -top-1 -right-1.5 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 border border-slate-950"></span>

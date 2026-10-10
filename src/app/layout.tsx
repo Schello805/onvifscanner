@@ -43,8 +43,8 @@ function Footer() {
           <Link href="/monitore" className="text-slate-400 hover:text-white transition-colors">
             Monitore
           </Link>
-          <Link href="/recordings" className="text-slate-400 hover:text-white transition-colors">
-            Aufnahmen
+          <Link href="/wiedergabe" className="text-slate-400 hover:text-white transition-colors">
+            Wiedergabe
           </Link>
           <Link href="/nvr/storage" className="text-slate-400 hover:text-white transition-colors">
             Speicher

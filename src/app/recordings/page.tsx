@@ -321,6 +321,15 @@ export default function RecordingsConfigPage() {
           </span>
         </div>
 
+        {/* Hinweis zur neuen Steuerung auf Monitore */}
+        <Link
+          href="/monitore"
+          className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-950/30 hover:bg-emerald-900/40 px-3 py-1.5 text-xs text-emerald-200 transition shadow-sm"
+        >
+          <span>💡 Jetzt direkt auf <strong>Monitore</strong> steuerbar</span>
+          <span className="font-bold text-emerald-400">➔</span>
+        </Link>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleBatchToggleRecord(true, true)}

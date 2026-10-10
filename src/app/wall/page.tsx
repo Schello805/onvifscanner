@@ -23,6 +23,8 @@ type CameraEditDraft = {
   group: string;
   overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   recordEnabled: boolean;
+  recordSegmentMinutes: number;
+  storageTargetId: string;
 };
 
 function apiUrl(path: string): string {
@@ -46,12 +48,23 @@ export default function CameraWallPage() {
   const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
   const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
   const [liveLoading, setLiveLoading] = useState<Set<string>>(new Set());
+  const [recordLoading, setRecordLoading] = useState<Set<string>>(new Set());
+  const [batchRecordLoading, setBatchRecordLoading] = useState(false);
+  const [storageTargets, setStorageTargets] = useState<Array<{ id: string; name: string; path: string; isDefault: boolean }>>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    fetch("/api/nvr/storage", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.targets && Array.isArray(data.targets)) {
+          setStorageTargets(data.targets);
+        }
+      })
+      .catch(() => {});
   }, []);
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
@@ -286,7 +299,9 @@ export default function CameraWallPage() {
       password: camera.credentials?.password ?? "",
       group: camera.group ?? "",
       overlayPosition: camera.overlayPosition ?? "top-left",
-      recordEnabled: Boolean(camera.recordEnabled)
+      recordEnabled: Boolean(camera.recordEnabled),
+      recordSegmentMinutes: camera.recordSegmentMinutes || 15,
+      storageTargetId: camera.storageTargetId || "",
     });
     setShowPassword(false);
   }
@@ -295,6 +310,65 @@ export default function CameraWallPage() {
     setEditingCameraId(null);
     setEditDraft(null);
     setShowPassword(false);
+  }
+
+  async function toggleRecord(camera: WallCamera) {
+    const nextState = !camera.recordEnabled;
+    setRecordLoading((prev) => new Set(prev).add(camera.id));
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: camera.id, recordEnabled: nextState }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Fehler beim Ändern der Aufnahme");
+
+      const next = cameras.map((c) => (c.id === camera.id ? { ...c, recordEnabled: nextState } : c));
+      persist(next);
+      toast.success(
+        nextState
+          ? `🔴 Daueraufnahme für "${camera.name}" gestartet.`
+          : `Aufnahme für "${camera.name}" beendet.`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Fehler beim Ändern der Aufnahme.");
+    } finally {
+      setRecordLoading((prev) => {
+        const copy = new Set(prev);
+        copy.delete(camera.id);
+        return copy;
+      });
+    }
+  }
+
+  async function toggleAllRecord(enable: boolean) {
+    if (enable && cameras.length === 0) return;
+    if (!enable && !confirm("Möchtest du wirklich alle laufenden Daueraufnahmen beenden?")) {
+      return;
+    }
+    setBatchRecordLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true, recordEnabled: enable }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Fehler bei der Aufnahmesteuerung");
+
+      const next = cameras.map((c) => ({ ...c, recordEnabled: enable }));
+      persist(next);
+      toast.success(
+        enable
+          ? `🔴 Daueraufnahme für alle ${cameras.length} Kameras gestartet.`
+          : `Alle Kamera-Aufnahmen beendet.`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Fehler bei der Aufnahmesteuerung.");
+    } finally {
+      setBatchRecordLoading(false);
+    }
   }
 
   function removeCamera(id: string) {
@@ -334,16 +408,21 @@ export default function CameraWallPage() {
         : undefined,
       group: editDraft.group.trim() || undefined,
       overlayPosition: editDraft.overlayPosition,
-      recordEnabled: editDraft.recordEnabled
+      recordEnabled: editDraft.recordEnabled,
+      recordSegmentMinutes: editDraft.recordSegmentMinutes,
+      storageTargetId: editDraft.storageTargetId || null,
     } : camera);
 
-    if (currentCam && currentCam.recordEnabled !== editDraft.recordEnabled) {
-      void fetch("/api/nvr/cameras", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingCameraId, recordEnabled: editDraft.recordEnabled })
-      });
-    }
+    void fetch("/api/nvr/cameras", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editingCameraId,
+        recordEnabled: editDraft.recordEnabled,
+        recordSegmentMinutes: editDraft.recordSegmentMinutes,
+        storageTargetId: editDraft.storageTargetId || null,
+      })
+    });
 
     const previousSrc = objectUrlsRef.current[editingCameraId];
     if (previousSrc) URL.revokeObjectURL(previousSrc);
@@ -436,19 +515,42 @@ export default function CameraWallPage() {
             <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
               {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
             </span>
-            {cameras.filter((c) => c.recordEnabled).length > 0 && (
-              <Link
-                href="/recordings"
-                className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-0.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition shadow-sm"
-                title={`${cameras.filter((c) => c.recordEnabled).length} Kamera(s) nehmen gerade auf – Klick zur Steuerung`}
-              >
+            {cameras.filter((c) => c.recordEnabled).length > 0 ? (
+              <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300 shadow-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                 </span>
                 <span>{cameras.filter((c) => c.recordEnabled).length} REC aktiv</span>
-              </Link>
-            )}
+                <button
+                  type="button"
+                  disabled={batchRecordLoading}
+                  onClick={() => void toggleAllRecord(false)}
+                  className="rounded bg-rose-950/70 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-500/40 hover:bg-rose-900 transition disabled:opacity-50"
+                  title="Alle laufenden Daueraufnahmen beenden"
+                >
+                  Alle stoppen
+                </button>
+                <Link
+                  href="/wiedergabe"
+                  className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-white/20 transition hidden sm:inline-block"
+                  title="Zum Video-Archiv wechseln"
+                >
+                  Archiv ↗
+                </Link>
+              </div>
+            ) : cameras.length > 0 ? (
+              <button
+                type="button"
+                disabled={batchRecordLoading}
+                onClick={() => void toggleAllRecord(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 px-2.5 py-1 text-xs font-semibold text-slate-300 transition shadow-sm disabled:opacity-50"
+                title="Daueraufnahme für alle Kameras starten"
+              >
+                <span className="text-rose-400">⏺</span>
+                <span>Alle aufnehmen</span>
+              </button>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -718,7 +820,8 @@ export default function CameraWallPage() {
 
                 {!isFullscreen || controlsVisible ? (
                   <div className="bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
-                    <div className="flex items-center gap-1 min-w-0 shrink">
+                    <div className="flex items-center gap-1 min-w-0 shrink flex-wrap sm:flex-nowrap">
+                      {/* Live Stream Button */}
                       <button
                         type="button"
                         disabled={liveLoading.has(camera.id)}
@@ -733,19 +836,38 @@ export default function CameraWallPage() {
                         <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
                         <span className="hidden sm:inline">{liveLoading.has(camera.id) ? "Laden…" : isLive ? "Stop" : "Live"}</span>
                       </button>
+
+                      {/* 1-Click Recording Button */}
+                      <button
+                        type="button"
+                        disabled={recordLoading.has(camera.id)}
+                        onClick={() => void toggleRecord(camera)}
+                        className={`touch-manipulation rounded px-2 py-1 text-xs font-bold transition-all shrink-0 flex items-center gap-1 disabled:cursor-wait disabled:opacity-60 ${
+                          camera.recordEnabled
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400/50'
+                            : 'bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30 border border-white/10'
+                        }`}
+                        title={camera.recordEnabled ? `Daueraufnahme für "${camera.name}" beenden` : `Daueraufnahme für "${camera.name}" starten`}
+                      >
+                        <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
+                        </span>
+                        <span>
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "REC Stop" : "Aufnahme"}
+                        </span>
+                      </button>
+
+                      {/* Quick jump to archive if recording */}
                       {camera.recordEnabled && (
                         <Link
                           href={`/wiedergabe?search=${encodeURIComponent(camera.name)}`}
-                          className="touch-manipulation rounded-md bg-rose-500/25 border border-rose-500/50 px-2 py-1 text-xs font-bold text-rose-200 hover:bg-rose-500/40 transition shrink-0 flex items-center gap-1.5 shadow-sm"
-                          title="Kamera nimmt auf – Klick zum Ansehen der Aufnahmen"
+                          className="touch-manipulation rounded bg-white/5 hover:bg-white/10 border border-white/10 px-1.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white transition shrink-0 hidden sm:inline-flex items-center gap-1"
+                          title="Gespeicherte Aufnahmen dieser Kamera ansehen"
                         >
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
-                          </span>
-                          <span className="text-[11px]">REC Aktiv</span>
+                          🎞️ Archiv
                         </Link>
                       )}
+
                       {liveErrors[camera.id] ? (
                         <span className="truncate text-[10px] text-red-300 max-w-[80px]" title={liveErrors[camera.id]}>
                           Fehler
@@ -969,18 +1091,54 @@ export default function CameraWallPage() {
                   </select>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer rounded-lg border border-white/10 bg-white/5 p-2.5 mt-auto">
-                  <input
-                    type="checkbox"
-                    checked={editDraft.recordEnabled}
-                    onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked })}
-                    className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
-                  />
-                  <div className="min-w-0">
-                    <span className="font-semibold text-white block text-xs">🔴 24/7 NVR-Aufnahme</span>
-                    <span className="text-[10px] text-slate-400 block truncate">RTSP auf Speicher aufzeichnen</span>
-                  </div>
-                </label>
+                <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 flex flex-col gap-2.5">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editDraft.recordEnabled}
+                      onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked })}
+                      className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="font-semibold text-white block text-xs">🔴 24/7 NVR-Daueraufnahme</span>
+                      <span className="text-[10px] text-slate-400 block truncate">RTSP-Stream automatisch aufzeichnen</span>
+                    </div>
+                  </label>
+
+                  {editDraft.recordEnabled && (
+                    <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t border-rose-500/20 text-xs">
+                      <label className="grid gap-1">
+                        <span className="text-slate-400 text-[11px]">Speicherziel:</span>
+                        <select
+                          value={editDraft.storageTargetId}
+                          onChange={(e) => setEditDraft({ ...editDraft, storageTargetId: e.target.value })}
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
+                        >
+                          <option value="">Standard-Speicherziel</option>
+                          {storageTargets.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} {t.isDefault ? "(Standard)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-1">
+                        <span className="text-slate-400 text-[11px]">Segmentlänge:</span>
+                        <select
+                          value={editDraft.recordSegmentMinutes}
+                          onChange={(e) => setEditDraft({ ...editDraft, recordSegmentMinutes: Number(e.target.value) || 15 })}
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
+                        >
+                          <option value={5}>5 Minuten</option>
+                          <option value={15}>15 Minuten (Standard)</option>
+                          <option value={30}>30 Minuten</option>
+                          <option value={60}>60 Minuten</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
