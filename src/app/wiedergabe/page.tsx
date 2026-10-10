@@ -224,6 +224,7 @@ export default function PlaybackPage() {
   const [eventLogSearch, setEventLogSearch] = useState<string>("");
   const [eventLogTimeOfDay, setEventLogTimeOfDay] = useState<"all" | "night" | "morning" | "afternoon" | "evening">("all");
   const [showVideoTrack, setShowVideoTrack] = useState<boolean>(true);
+  const [showSensitivityHelp, setShowSensitivityHelp] = useState<boolean>(false);
 
   // Clip Selection & Batch Delete
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
@@ -1082,13 +1083,13 @@ export default function PlaybackPage() {
 
       {/* Video Player Modal with Advanced NVR Controls */}
       {activeClip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-2 sm:p-4 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 sm:p-6 md:p-8 backdrop-blur-md overflow-y-auto">
           <div
             ref={playerContainerRef}
-            className="relative w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl overflow-hidden flex flex-col"
+            className="relative w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]"
           >
             {/* Player Header */}
-            <div className="flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-900/80">
+            <div className="flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-900/80 shrink-0">
               <div className="min-w-0 pr-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse"></span>
@@ -1134,7 +1135,10 @@ export default function PlaybackPage() {
                   <Download className="h-4 w-4" />
                 </a>
                 <button
-                  onClick={() => setActiveClip(null)}
+                  onClick={() => {
+                    setActiveClip(null);
+                    setShowSensitivityHelp(false);
+                  }}
                   className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
                   title="Schließen (Taste Esc)"
                 >
@@ -1144,7 +1148,7 @@ export default function PlaybackPage() {
             </div>
 
             {/* Video Element */}
-            <div className="relative bg-black aspect-video flex items-center justify-center">
+            <div className="relative bg-black aspect-video flex items-center justify-center shrink-0">
               <video
                 ref={videoRef}
                 key={activeClip.id}
@@ -1152,7 +1156,7 @@ export default function PlaybackPage() {
                 controls
                 autoPlay
                 playsInline
-                className="w-full h-full max-h-[65vh] object-contain"
+                className="w-full h-full max-h-[46vh] sm:max-h-[50vh] object-contain"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onLoadedMetadata={(e) => {
@@ -1285,124 +1289,204 @@ export default function PlaybackPage() {
               )}
             </div>
 
-            {/* Advanced NVR Toolbar */}
-            <div className="p-3 border-t border-slate-800 bg-slate-900/70 flex flex-wrap items-center justify-between gap-3 text-xs">
-              {/* Skip Controls, Motion Jumps & Clip Step */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={playPreviousClip}
-                  disabled={activeClipIndex <= 0}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
-                  title="Vorheriger Clip"
-                >
-                  <SkipBack className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Vorheriger</span>
-                </button>
+            {/* Advanced NVR Toolbar - Generous Spacing & Uncramped Layout */}
+            <div className="p-4 sm:p-5 pb-6 border-t border-slate-800 bg-slate-900/90 flex flex-col gap-3.5 text-xs shrink-0">
+              {/* Row 1: Playback Navigation & Skip Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={playPreviousClip}
+                    disabled={activeClipIndex <= 0}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    title="Vorheriger Clip"
+                  >
+                    <SkipBack className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Vorheriger</span>
+                  </button>
 
-                <button
-                  onClick={() => seekRelative(-60)}
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-slate-300 hover:bg-slate-800"
-                  title="-60 Sekunden"
-                >
-                  -60s
-                </button>
-                <button
-                  onClick={() => seekRelative(-10)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-slate-300 hover:bg-slate-800"
-                  title="-10 Sekunden (Taste J)"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" /> -10s
-                </button>
-                <button
-                  onClick={() => seekRelative(10)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-slate-300 hover:bg-slate-800"
-                  title="+10 Sekunden (Taste L)"
-                >
-                  <RotateCw className="h-3.5 w-3.5" /> +10s
-                </button>
-                <button
-                  onClick={() => seekRelative(60)}
-                  className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1.5 text-slate-300 hover:bg-slate-800"
-                  title="+60 Sekunden"
-                >
-                  +60s
-                </button>
+                  <button
+                    onClick={() => seekRelative(-60)}
+                    className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
+                    title="-60 Sekunden"
+                  >
+                    -60s
+                  </button>
+                  <button
+                    onClick={() => seekRelative(-10)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
+                    title="-10 Sekunden (Taste J)"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> -10s
+                  </button>
+                  <button
+                    onClick={() => seekRelative(10)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
+                    title="+10 Sekunden (Taste L)"
+                  >
+                    <RotateCw className="h-3.5 w-3.5" /> +10s
+                  </button>
+                  <button
+                    onClick={() => seekRelative(60)}
+                    className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
+                    title="+60 Sekunden"
+                  >
+                    +60s
+                  </button>
 
-                {/* Direct Jump to Motion Buttons */}
-                {activeClipMotionEvents.length > 0 && (
-                  <div className="flex items-center gap-1 border-l border-slate-800 pl-1.5">
-                    <button
-                      onClick={jumpToPrevMotion}
-                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
-                      title="Zur vorherigen Bewegung springen (Taste P)"
-                    >
-                      <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                      <span className="hidden md:inline">Vorh. Bew.</span>
-                    </button>
-                    <button
-                      onClick={jumpToNextMotion}
-                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
-                      title="Zur nächsten Bewegung springen (Taste N oder M)"
-                    >
-                      <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                      <span className="hidden md:inline">Nächste Bew.</span>
-                    </button>
-                  </div>
-                )}
+                  {/* Direct Jump to Motion Buttons */}
+                  {activeClipMotionEvents.length > 0 && (
+                    <div className="flex items-center gap-1 border-l border-slate-800 pl-1.5">
+                      <button
+                        onClick={jumpToPrevMotion}
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                        title="Zur vorherigen Bewegung springen (Taste P)"
+                      >
+                        <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        <span className="hidden md:inline">Vorh. Bew.</span>
+                      </button>
+                      <button
+                        onClick={jumpToNextMotion}
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                        title="Zur nächsten Bewegung springen (Taste N oder M)"
+                      >
+                        <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        <span className="hidden md:inline">Nächste Bew.</span>
+                      </button>
+                    </div>
+                  )}
 
+                  <button
+                    onClick={playNextClip}
+                    disabled={activeClipIndex < 0 || activeClipIndex >= filteredClips.length - 1}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    title="Nächster Clip"
+                  >
+                    <span className="hidden sm:inline">Nächster</span>
+                    <SkipForward className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {/* Right side of Row 1: Delete Clip Button */}
                 <button
-                  onClick={playNextClip}
-                  disabled={activeClipIndex < 0 || activeClipIndex >= filteredClips.length - 1}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none"
-                  title="Nächster Clip"
+                  onClick={() => handleDeleteClip(activeClip)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-rose-900/50 bg-rose-950/30 px-3 py-1.5 text-rose-300 hover:bg-rose-900/50 transition-colors shrink-0"
+                  title="Diesen Clip von der Festplatte löschen"
                 >
-                  <span className="hidden sm:inline">Nächster</span>
-                  <SkipForward className="h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Diesen Clip löschen</span>
                 </button>
               </div>
 
-              {/* Playback Speed & Auto-Play */}
-              <div className="flex items-center gap-2">
+              {/* Row 2: Speed, Auto-Play & Plant Sensitivity Helper */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-800/80">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Auto-Play */}
+                  <button
+                    type="button"
+                    onClick={() => setAutoPlayNext(!autoPlayNext)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                      autoPlayNext
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                        : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+                    }`}
+                    title={autoPlayNext ? "Auto-Play aktiv: Nächster Clip startet automatisch" : "Auto-Play deaktiviert"}
+                  >
+                    <span>🔁</span>
+                    <span>Auto-Play</span>
+                  </button>
+
+                  {/* Playback Speed */}
+                  <div className="flex items-center gap-1">
+                    <Gauge className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Tempo:</span>
+                    {[0.5, 1, 1.5, 2, 4].map((rate) => (
+                      <button
+                        key={rate}
+                        onClick={() => setSpeed(rate)}
+                        className={`rounded px-2 py-1 font-mono text-[11px] transition-all ${
+                          playbackRate === rate
+                            ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
+                            : "border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
+                        }`}
+                      >
+                        {rate}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Plant / False Alarm Sensitivity Helper Button */}
                 <button
                   type="button"
-                  onClick={() => setAutoPlayNext(!autoPlayNext)}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                    autoPlayNext
-                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
-                      : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+                  onClick={() => setShowSensitivityHelp(!showSensitivityHelp)}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs transition ${
+                    showSensitivityHelp
+                      ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-300 font-semibold"
+                      : "border-slate-800 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
                   }`}
-                  title={autoPlayNext ? "Auto-Play aktiv: Nächster Clip startet automatisch" : "Auto-Play deaktiviert"}
+                  title="Empfindlichkeit einstellen / Fehlalarme durch Pflanzen vermeiden"
                 >
-                  <span>🔁</span>
-                  <span className="hidden sm:inline">Auto-Play</span>
+                  <span>🌿</span>
+                  <span>Pflanzen & Empfindlichkeit anpassen</span>
                 </button>
-
-                <div className="flex items-center gap-1">
-                  <Gauge className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Tempo:</span>
-                  {[0.5, 1, 1.5, 2, 4].map((rate) => (
-                    <button
-                      key={rate}
-                      onClick={() => setSpeed(rate)}
-                      className={`rounded px-1.5 py-1 font-mono text-[11px] transition-all ${
-                        playbackRate === rate
-                          ? "bg-amber-500 text-slate-950 font-bold"
-                          : "border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
-                      }`}
-                    >
-                      {rate}x
-                    </button>
-                  ))}
-                </div>
               </div>
 
-              {/* Delete Clip */}
-              <button
-                onClick={() => handleDeleteClip(activeClip)}
-                className="inline-flex items-center gap-1 rounded-lg border border-rose-900/50 bg-rose-950/30 px-3 py-1.5 text-rose-300 hover:bg-rose-900/50 transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Diesen Clip löschen
-              </button>
+              {/* Sensitivity Guide Modal / Box */}
+              {showSensitivityHelp && (
+                <div className="mt-2.5 rounded-xl border border-emerald-500/40 bg-emerald-950/25 p-4 text-xs text-slate-200 shadow-xl">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm">
+                      <span>🌿</span>
+                      <span>Wie vermeide ich Fehlalarme durch wehende Pflanzen?</span>
+                    </div>
+                    <button
+                      onClick={() => setShowSensitivityHelp(false)}
+                      className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-white/5"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-slate-300 mb-3 leading-relaxed text-[11.5px]">
+                    Die Bewegungserkennung läuft direkt auf dem Prozessor der Kamera (z. B. Hikvision). Um Fehlalarme durch Sträucher oder Äste im Wind zu verhindern, gibt es 3 effektive Einstellungen in der Kamera:
+                  </p>
+                  <div className="grid gap-2.5 sm:grid-cols-3 text-[11px]">
+                    <div className="rounded-lg border border-white/10 bg-black/50 p-3">
+                      <strong className="text-white block mb-1 text-xs">1. Bereich maskieren (Zone)</strong>
+                      <span className="text-slate-400 leading-snug">
+                        Zeichne in der Kamera nur Haustür, Gehweg oder Einfahrt als Erkennungszone ein. Schließe Sträucher und Bäume einfach aus dem Raster aus.
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/50 p-3">
+                      <strong className="text-white block mb-1 text-xs">2. Empfindlichkeit senken</strong>
+                      <span className="text-slate-400 leading-snug">
+                        Senke den Schieberegler „Empfindlichkeit“ (Sensitivity) von z. B. 60 auf 25–40 %. Dadurch reagiert die Kamera nur noch auf größere Objekte.
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/50 p-3">
+                      <strong className="text-white block mb-1 text-xs">3. KI / Personenfilter</strong>
+                      <span className="text-slate-400 leading-snug">
+                        Aktiviere den Filter „Mensch / Fahrzeug“ (AcuSense). Die Kamera ignoriert Blätter, Regen, Tiere und Schatten dann komplett!
+                      </span>
+                    </div>
+                  </div>
+                  {cameras.find((c) => c.id === activeClip.cameraId)?.ip && (
+                    <div className="mt-3.5 pt-3 border-t border-emerald-500/20 flex items-center justify-between flex-wrap gap-2">
+                      <span className="text-[11.5px] text-slate-300">
+                        Kamera IP: <strong className="text-white font-mono">{cameras.find((c) => c.id === activeClip.cameraId)?.ip}</strong>
+                      </span>
+                      <a
+                        href={`http://${cameras.find((c) => c.id === activeClip.cameraId)?.ip}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3.5 py-1.5 text-xs transition shadow-md shadow-emerald-600/30 active:scale-95"
+                      >
+                        <span>🌐 Kamera-Weboberfläche öffnen</span>
+                        <span>➔</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
