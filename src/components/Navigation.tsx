@@ -164,7 +164,7 @@ export function Navigation({
           <Link
             href="/"
             className="group flex min-w-0 items-center gap-2.5 transition-opacity hover:opacity-90 sm:gap-3"
-            title="Zur Startseite / Scanner"
+            title="Zur Startseite / Monitore"
           >
             <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-slate-700/60 bg-slate-900 shadow-md shadow-black/40 ring-1 ring-white/10 group-hover:border-indigo-500/50 transition-colors">
               <Image
