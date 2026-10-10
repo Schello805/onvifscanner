@@ -45,10 +45,10 @@ const NAV_ITEMS: NavItem[] = [
     matchExact: true,
   },
   {
-    href: "/wall",
-    label: "Kamera-Wall",
-    mobileLabel: "Wall",
-    description: "Live-Monitor, Raster & Vollbild-Überwachung",
+    href: "/monitore",
+    label: "Monitore",
+    mobileLabel: "Monitore",
+    description: "Live-Kameraansicht, Raster & Vollbild-Überwachung",
     icon: LayoutGrid,
     color: "text-emerald-400",
     activeBg: "bg-emerald-500/15",
@@ -123,6 +123,9 @@ export function Navigation({
   const isItemActive = (item: NavItem) => {
     if (item.matchExact) {
       return pathname === item.href;
+    }
+    if (item.href === "/monitore") {
+      return pathname.startsWith("/monitore") || pathname.startsWith("/wall");
     }
     return pathname.startsWith(item.href);
   };

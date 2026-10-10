@@ -40,8 +40,8 @@ function Footer() {
           <Link href="/" className="text-slate-400 hover:text-white transition-colors">
             Scanner
           </Link>
-          <Link href="/wall" className="text-slate-400 hover:text-white transition-colors">
-            Kamera-Wall
+          <Link href="/monitore" className="text-slate-400 hover:text-white transition-colors">
+            Monitore
           </Link>
           <Link href="/recordings" className="text-slate-400 hover:text-white transition-colors">
             Aufnahmen

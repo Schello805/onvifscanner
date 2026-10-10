@@ -364,25 +364,25 @@ export default function HomePage() {
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
       setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
       if (results.length === 1) {
-        toast.success(`Kamera ${results[0].ip} zur Wall hinzugefügt.`);
+        toast.success(`Kamera ${results[0].ip} zu den Monitoren hinzugefügt.`);
       } else {
-        toast.success(`${results.length} Kameras zur Wall hinzugefügt.`);
+        toast.success(`${results.length} Kameras zu den Monitoren hinzugefügt.`);
       }
     } catch {
-      toast.error("Fehler beim Speichern auf der Wall.");
+      toast.error("Fehler beim Speichern unter Monitore.");
     }
   }
 
   async function removeFromWall(ip: string) {
-    if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von der Kamera-Wall entfernen?`)) return;
+    if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von den Monitoren entfernen?`)) return;
     try {
       const current = await loadWallData();
       const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
       setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
-      toast.info(`Kamera ${ip} von der Wall entfernt.`);
+      toast.info(`Kamera ${ip} von den Monitoren entfernt.`);
     } catch {
-      toast.error("Fehler beim Entfernen von der Wall.");
+      toast.error("Fehler beim Entfernen von den Monitoren.");
     }
   }
 
@@ -403,9 +403,9 @@ export default function HomePage() {
             ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/40"
             : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200 hover:bg-indigo-500/20"
         }`}
-        title={saved ? "Kamera ist auf der Wall. Klicken, um sie zu entfernen." : "Kamera zur Kamera-Wall hinzufügen"}
+        title={saved ? "Kamera ist unter Monitore gespeichert. Klicken, um sie zu entfernen." : "Kamera zu Monitore hinzufügen"}
       >
-        {saved ? "✓ Wall" : "+ Wall"}
+        {saved ? "✓ Monitore" : "+ Monitore"}
       </button>
     );
   }
@@ -1074,16 +1074,16 @@ export default function HomePage() {
                   type="button"
                   onClick={() => saveToWall(data.results)}
                   className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
-                  title="Alle gefundenen Kameras in der lokalen Kamera-Wall speichern"
+                  title="Alle gefundenen Kameras unter Monitore speichern"
                 >
                   <span>＋</span>
-                  <span>Alle zur Wall</span>
+                  <span>Alle zu Monitore</span>
                 </button>
                 <Link
-                  href="/wall"
+                  href="/monitore"
                   className="touch-manipulation cursor-pointer relative z-10 flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95"
                 >
-                  Wall öffnen
+                  Monitore öffnen
                 </Link>
                 <button
                   type="button"

@@ -293,7 +293,7 @@ export default function CameraWallPage() {
       return updated;
     });
     persist(next);
-    toast.success(`Kamera "${cam?.name || id}" von der Wall entfernt.`);
+    toast.success(`Kamera "${cam?.name || id}" von den Monitoren entfernt.`);
   }
 
   function saveCameraDetails() {
@@ -409,7 +409,7 @@ export default function CameraWallPage() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="text-2xl font-bold text-white sm:text-3xl">Kamera-Wall</h1>
+              <h1 className="text-2xl font-bold text-white sm:text-3xl">Monitore</h1>
               <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
                 {cameras.length} Kameras
               </span>
@@ -467,7 +467,7 @@ export default function CameraWallPage() {
         <div className="flex min-h-[55vh] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.02] px-6 text-center">
           <div className="mb-4 text-5xl">▦</div>
           <h2 className="text-xl font-semibold text-white">Noch keine Kamera gespeichert</h2>
-          <p className="mt-2 max-w-md text-sm text-slate-400">Starte einen Scan und speichere einzelne Kameras oder die gesamte Ergebnisliste für diese Wall.</p>
+          <p className="mt-2 max-w-md text-sm text-slate-400">Starte einen Scan und speichere einzelne Kameras oder die gesamte Ergebnisliste für die Monitore.</p>
           <Link href="/" className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Scanner öffnen</Link>
         </div>
       ) : (
@@ -697,12 +697,12 @@ export default function CameraWallPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`Möchtest du "${camera.name}" wirklich von der Wall entfernen?`)) {
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
                             removeCamera(camera.id);
                           }
                         }}
                         className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-red-950/40 border border-red-900/40 text-red-400 hover:bg-red-900/70 hover:text-red-200"
-                        title="Kamera von der Wall entfernen"
+                        title="Kamera von den Monitoren entfernen"
                       >
                         ✕
                       </button>
@@ -904,14 +904,14 @@ export default function CameraWallPage() {
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Möchtest du "${editDraft.name}" wirklich von der Wall entfernen?`)) {
+                  if (confirm(`Möchtest du "${editDraft.name}" wirklich von den Monitoren entfernen?`)) {
                     removeCamera(editingCameraId);
                     closeEditor();
                   }
                 }}
                 className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 active:scale-95 transition-all text-left sm:text-center"
               >
-                🗑 Von der Wall entfernen
+                🗑 Von den Monitoren entfernen
               </button>
               <div className="flex items-center justify-end gap-2">
                 <button
