@@ -665,6 +665,28 @@ export default function PlaybackPage() {
     setTimelineStartMin(start);
   };
 
+  // Zeitleiste auf "Jetzt" setzen: 2h-Fenster, aktuelle Zeit liegt im rechten Drittel
+  const goToNow = () => {
+    const parts = new Intl.DateTimeFormat("de-DE", {
+      timeZone: "Europe/Berlin",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date());
+    const hh = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+    const mm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+    const nowMin = hh * 60 + mm;
+    const span = 2 * 60;
+    setTimelineZoom(2);
+    setTimelineStartMin(Math.max(0, Math.min(1440 - span, nowMin - 90)));
+  };
+
+  // Beim ersten Laden immer mit "Jetzt" starten
+  useEffect(() => {
+    goToNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const panTimeline = (deltaMin: number) => {
     const span = timelineZoom * 60;
     setTimelineStartMin((prev) => Math.max(0, Math.min(1440 - span, prev + deltaMin)));
@@ -1817,6 +1839,21 @@ export default function PlaybackPage() {
                 </button>
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedDate !== getTodayStr()) {
+                  setSelectedDate(getTodayStr());
+                  setDatePreset("today");
+                }
+                goToNow();
+              }}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition"
+              title="Zeitleiste auf die aktuelle Uhrzeit setzen"
+            >
+              Jetzt
+            </button>
 
             {/* Zoom-Stufen */}
             <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/90 p-0.5 text-xs font-medium">
