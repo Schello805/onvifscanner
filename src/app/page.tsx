@@ -1133,29 +1133,7 @@ export default function CameraWallPage() {
                 </div>
               </div>
 
-              {/* Sensitivity & Camera Web GUI shortcut */}
-              {editingCameraId && cameras.find((c) => c.id === editingCameraId)?.ip && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-                  <div>
-                    <span className="font-semibold text-emerald-300 flex items-center gap-1.5">
-                      <span>🌿</span>
-                      <span>Empfindlichkeit & Pflanzen-Erkennung anpassen</span>
-                    </span>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">
-                      Die Erkennung läuft direkt auf dem Chip der Kamera. Öffne die Kamera-Weboberfläche ({cameras.find((c) => c.id === editingCameraId)?.ip}), um Zonen einzuzeichnen, Blätter/Bäume auszuschließen oder die Empfindlichkeit zu senken.
-                    </span>
-                  </div>
-                  <a
-                    href={`http://${cameras.find((c) => c.id === editingCameraId)?.ip}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-2 text-xs transition shadow-md shadow-emerald-600/30 active:scale-95"
-                  >
-                    <span>🌐 Weboberfläche öffnen</span>
-                    <span>➔</span>
-                  </a>
-                </div>
-              )}
+
             </div>
 
             {/* Sticky Footer */}
