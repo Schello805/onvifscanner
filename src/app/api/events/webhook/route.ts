@@ -91,7 +91,10 @@ export async function POST(req: Request) {
         try {
           const settings = await prisma.settings.findUnique({ where: { id: "default" } });
           if (settings?.ntfyTopic) {
-            const ntfyUrl = `https://ntfy.sh/${settings.ntfyTopic}`;
+            let server = (settings.ntfyServer || "").trim().replace(/\/+$/, "");
+            if (!server) server = "https://ntfy.sh";
+            else if (!/^https?:\/\//i.test(server)) server = `https://${server}`;
+            const ntfyUrl = `${server}/${encodeURIComponent(settings.ntfyTopic)}`;
             await fetch(ntfyUrl, {
               method: "POST",
               body: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,

@@ -62,6 +62,7 @@ model Settings {
   refresh     Int?
   autoCleanup Boolean? @default(true)
   ntfyTopic   String?
+  ntfyServer  String?
 }
 
 model DiscoveredDevice {

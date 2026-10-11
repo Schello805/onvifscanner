@@ -6,6 +6,7 @@ import { useToast } from "./ToastProvider";
 
 type SettingsData = {
   ntfyTopic: string | null;
+  ntfyServer: string | null;
   autoCleanup: boolean;
 };
 
@@ -19,6 +20,7 @@ export function SettingsModal({
   const { toast } = useToast();
   const [data, setData] = useState<SettingsData>({
     ntfyTopic: "",
+    ntfyServer: "",
     autoCleanup: true,
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +40,7 @@ export function SettingsModal({
       const json = await res.json();
       setData({
         ntfyTopic: json.ntfyTopic || "",
+        ntfyServer: json.ntfyServer || "",
         autoCleanup: json.autoCleanup ?? true,
       });
     } catch (e) {
@@ -55,6 +58,7 @@ export function SettingsModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ntfyTopic: data.ntfyTopic?.trim() || null,
+          ntfyServer: data.ntfyServer?.trim() || null,
           autoCleanup: data.autoCleanup,
         }),
       });
@@ -110,13 +114,23 @@ export function SettingsModal({
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-slate-300 font-medium mb-1">
                   <Bell className="w-4 h-4 text-emerald-400" />
-                  <span>Push-Benachrichtigungen (ntfy.sh)</span>
+                  <span>Push-Benachrichtigungen (ntfy)</span>
                 </div>
                 <div className="text-sm text-slate-400 mb-2 leading-relaxed">
-                  Trage hier dein ntfy Topic ein, um bei Bewegungserkennung sofort eine Push-Nachricht auf dein Smartphone zu erhalten.
+                  Trage deinen ntfy-Server und das Topic ein, um bei Bewegungserkennung sofort eine Push-Nachricht auf dein Smartphone zu erhalten. Ohne Server wird ntfy.sh verwendet.
                 </div>
                 <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
-                  <span className="text-slate-500 select-none">ntfy.sh/</span>
+                  <span className="text-slate-500 select-none">Server</span>
+                  <input
+                    type="text"
+                    className="grow text-slate-200"
+                    placeholder="https://ntfy.sh"
+                    value={data.ntfyServer || ""}
+                    onChange={(e) => setData({ ...data, ntfyServer: e.target.value })}
+                  />
+                </label>
+                <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
+                  <span className="text-slate-500 select-none">Topic</span>
                   <input
                     type="text"
                     className="grow text-slate-200"
