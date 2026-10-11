@@ -67,8 +67,12 @@ export async function GET(req: Request) {
           // Expected filename pattern: YYYY-MM-DD_HH-mm-ss...
           // e.g., 2026-10-09_12-30-00.mp4 or 2026-10-09_12-30-00-123456.mp4
           const dateMatch = file.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-          if (filterDate && dateMatch && dateMatch[1] !== filterDate) {
-            continue;
+          // Dateiname enthält Datum evtl. in UTC (ältere Aufnahmen) – daher nur grob vorfiltern (±1 Tag)
+          if (filterDate && dateMatch) {
+            const diffDays = Math.abs(
+              (Date.parse(`${dateMatch[1]}T00:00:00Z`) - Date.parse(`${filterDate}T00:00:00Z`)) / 86400000
+            );
+            if (diffDays > 1) continue;
           }
 
           const fullFilePath = path.join(camPath, file);
@@ -83,11 +87,31 @@ export async function GET(req: Request) {
             if (dateMatch) {
               dateStr = dateMatch[1];
               timeStr = `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}`;
-              isoDate = `${dateStr}T${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}Z`;
+
+              // Legacy: Name in UTC geschrieben? (Dateiende-Zeit liegt kurz nach der Namens-Zeit als UTC gelesen)
+              const utcMs = Date.parse(`${dateStr}T${timeStr}Z`);
+              if (!isNaN(utcMs) && Math.abs(stat.mtimeMs - utcMs) < 40 * 60 * 1000) {
+                const p = new Intl.DateTimeFormat("en-CA", {
+                  timeZone: "Europe/Berlin",
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  hourCycle: "h23",
+                }).formatToParts(new Date(utcMs));
+                const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
+                dateStr = `${g("year")}-${g("month")}-${g("day")}`;
+                timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
+              }
+              isoDate = `${dateStr}T${timeStr}Z`;
             } else {
               dateStr = stat.mtime.toISOString().slice(0, 10);
               timeStr = stat.mtime.toISOString().slice(11, 19);
             }
+
+            if (filterDate && dateStr !== filterDate) continue;
 
             const clipId = Buffer.from(fullFilePath).toString("base64url");
             clips.push({

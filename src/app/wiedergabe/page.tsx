@@ -238,6 +238,43 @@ function getYesterdayStr(): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Lädt die Video-Vorschau nur, solange das Element im sichtbaren Bereich ist.
+ * Verhindert, dass dutzende Videos gleichzeitig Speicher belegen.
+ */
+function LazyVideoThumb({ src, className }: { src: string; className?: string }) {
+  const holderRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = holderRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => setVisible(entries.some((e) => e.isIntersecting)),
+      { rootMargin: "100px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div ref={holderRef} className="absolute inset-0">
+      {visible && (
+        <video
+          src={src}
+          preload="metadata"
+          className={className}
+          muted
+          playsInline
+        />
+      )}
+    </div>
+  );
+}
+
 export default function PlaybackPage() {
   const { toast } = useToast();
   const [cameras, setCameras] = useState<CameraSimple[]>([]);
@@ -2372,12 +2409,9 @@ export default function PlaybackPage() {
                       {/* Play Button & Thumbnail */}
                       <td className="py-2 px-3">
                         <div className="relative h-12 w-20 bg-slate-900 rounded overflow-hidden group/thumb flex items-center justify-center shrink-0 border border-slate-700/50">
-                          <video
+                          <LazyVideoThumb
                             src={`${clip.streamUrl}#t=0.1`}
-                            preload="metadata"
                             className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity"
-                            muted
-                            playsInline
                           />
                           <button
                             onClick={() =>
@@ -2521,12 +2555,9 @@ export default function PlaybackPage() {
               >
                 <div>
                   <div className="relative w-full h-28 bg-slate-900 rounded-lg overflow-hidden mb-3 border border-slate-700/50 group/thumb flex items-center justify-center">
-                    <video
+                    <LazyVideoThumb
                       src={`${clip.streamUrl}#t=0.1`}
-                      preload="metadata"
                       className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity pointer-events-none"
-                      muted
-                      playsInline
                     />
                     <button
                       onClick={() =>
