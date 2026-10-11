@@ -589,7 +589,7 @@ export default function StorageManagementPage() {
                 <>
                   Letzter Wächter-Lauf:{" "}
                   <strong className="text-slate-300">
-                    {new Date(retentionStatus.lastRun).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr ({new Date(retentionStatus.lastRun).toLocaleDateString("de-DE")})
+                    {new Date(retentionStatus.lastRun).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" })} Uhr ({new Date(retentionStatus.lastRun).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin" })})
                   </strong>
                 </>
               ) : (

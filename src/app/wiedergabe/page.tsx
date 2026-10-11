@@ -1331,7 +1331,7 @@ export default function PlaybackPage() {
                                     <span>Peak: <strong className="text-slate-200">{cam.peakHour}</strong></span>
                                   )}
                                   {cam.lastEventAt && (
-                                    <span>· Letzte Erkennung: {new Date(cam.lastEventAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} Uhr</span>
+                                    <span>· Letzte Erkennung: {new Date(cam.lastEventAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Berlin" })} Uhr</span>
                                   )}
                                 </div>
                               </div>

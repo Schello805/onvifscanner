@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-3000}"
 export NODE_ENV="${NODE_ENV:-production}"
+export TZ="Europe/Berlin"
 
 cd "$APP_DIR"
 

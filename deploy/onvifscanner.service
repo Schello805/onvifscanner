@@ -12,6 +12,7 @@ Group=onvifscanner
 WorkingDirectory=/opt/onvifscanner
 EnvironmentFile=/etc/onvifscanner/onvifscanner.env
 Environment=NODE_ENV=production
+Environment=TZ=Europe/Berlin
 ExecStart=/usr/local/bin/onvifscanner-start
 Restart=always
 RestartSec=2

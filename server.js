@@ -1,3 +1,6 @@
+// Zeitzone global auf Berlin festlegen (auch für Kindprozesse wie MediaMTX/ffmpeg)
+process.env.TZ = "Europe/Berlin";
+
 const { createServer } = require("http");
 const next = require("next");
 
