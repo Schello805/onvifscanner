@@ -7,9 +7,12 @@ export function ConnectionWatcher() {
   const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let failures = 0;
+    let offline = false;
     // Only start polling after initial load
     const timeout = setTimeout(() => {
-      const interval = setInterval(async () => {
+      interval = setInterval(async () => {
         try {
           const res = await fetch("/api/health", { 
             cache: "no-store",
@@ -19,23 +22,27 @@ export function ConnectionWatcher() {
           
           if (!res.ok) throw new Error("HTTP error");
           
-          // If we were offline and now we are back online, reload the page to get fresh state
-          if (isOffline) {
+          failures = 0;
+          // If we were really offline and now we are back online, reload the page to get fresh state
+          if (offline) {
             window.location.reload();
           }
         } catch (error) {
-          // Fetch failed (network error, connection refused, or timeout)
-          if (!isOffline) {
+          // Only treat as offline after several consecutive failures
+          failures += 1;
+          if (failures >= 3 && !offline) {
+            offline = true;
             setIsOffline(true);
           }
         }
       }, 4000);
-
-      return () => clearInterval(interval);
     }, 5000);
 
-    return () => clearTimeout(timeout);
-  }, [isOffline]);
+    return () => {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, []);
 
   if (!isOffline) return null;
 
