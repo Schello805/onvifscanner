@@ -1420,13 +1420,17 @@ export default function PlaybackPage() {
 
       {/* Video Player Modal with Advanced NVR Controls */}
       {activeClip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-3 sm:p-6 md:p-8 backdrop-blur-md overflow-y-auto">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md overflow-hidden ${playerFullscreen ? 'p-0' : 'p-3 sm:p-6 md:p-8'}`}>
           <div
             ref={playerContainerRef}
-            className="relative w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]"
+            className={`group relative flex flex-col overflow-hidden bg-slate-950 transition-all ${
+              playerFullscreen
+                ? 'w-full h-full max-w-none rounded-none border-none'
+                : 'w-full max-w-4xl max-h-[92vh] rounded-2xl border border-slate-800 shadow-2xl my-auto'
+            }`}
           >
             {/* Player Header */}
-            <div className="flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-900/80 shrink-0">
+            <div className={`flex items-center justify-between p-3.5 border-b border-slate-800 bg-slate-900/80 shrink-0 transition-opacity duration-300 ${playerFullscreen ? 'absolute top-0 inset-x-0 z-20 opacity-0 group-hover:opacity-100' : 'relative'}`}>
               <div className="min-w-0 pr-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse"></span>
@@ -1485,17 +1489,17 @@ export default function PlaybackPage() {
             </div>
 
             {/* Scrollable Player Body: Ensures Video, Timeline, and Toolbar are ALWAYS visible on any display */}
-            <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 relative">
               {/* Video Element */}
-              <div className="relative bg-black flex items-center justify-center shrink-0 max-h-[38vh] sm:max-h-[44vh] overflow-hidden">
+              <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[38vh] sm:max-h-[44vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
                   key={activeClip.id}
                   src={activeClip.streamUrl}
-                  controls
+                  controls={!playerFullscreen}
                   autoPlay
                   playsInline
-                  className="w-full h-full max-h-[38vh] sm:max-h-[44vh] object-contain"
+                  className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[38vh] sm:max-h-[44vh]'}`}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                 onLoadedMetadata={(e) => {
@@ -1517,8 +1521,10 @@ export default function PlaybackPage() {
               />
             </div>
 
-            {/* In-Clip Motion Timeline & Exact Moments Bar */}
-            <div className="border-t border-slate-800 bg-slate-950/95 px-3 py-2.5">
+            {/* Combined Footer for Fullscreen / Normal */}
+            <div className={`flex flex-col shrink-0 transition-opacity duration-300 ${playerFullscreen ? 'absolute bottom-0 inset-x-0 z-20 opacity-0 group-hover:opacity-100 bg-slate-950/80 backdrop-blur-md' : 'relative'}`}>
+              {/* In-Clip Motion Timeline & Exact Moments Bar */}
+              <div className="border-t border-slate-800 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
@@ -1580,15 +1586,15 @@ export default function PlaybackPage() {
                           e.stopPropagation();
                           seekToOffset(ev.offsetSec);
                         }}
-                        className="absolute top-0 bottom-0 w-3 -ml-1.5 flex items-center justify-center cursor-pointer z-10 hover:scale-125 transition-transform"
+                        className="absolute top-0 bottom-0 w-3 -ml-1.5 flex items-center justify-center cursor-pointer z-10 hover:scale-125 transition-transform group/marker"
                         style={{ left: `${markerPct}%` }}
                         title={`⚡ ${ev.timeStr} Uhr (bei ${formatSeconds(ev.offsetSec)}) - Klick zum Abspielen`}
                       >
                         <div
-                          className={`w-1 h-full shadow-sm ${
+                          className={`w-[2px] h-full shadow-sm rounded-full ${
                             isCurrent
-                              ? "bg-amber-300 ring-2 ring-white scale-110 z-20"
-                              : "bg-amber-400 ring-1 ring-amber-300/80"
+                              ? "bg-amber-300 ring-2 ring-amber-200/50 scale-125 z-20"
+                              : "bg-amber-500/80 group-hover/marker:bg-amber-400 group-hover/marker:shadow-[0_0_8px_rgba(251,191,36,0.6)]"
                           }`}
                         />
                       </div>
@@ -1626,10 +1632,10 @@ export default function PlaybackPage() {
                   })}
                 </div>
               )}
-            </div>
+              </div>
 
-            {/* Advanced NVR Toolbar - Generous Spacing & Uncramped Layout */}
-            <div className="p-4 sm:p-5 pb-6 border-t border-slate-800 bg-slate-900/90 flex flex-col gap-3.5 text-xs shrink-0">
+              {/* Advanced NVR Toolbar - Generous Spacing & Uncramped Layout */}
+              <div className="p-4 sm:p-5 pb-6 border-t border-slate-800/50 flex flex-col gap-3.5 text-xs shrink-0">
               {/* Row 1: Playback Navigation & Skip Buttons */}
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1829,8 +1835,7 @@ export default function PlaybackPage() {
             </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* Modern High-Precision Timeline */}
       <div className="rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 sm:p-5 mb-6 shadow-2xl backdrop-blur-md">
@@ -2102,7 +2107,7 @@ export default function PlaybackPage() {
                 </div>
                 <div
                   className={`flex-1 bg-amber-400/80 shadow-[0_0_6px_#f59e0b] ${
-                    isHighZoom ? "w-1 bg-amber-300" : "w-0.5"
+                    isHighZoom ? "w-[2px] bg-amber-300" : "w-[1px]"
                   }`}
                 />
                 <div
