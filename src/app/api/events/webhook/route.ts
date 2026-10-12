@@ -67,6 +67,17 @@ export async function POST(req: Request) {
     }
 
     if (matchedCamera) {
+      const eventTime = new Date();
+      await prisma.camera.update({
+        where: { id: matchedCamera.id },
+        data: {
+          motionEventState: "active",
+          motionEventSource: "webhook",
+          motionEventLastSeen: eventTime,
+          motionEventCheckedAt: eventTime,
+          motionEventLastError: null,
+        },
+      });
       // Anti-flood debounce: Don't log if there was an alarm for this camera in the configured cooldown period
       const cooldownSec = matchedCamera.alarmCooldownSeconds || 30;
       const recent = await prisma.alarmLog.findFirst({
@@ -83,7 +94,7 @@ export async function POST(req: Request) {
           data: {
             cameraId: matchedCamera.id,
             message,
-            timestamp: new Date(),
+            timestamp: eventTime,
           },
         });
 

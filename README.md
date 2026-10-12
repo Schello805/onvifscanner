@@ -16,6 +16,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
 - **Kamera-Wall**: Speichert Scan-Ergebnisse lokal auf dem ONVIFscanner-Server und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
+- **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 
@@ -51,7 +52,19 @@ Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Da
 
 Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
-Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. Automatische Netzwerksuche und Bewegungserkennung sind standardmäßig deaktiviert und können bei Bedarf in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
+## Aufnahmemodi
+
+Für jede gespeicherte Kamera kann unter `Aufnahmen` oder direkt beim Bearbeiten der Kamera einer von drei Modi gewählt werden:
+
+- **Aus**: Es werden keine Videodateien geschrieben.
+- **Nur Bewegung (empfohlen)**: MediaMTX schreibt kurze Segmente in einen temporären Ringpuffer. Bei einem ONVIF-, Webhook- oder optionalen Bildanalyse-Ereignis werden nur die Segmente vom Vorlauf bis zum Ende des Nachlaufs in das Aufnahme-Archiv übernommen. Nicht benötigte Pufferdaten werden automatisch gelöscht.
+- **Daueraufnahme**: Der RTSP-Stream wird wie bisher ohne Unterbrechung in konfigurierbaren Segmenten archiviert.
+
+Standardmäßig nutzt die Bewegungsaufnahme 10 Sekunden Vorlauf und 30 Sekunden Nachlauf. Wiederholte Ereignisse verlängern das persistente Aufnahmefenster automatisch. Nach dem Nachlauf verbindet `ffmpeg` alle zugehörigen Ringpuffer-Segmente verlustfrei zu einem Bewegungsclip. Der temporäre Puffer liegt unter `data/motion-buffer`, Arbeitsdateien unter `data/motion-staging`; nur der fertige Clip wird in das gewählte Speicherziel übernommen. Aufnahmefenster und Ereignis-Zuordnung liegen in SQLite und überstehen dadurch einen Neustart der Anwendung.
+
+Unter `Aufnahmen` zeigt jede Kamera außerdem den Zustand ihrer Bewegungsquelle an: aktive ONVIF-PullPoint-Verbindung, Webhook, Snapshot-Fallback, laufende Prüfung oder einen konkreten Fehler. In der Wiedergabe ist jedes Bewegungsereignis direkt mit dem daraus erzeugten Clip verknüpft; die bisherige zeitbasierte Zuordnung bleibt als Fallback für ältere Aufnahmen erhalten.
+
+Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. ONVIF-Bewegungsereignisse und Kamera-Webhooks werden unabhängig davon verarbeitet. Automatische Netzwerksuche und die ältere, CPU-intensivere Snapshot-Bildanalyse sind standardmäßig deaktiviert und können in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
 
 ## Woher kommen die Streaming-URLs?
 
@@ -106,6 +119,9 @@ curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/script
 - `THUMBNAIL_MAX_CONCURRENCY` (default `2`): Max. parallele Thumbnail-Requests.
 - `THUMBNAIL_SHARP_CONCURRENCY` (default `2`): `sharp`/libvips Parallelität.
 - `THUMBNAIL_CACHE_TTL_MS` (default `10000`): Kurzzeit-Cache für generierte Vorschaubilder.
+- `MOTION_BUFFER_SEGMENT_SECONDS` (default `5`): Länge der temporären Ringpuffer-Segmente für Bewegungsaufnahmen.
+- `MOTION_BUFFER_DIR` (default `data/motion-buffer`): Lokales Verzeichnis für den temporären Ringpuffer.
+- `MOTION_STAGING_DIR` (default `data/motion-staging`): Arbeitsverzeichnis zum Zusammenführen eines Bewegungsclips.
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 

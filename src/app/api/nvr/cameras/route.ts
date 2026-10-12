@@ -29,7 +29,15 @@ export async function GET() {
       resolution: c.resolution,
       isOnline: c.status?.isOnline ?? false,
       recordEnabled: c.recordEnabled,
+      recordMode: c.recordMode,
       recordSegmentMinutes: c.recordSegmentMinutes,
+      motionPreRollSeconds: c.motionPreRollSeconds,
+      motionPostRollSeconds: c.motionPostRollSeconds,
+      motionEventState: c.motionEventState,
+      motionEventSource: c.motionEventSource,
+      motionEventLastSeen: c.motionEventLastSeen?.toISOString() ?? null,
+      motionEventCheckedAt: c.motionEventCheckedAt?.toISOString() ?? null,
+      motionEventLastError: c.motionEventLastError,
       storageTargetId: c.storageTargetId,
       storageTarget: c.storageTarget || defaultStorage || null,
       streamUris: (() => {
@@ -64,11 +72,25 @@ export async function PATCH(req: Request) {
 
     const updateData: Record<string, any> = {};
 
-    if (body.recordEnabled !== undefined) {
+    if (body.recordMode !== undefined) {
+      const recordMode = String(body.recordMode);
+      if (!['off', 'motion', 'continuous'].includes(recordMode)) {
+        return NextResponse.json({ error: "Ungültiger Aufnahmemodus." }, { status: 400 });
+      }
+      updateData.recordMode = recordMode;
+      updateData.recordEnabled = recordMode !== 'off';
+    } else if (body.recordEnabled !== undefined) {
       updateData.recordEnabled = Boolean(body.recordEnabled);
+      updateData.recordMode = body.recordEnabled ? 'motion' : 'off';
     }
     if (body.recordSegmentMinutes !== undefined) {
       updateData.recordSegmentMinutes = Math.max(1, Number(body.recordSegmentMinutes) || 15);
+    }
+    if (body.motionPreRollSeconds !== undefined) {
+      updateData.motionPreRollSeconds = Math.min(60, Math.max(0, Number(body.motionPreRollSeconds) || 0));
+    }
+    if (body.motionPostRollSeconds !== undefined) {
+      updateData.motionPostRollSeconds = Math.min(300, Math.max(5, Number(body.motionPostRollSeconds) || 30));
     }
     if (body.storageTargetId !== undefined) {
       updateData.storageTargetId = body.storageTargetId ? String(body.storageTargetId).trim() : null;

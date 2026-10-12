@@ -11,7 +11,10 @@ export type WallCamera = {
   model?: string;
   resolution?: string;
   recordEnabled?: boolean;
+  recordMode?: "off" | "motion" | "continuous";
   recordSegmentMinutes?: number;
+  motionPreRollSeconds?: number;
+  motionPostRollSeconds?: number;
   storageTargetId?: string | null;
   snapshotUris: string[];
   streamUris: string[];
@@ -131,7 +134,10 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         name: existing.name || camera.name,
         resolution: camera.resolution || existing.resolution,
         recordEnabled: existing.recordEnabled,
+        recordMode: existing.recordMode,
         recordSegmentMinutes: existing.recordSegmentMinutes,
+        motionPreRollSeconds: existing.motionPreRollSeconds,
+        motionPostRollSeconds: existing.motionPostRollSeconds,
         storageTargetId: existing.storageTargetId,
         snapshotUris: Array.from(new Set([...existing.snapshotUris, ...camera.snapshotUris])),
         streamUris: Array.from(new Set([...existing.streamUris, ...camera.streamUris])),

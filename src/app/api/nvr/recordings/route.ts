@@ -174,6 +174,7 @@ export async function DELETE(req: Request) {
     const targetPaths = targets.map((t) => path.resolve(t.path));
 
     let deletedCount = 0;
+    const deletedPaths: string[] = [];
 
     // Mode 1: Delete all recordings of specific camera(s) or all cameras
     if (deleteAll || cameraIds.length > 0) {
@@ -191,13 +192,22 @@ export async function DELETE(req: Request) {
             for (const file of files) {
               if (file.endsWith(".mp4") || file.endsWith(".m4s")) {
                 try {
-                  await fsp.unlink(path.join(camDirPath, file));
+                  const deletedPath = path.join(camDirPath, file);
+                  await fsp.unlink(deletedPath);
+                  deletedPaths.push(deletedPath);
                   deletedCount++;
                 } catch {}
               }
             }
           }
         } catch {}
+      }
+
+      if (deletedPaths.length) {
+        await prisma.motionRecording.updateMany({
+          where: { filePath: { in: deletedPaths } },
+          data: { status: "deleted", filePath: null },
+        });
       }
 
       return NextResponse.json({
@@ -224,9 +234,17 @@ export async function DELETE(req: Request) {
 
         if (fs.existsSync(resolved)) {
           await fsp.unlink(resolved);
+          deletedPaths.push(resolved);
           deletedCount++;
         }
       } catch {}
+    }
+
+    if (deletedPaths.length) {
+      await prisma.motionRecording.updateMany({
+        where: { filePath: { in: deletedPaths } },
+        data: { status: "deleted", filePath: null },
+      });
     }
 
     return NextResponse.json({

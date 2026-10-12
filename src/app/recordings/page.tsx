@@ -30,7 +30,15 @@ type CameraNvrItem = {
   resolution?: string;
   isOnline: boolean;
   recordEnabled: boolean;
+  recordMode: "off" | "motion" | "continuous";
   recordSegmentMinutes: number;
+  motionPreRollSeconds: number;
+  motionPostRollSeconds: number;
+  motionEventState: "unknown" | "probing" | "active" | "unsupported" | "error";
+  motionEventSource?: string | null;
+  motionEventLastSeen?: string | null;
+  motionEventCheckedAt?: string | null;
+  motionEventLastError?: string | null;
   storageTargetId?: string | null;
   storageTarget?: {
     id: string;
@@ -95,22 +103,22 @@ export default function RecordingsConfigPage() {
 
   // Single Camera Toggle
   const handleToggleRecord = async (cam: CameraNvrItem) => {
-    const nextState = !cam.recordEnabled;
+    const nextMode = cam.recordMode === "off" ? "motion" : "off";
     try {
       const res = await fetch("/api/nvr/cameras", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: cam.id, recordEnabled: nextState }),
+        body: JSON.stringify({ id: cam.id, recordMode: nextMode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Fehler beim Umschalten");
 
       setCameras((prev) =>
-        prev.map((c) => (c.id === cam.id ? { ...c, recordEnabled: nextState } : c))
+        prev.map((c) => (c.id === cam.id ? { ...c, recordEnabled: nextMode !== "off", recordMode: nextMode } : c))
       );
       toast.success(
-        nextState
-          ? `🔴 Daueraufnahme für "${cam.name}" aktiviert.`
+        nextMode !== "off"
+          ? `Bewegungsaufnahme für "${cam.name}" aktiviert.`
           : `Aufnahme für "${cam.name}" gestoppt.`
       );
     } catch (err: any) {
@@ -130,24 +138,56 @@ export default function RecordingsConfigPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ids: idsToUpdate,
-          recordEnabled: enabled,
+          recordMode: enabled ? "motion" : "off",
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Fehler beim Aktualisieren");
 
       setCameras((prev) =>
-        prev.map((c) => (idsToUpdate.includes(c.id) ? { ...c, recordEnabled: enabled } : c))
+        prev.map((c) => (idsToUpdate.includes(c.id) ? { ...c, recordEnabled: enabled, recordMode: enabled ? "motion" : "off" } : c))
       );
       toast.success(
         enabled
-          ? `🔴 Daueraufnahme für ${idsToUpdate.length} Kamera(s) aktiviert.`
+          ? `Bewegungsaufnahme für ${idsToUpdate.length} Kamera(s) aktiviert.`
           : `Aufnahme für ${idsToUpdate.length} Kamera(s) gestoppt.`
       );
     } catch (err: any) {
       toast.error(err.message || "Fehler bei der Aufnahmesteuerung.");
     } finally {
       setBatchLoading(false);
+    }
+  };
+
+  const handleUpdateRecordMode = async (cameraId: string, recordMode: CameraNvrItem["recordMode"]) => {
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: cameraId, recordMode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fehler beim Ändern des Aufnahmemodus");
+      setCameras((prev) => prev.map((camera) => camera.id === cameraId
+        ? { ...camera, recordMode, recordEnabled: recordMode !== "off" }
+        : camera));
+      toast.success(recordMode === "motion" ? "Bewegungsaufnahme aktiviert." : recordMode === "continuous" ? "Daueraufnahme aktiviert." : "Aufnahme gestoppt.");
+    } catch (error: any) {
+      toast.error(error.message || "Aufnahmemodus konnte nicht geändert werden.");
+    }
+  };
+
+  const handleUpdateMotionTiming = async (cameraId: string, field: "motionPreRollSeconds" | "motionPostRollSeconds", value: number) => {
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: cameraId, [field]: value }),
+      });
+      if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+      setCameras((prev) => prev.map((camera) => camera.id === cameraId ? { ...camera, [field]: value } : camera));
+    } catch {
+      toast.error("Vor-/Nachlauf konnte nicht gespeichert werden.");
     }
   };
 
@@ -335,16 +375,16 @@ export default function RecordingsConfigPage() {
             onClick={() => handleBatchToggleRecord(true, true)}
             disabled={batchLoading}
             className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-semibold shadow-sm active:scale-95 transition-all"
-            title="Alle im System gespeicherten Kameras auf Daueraufnahme schalten"
+            title="Bewegungsaufnahme für alle Kameras aktivieren"
           >
             <Radio className="h-3.5 w-3.5" />
-            Alle aufnehmen
+            Alle bei Bewegung
           </button>
           <button
             onClick={() => handleBatchToggleRecord(false, true)}
             disabled={batchLoading}
             className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 text-xs font-medium transition-all"
-            title="Alle aktiven Daueraufnahmen stoppen"
+            title="Alle aktiven Aufnahmen stoppen"
           >
             Alle stoppen
           </button>
@@ -572,7 +612,7 @@ export default function RecordingsConfigPage() {
                         {cam.recordEnabled && (
                           <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-200 shadow-sm animate-pulse">
                             <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-                            REC
+                            {cam.recordMode === "motion" ? "MOTION" : "REC"}
                           </span>
                         )}
                         <span
@@ -590,6 +630,35 @@ export default function RecordingsConfigPage() {
                           </span>
                         )}
                       </div>
+                      {cam.recordMode === "motion" && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-medium">
+                          <span
+                            className={`rounded-full border px-2 py-0.5 ${
+                              cam.motionEventState === "active"
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                : cam.motionEventState === "probing"
+                                ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                                : "border-rose-500/40 bg-rose-500/10 text-rose-300"
+                            }`}
+                            title={cam.motionEventLastError || "Status des Bewegungssignals"}
+                          >
+                            {cam.motionEventState === "active"
+                              ? `✓ Ereignisse aktiv (${cam.motionEventSource || "ONVIF"})`
+                              : cam.motionEventState === "probing"
+                              ? "Ereignisquelle wird geprüft"
+                              : cam.motionEventState === "unsupported"
+                              ? "ONVIF-Ereignisse nicht unterstützt"
+                              : cam.motionEventState === "error"
+                              ? "Ereignisquelle gestört"
+                              : "Ereignisquelle noch unbekannt"}
+                          </span>
+                          {cam.motionEventLastSeen && (
+                            <span className="text-slate-500" title={new Date(cam.motionEventLastSeen).toLocaleString("de-DE")}>
+                              letzte Bewegung {new Date(cam.motionEventLastSeen).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -607,12 +676,24 @@ export default function RecordingsConfigPage() {
                         cam.recordEnabled ? "bg-white" : "bg-rose-500"
                       }`}
                     />
-                    {cam.recordEnabled ? "🔴 REC Aktiv" : "Aufnahme Start"}
+                    {cam.recordEnabled ? (cam.recordMode === "motion" ? "Motion Aktiv" : "🔴 REC Aktiv") : "Aufnahme Start"}
                   </button>
                 </div>
 
                 {/* Settings Grid */}
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
+                  <div className="col-span-2">
+                    <label className="text-[11px] text-slate-400 block mb-1 font-medium">Aufnahmemodus</label>
+                    <select
+                      value={cam.recordMode || (cam.recordEnabled ? "motion" : "off")}
+                      onChange={(event) => handleUpdateRecordMode(cam.id, event.target.value as CameraNvrItem["recordMode"])}
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500"
+                    >
+                      <option value="off">Aus</option>
+                      <option value="motion">Nur Bewegung (empfohlen)</option>
+                      <option value="continuous">Daueraufnahme</option>
+                    </select>
+                  </div>
                   <div>
                     <label className="text-[11px] text-slate-400 block mb-1 font-medium">
                       Ziel-Speichermedium
@@ -633,8 +714,32 @@ export default function RecordingsConfigPage() {
                       })}
                     </select>
                   </div>
+                  {cam.recordMode === "motion" && (
+                    <>
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1 font-medium">Vorlauf</label>
+                        <select
+                          value={cam.motionPreRollSeconds ?? 10}
+                          onChange={(event) => handleUpdateMotionTiming(cam.id, "motionPreRollSeconds", Number(event.target.value))}
+                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
+                        >
+                          {[0, 5, 10, 15, 30].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1 font-medium">Nachlauf</label>
+                        <select
+                          value={cam.motionPostRollSeconds || 30}
+                          onChange={(event) => handleUpdateMotionTiming(cam.id, "motionPostRollSeconds", Number(event.target.value))}
+                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
+                        >
+                          {[10, 20, 30, 60, 120].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
 
-                  <div>
+                  {cam.recordMode === "continuous" && <div>
                     <label className="text-[11px] text-slate-400 block mb-1 font-medium">
                       Segmentlänge
                     </label>
@@ -648,7 +753,7 @@ export default function RecordingsConfigPage() {
                       <option value="30">30 Minuten</option>
                       <option value="60">60 Minuten</option>
                     </select>
-                  </div>
+                  </div>}
                 </div>
 
                 {/* Footer Quick Links */}

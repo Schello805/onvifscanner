@@ -39,6 +39,9 @@ export async function GET(req: Request) {
         camera: {
           select: { id: true, name: true },
         },
+        motionRecording: {
+          select: { id: true, status: true, filePath: true, startedAt: true, endedAt: true },
+        },
       },
     });
 
@@ -53,6 +56,8 @@ export async function GET(req: Request) {
       const month = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
       const evDateStr = `${year}-${month}-${day}`;
+      const recordingPath = ev.motionRecording?.status === "ready" ? ev.motionRecording.filePath : null;
+      const clipId = recordingPath ? Buffer.from(recordingPath).toString("base64url") : null;
 
       return {
         id: ev.id,
@@ -63,6 +68,10 @@ export async function GET(req: Request) {
         timeStr,
         totalMinutes,
         message: ev.message || "Bewegung erkannt",
+        motionRecordingId: ev.motionRecording?.id ?? null,
+        motionRecordingStatus: ev.motionRecording?.status ?? null,
+        clipId,
+        streamUrl: clipId ? `/api/nvr/recordings/stream?clipId=${clipId}` : null,
       };
     });
 

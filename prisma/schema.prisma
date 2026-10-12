@@ -15,45 +15,54 @@ model Camera {
   manufacturer    String?
   model           String?
   resolution      String?
-  snapshotUris    String   // JSON array
-  streamUris      String   // JSON array
+  snapshotUris    String // JSON array
+  streamUris      String // JSON array
   username        String?
   password        String?
   overlayPosition String?
   savedAt         DateTime @default(now())
   sortOrder       Int      @default(0)
-  
-  recordEnabled        Boolean  @default(false)
-  recordSegmentMinutes Int      @default(15)
-  alarmCooldownSeconds Int      @default(30)
-  storageTargetId      String?
-  storageTarget        StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
 
-  status          DeviceStatus?
-  alarms          AlarmLog[]
+  recordEnabled         Boolean        @default(false)
+  recordMode            String         @default("off") // off | motion | continuous
+  recordSegmentMinutes  Int            @default(15)
+  motionPreRollSeconds  Int            @default(10)
+  motionPostRollSeconds Int            @default(30)
+  motionEventState      String         @default("unknown") // unknown | probing | active | unsupported | error
+  motionEventSource     String?
+  motionEventLastSeen   DateTime?
+  motionEventCheckedAt  DateTime?
+  motionEventLastError  String?
+  alarmCooldownSeconds  Int            @default(30)
+  storageTargetId       String?
+  storageTarget         StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
+
+  status           DeviceStatus?
+  alarms           AlarmLog[]
+  motionRecordings MotionRecording[]
 }
 
 model StorageTarget {
-  id              String   @id @default(cuid())
-  name            String
-  path            String   @unique
-  isDefault       Boolean  @default(false)
-  enabled         Boolean  @default(true)
-  maxDays         Int      @default(14)
-  minFreeSpaceGb  Int      @default(10)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  path           String   @unique
+  isDefault      Boolean  @default(false)
+  enabled        Boolean  @default(true)
+  maxDays        Int      @default(14)
+  minFreeSpaceGb Int      @default(10)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  cameras         Camera[]
+  cameras Camera[]
 }
 
 model DeviceStatus {
-  id         String   @id @default(cuid())
-  cameraId   String   @unique
-  camera     Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
-  isOnline   Boolean  @default(true)
-  lastSeen   DateTime @default(now())
-  pingFailures Int    @default(0)
+  id           String   @id @default(cuid())
+  cameraId     String   @unique
+  camera       Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  isOnline     Boolean  @default(true)
+  lastSeen     DateTime @default(now())
+  pingFailures Int      @default(0)
 }
 
 model Settings {
@@ -66,24 +75,46 @@ model Settings {
 }
 
 model DiscoveredDevice {
-  id              String   @id
-  ip              String
-  name            String
-  hostname        String?
-  manufacturer    String?
-  model           String?
-  snapshotUris    String   // JSON array
-  streamUris      String   // JSON array
-  username        String?
-  password        String?
-  discoveredAt    DateTime @default(now())
+  id           String   @id
+  ip           String
+  name         String
+  hostname     String?
+  manufacturer String?
+  model        String?
+  snapshotUris String // JSON array
+  streamUris   String // JSON array
+  username     String?
+  password     String?
+  discoveredAt DateTime @default(now())
 }
 
 model AlarmLog {
-  id         String   @id @default(cuid())
-  cameraId   String
-  camera     Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
-  timestamp  DateTime @default(now())
-  imageUrl   String?  // base64 or path
-  message    String?
+  id                String           @id @default(cuid())
+  cameraId          String
+  camera            Camera           @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  timestamp         DateTime         @default(now())
+  imageUrl          String? // base64 or path
+  message           String?
+  motionRecordingId String?
+  motionRecording   MotionRecording? @relation(fields: [motionRecordingId], references: [id], onDelete: SetNull)
+
+  @@index([motionRecordingId])
+}
+
+model MotionRecording {
+  id           String     @id @default(cuid())
+  cameraId     String
+  camera       Camera     @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  startedAt    DateTime
+  endedAt      DateTime
+  status       String     @default("buffering") // buffering | merging | ready | failed | deleted
+  filePath     String?
+  segmentCount Int        @default(0)
+  error        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  events       AlarmLog[]
+
+  @@index([cameraId, status])
+  @@index([startedAt])
 }

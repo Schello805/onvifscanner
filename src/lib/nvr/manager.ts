@@ -8,9 +8,19 @@ const MEDIA_MTX_API = process.env.MEDIAMTX_API_URL ?? "http://127.0.0.1:9997";
 
 export type CameraNvrConfig = {
   recordEnabled: boolean;
+  recordMode: "off" | "motion" | "continuous";
   recordSegmentMinutes: number;
+  motionPreRollSeconds: number;
+  motionPostRollSeconds: number;
   storageTargetId?: string | null;
 };
+
+const MOTION_BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGMENT_SECONDS) || 5);
+
+function effectiveRecordMode(camera: { recordMode?: string | null; recordEnabled: boolean }) {
+  if (camera.recordMode === "motion" || camera.recordMode === "continuous") return camera.recordMode;
+  return camera.recordEnabled ? "motion" : "off";
+}
 
 /**
  * Builds the MediaMTX RTSP source URL with credentials for a camera.
@@ -92,13 +102,21 @@ export async function syncCameraWithMediaMtx(cameraId: string): Promise<{ ok: bo
       }
     }
 
-    const segmentDuration = `${Math.max(1, camera.recordSegmentMinutes || 15)}m`;
-    const recordPattern = path.join(targetPath, camera.id, "%Y-%m-%d_%H-%M-%S");
+    const recordMode = effectiveRecordMode(camera);
+    const recordingActive = recordMode !== "off";
+    const motionBufferRoot = process.env.MOTION_BUFFER_DIR || path.join(process.cwd(), "data", "motion-buffer");
+    const motionBufferDir = path.join(motionBufferRoot, camera.id);
+    const recordDirectory = recordMode === "motion" ? motionBufferDir : cameraRecordDir;
+    fs.mkdirSync(recordDirectory, { recursive: true });
+    const segmentDuration = recordMode === "motion"
+      ? `${MOTION_BUFFER_SEGMENT_SECONDS}s`
+      : `${Math.max(1, camera.recordSegmentMinutes || 15)}m`;
+    const recordPattern = path.join(recordDirectory, "%Y-%m-%d_%H-%M-%S-%f");
 
     const mtxConfig: Record<string, any> = {
       source: sourceUrl,
-      sourceOnDemand: !camera.recordEnabled, // 24/7 if recordEnabled, otherwise on-demand
-      record: camera.recordEnabled,
+      sourceOnDemand: !recordingActive,
+      record: recordingActive,
       recordPath: recordPattern,
       recordFormat: "fmp4",
       recordPartDuration: "1s",

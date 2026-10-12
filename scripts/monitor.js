@@ -1,9 +1,11 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
 const { OnvifEventManager } = require('./onvif-events');
+const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
+const motionRecorder = new MotionRecorder(prisma);
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
 const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION === 'true';
@@ -13,6 +15,7 @@ let isMonitoring = false;
 let cycleRunning = false;
 let lastFrames = {};
 const monitorTimers = [];
+let legacyRecordingModesMigrated = false;
 
 async function mapWithConcurrency(items, concurrency, task) {
   let nextIndex = 0;
@@ -53,6 +56,13 @@ async function runMonitorCycle() {
   }
   cycleRunning = true;
   try {
+    if (!legacyRecordingModesMigrated) {
+      await prisma.camera.updateMany({
+        where: { recordEnabled: true, recordMode: 'off' },
+        data: { recordMode: 'motion' },
+      });
+      legacyRecordingModesMigrated = true;
+    }
     const cameras = await prisma.camera.findMany();
     const cameraChecks = await mapWithConcurrency(cameras, 8, async (cam) => {
       // First try RTSP port, fallback to HTTP port 80 if needed
@@ -151,6 +161,16 @@ async function runMotionDetection(cameras) {
                   cameraId: cam.id,
                   message: "Bewegung erkannt"
                }
+            });
+            await prisma.camera.update({
+              where: { id: cam.id },
+              data: {
+                motionEventState: 'active',
+                motionEventSource: 'snapshot',
+                motionEventLastSeen: new Date(),
+                motionEventCheckedAt: new Date(),
+                motionEventLastError: null,
+              },
             });
             const oldEvents = await prisma.alarmLog.findMany({
               where: { cameraId: cam.id },
@@ -254,9 +274,13 @@ async function syncMediaMtxPaths(cameras) {
            } catch(e) {}
         }
 
+        const recordMode = cam.recordMode === 'continuous' || cam.recordMode === 'motion'
+          ? cam.recordMode
+          : (cam.recordEnabled ? 'motion' : 'off');
+        const recordingActive = recordMode !== 'off';
         let recordPath = null;
         let segmentDuration = "15m";
-        if (cam.recordEnabled) {
+        if (recordingActive) {
           const fs = require('fs');
           const path = require('path');
           let targetDir = defaultStoragePath;
@@ -264,20 +288,26 @@ async function syncMediaMtxPaths(cameras) {
             const target = await prisma.storageTarget.findUnique({ where: { id: cam.storageTargetId } });
             if (target && target.enabled) targetDir = target.path;
           }
-          const camRecordDir = path.join(targetDir, cam.id);
+          const camRecordDir = recordMode === 'motion'
+            ? motionBufferDirectory(cam.id)
+            : path.join(targetDir, cam.id);
           if (!fs.existsSync(camRecordDir)) {
             try { fs.mkdirSync(camRecordDir, { recursive: true }); } catch {}
           }
-          recordPath = path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S');
-          segmentDuration = `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
+          recordPath = recordMode === 'motion'
+            ? motionBufferRecordPattern(cam.id)
+            : path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S-%f');
+          segmentDuration = recordMode === 'motion'
+            ? `${BUFFER_SEGMENT_SECONDS}s`
+            : `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
         }
 
         desiredPaths[cam.id] = {
           source: uri,
-          sourceOnDemand: !cam.recordEnabled,
+          sourceOnDemand: !recordingActive,
           rtspTransport: "tcp",
-          record: Boolean(cam.recordEnabled),
-          ...(cam.recordEnabled ? {
+          record: recordingActive,
+          ...(recordingActive ? {
             recordPath,
             recordFormat: "fmp4",
             recordPartDuration: "1s",
@@ -338,6 +368,7 @@ async function runRetentionJob() {
 
       let targetDeleted = 0;
       let targetFreed = 0;
+      const deletedPaths = [];
 
       const clips = [];
       const walk = async (dir) => {
@@ -368,6 +399,7 @@ async function runRetentionJob() {
         if (now - clip.mtimeMs > maxAgeMs) {
           try {
             await fsp.unlink(clip.fullPath);
+            deletedPaths.push(clip.fullPath);
             targetDeleted++;
             targetFreed += clip.size;
           } catch {}
@@ -386,6 +418,7 @@ async function runRetentionJob() {
             if (currentFreeBytes >= minFreeBytes) break;
             try {
               await fsp.unlink(clip.fullPath);
+              deletedPaths.push(clip.fullPath);
               targetDeleted++;
               targetFreed += clip.size;
               currentFreeBytes += clip.size;
@@ -410,6 +443,13 @@ async function runRetentionJob() {
         } catch {}
       };
       await cleanEmptyDirs(target.path);
+
+      if (deletedPaths.length) {
+        await prisma.motionRecording.updateMany({
+          where: { filePath: { in: deletedPaths } },
+          data: { status: 'deleted', filePath: null },
+        }).catch(() => undefined);
+      }
 
       totalDeleted += targetDeleted;
       totalFreed += targetFreed;
@@ -450,6 +490,7 @@ function startMonitor() {
   
   // Start ONVIF event listener
   onvifEvents.start();
+  motionRecorder.start();
 
   // Run immediately, then every 60 seconds
   void runMonitorCycle();
@@ -467,6 +508,7 @@ function startMonitor() {
 
 async function stopMonitor() {
   onvifEvents.stop();
+  motionRecorder.stop();
   for (const timer of monitorTimers) clearTimeout(timer);
   monitorTimers.length = 0;
   isMonitoring = false;

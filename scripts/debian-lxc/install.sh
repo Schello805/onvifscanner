@@ -53,6 +53,8 @@ ensure_user() {
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/recordings"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-buffer"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-staging"
   install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
   install -d -o root -g root /etc/onvifscanner
 }
@@ -71,6 +73,8 @@ checkout_repo() {
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/recordings"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-buffer"
+  install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-staging"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
 
@@ -102,6 +106,9 @@ THUMBNAIL_CACHE_TTL_MS=10000
 MONITOR_INTERVAL_MS=60000
 ENABLE_AUTO_DISCOVERY=false
 ENABLE_MOTION_DETECTION=false
+
+# Motion recording ring buffer
+MOTION_BUFFER_SEGMENT_SECONDS=5
 EOF
     chmod 0640 "$ENV_FILE"
     chown root:"$APP_USER" "$ENV_FILE"

@@ -23,7 +23,10 @@ type CameraEditDraft = {
   group: string;
   overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   recordEnabled: boolean;
+  recordMode: "off" | "motion" | "continuous";
   recordSegmentMinutes: number;
+  motionPreRollSeconds: number;
+  motionPostRollSeconds: number;
   storageTargetId: string;
 };
 
@@ -300,7 +303,10 @@ export default function CameraWallPage() {
       group: camera.group ?? "",
       overlayPosition: camera.overlayPosition ?? "top-left",
       recordEnabled: Boolean(camera.recordEnabled),
+      recordMode: camera.recordMode || (camera.recordEnabled ? "motion" : "off"),
       recordSegmentMinutes: camera.recordSegmentMinutes || 15,
+      motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
+      motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
       storageTargetId: camera.storageTargetId || "",
     });
     setShowPassword(false);
@@ -313,22 +319,22 @@ export default function CameraWallPage() {
   }
 
   async function toggleRecord(camera: WallCamera) {
-    const nextState = !camera.recordEnabled;
+    const nextMode: NonNullable<WallCamera["recordMode"]> = camera.recordMode === "off" || !camera.recordEnabled ? "motion" : "off";
     setRecordLoading((prev) => new Set(prev).add(camera.id));
     try {
       const res = await fetch("/api/nvr/cameras", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: camera.id, recordEnabled: nextState }),
+        body: JSON.stringify({ id: camera.id, recordMode: nextMode }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Fehler beim Ändern der Aufnahme");
 
-      const next = cameras.map((c) => (c.id === camera.id ? { ...c, recordEnabled: nextState } : c));
+      const next = cameras.map((c) => (c.id === camera.id ? { ...c, recordEnabled: nextMode !== "off", recordMode: nextMode } : c));
       persist(next);
       toast.success(
-        nextState
-          ? `🔴 Daueraufnahme für "${camera.name}" gestartet.`
+        nextMode !== "off"
+          ? `Bewegungsaufnahme für "${camera.name}" gestartet.`
           : `Aufnahme für "${camera.name}" beendet.`
       );
     } catch (err: any) {
@@ -344,7 +350,7 @@ export default function CameraWallPage() {
 
   async function toggleAllRecord(enable: boolean) {
     if (enable && cameras.length === 0) return;
-    if (!enable && !confirm("Möchtest du wirklich alle laufenden Daueraufnahmen beenden?")) {
+    if (!enable && !confirm("Möchtest du wirklich alle laufenden Aufnahmen beenden?")) {
       return;
     }
     setBatchRecordLoading(true);
@@ -352,16 +358,16 @@ export default function CameraWallPage() {
       const res = await fetch("/api/nvr/cameras", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true, recordEnabled: enable }),
+        body: JSON.stringify({ all: true, recordMode: enable ? "motion" : "off" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Fehler bei der Aufnahmesteuerung");
 
-      const next = cameras.map((c) => ({ ...c, recordEnabled: enable }));
+      const next = cameras.map((c) => ({ ...c, recordEnabled: enable, recordMode: enable ? "motion" as const : "off" as const }));
       persist(next);
       toast.success(
         enable
-          ? `🔴 Daueraufnahme für alle ${cameras.length} Kameras gestartet.`
+          ? `Bewegungsaufnahme für alle ${cameras.length} Kameras gestartet.`
           : `Alle Kamera-Aufnahmen beendet.`
       );
     } catch (err: any) {
@@ -409,7 +415,10 @@ export default function CameraWallPage() {
       group: editDraft.group.trim() || undefined,
       overlayPosition: editDraft.overlayPosition,
       recordEnabled: editDraft.recordEnabled,
+      recordMode: editDraft.recordMode,
       recordSegmentMinutes: editDraft.recordSegmentMinutes,
+      motionPreRollSeconds: editDraft.motionPreRollSeconds,
+      motionPostRollSeconds: editDraft.motionPostRollSeconds,
       storageTargetId: editDraft.storageTargetId || null,
     } : camera);
 
@@ -419,7 +428,10 @@ export default function CameraWallPage() {
       body: JSON.stringify({
         id: editingCameraId,
         recordEnabled: editDraft.recordEnabled,
+        recordMode: editDraft.recordMode,
         recordSegmentMinutes: editDraft.recordSegmentMinutes,
+        motionPreRollSeconds: editDraft.motionPreRollSeconds,
+        motionPostRollSeconds: editDraft.motionPostRollSeconds,
         storageTargetId: editDraft.storageTargetId || null,
       })
     });
@@ -527,7 +539,7 @@ export default function CameraWallPage() {
                   disabled={batchRecordLoading}
                   onClick={() => void toggleAllRecord(false)}
                   className="rounded bg-rose-950/70 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-500/40 hover:bg-rose-900 transition disabled:opacity-50"
-                  title="Alle laufenden Daueraufnahmen beenden"
+                  title="Alle laufenden Aufnahmen beenden"
                 >
                   Alle stoppen
                 </button>
@@ -545,10 +557,10 @@ export default function CameraWallPage() {
                 disabled={batchRecordLoading}
                 onClick={() => void toggleAllRecord(true)}
                 className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 px-2.5 py-1 text-xs font-semibold text-slate-300 transition shadow-sm disabled:opacity-50"
-                title="Daueraufnahme für alle Kameras starten"
+                title="Bewegungsaufnahme für alle Kameras starten"
               >
                 <span className="text-rose-400">⏺</span>
-                <span>Alle aufnehmen</span>
+                <span>Alle bei Bewegung</span>
               </button>
             ) : null}
           </div>
@@ -839,13 +851,13 @@ export default function CameraWallPage() {
                             ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400/50'
                             : 'bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30 border border-white/10'
                         }`}
-                        title={camera.recordEnabled ? `Daueraufnahme für "${camera.name}" beenden` : `Daueraufnahme für "${camera.name}" starten`}
+                        title={camera.recordEnabled ? `Aufnahme für "${camera.name}" beenden` : `Bewegungsaufnahme für "${camera.name}" starten`}
                       >
                         <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
                           {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
                         </span>
                         <span className="hidden sm:inline">
-                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "REC Stop" : "Aufnahme"}
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? (camera.recordMode === "motion" ? "Motion Stop" : "REC Stop") : "Aufnahme"}
                         </span>
                       </button>
 
@@ -1087,18 +1099,32 @@ export default function CameraWallPage() {
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={editDraft.recordEnabled}
-                      onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked })}
+                      checked={editDraft.recordMode !== "off"}
+                      onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked, recordMode: e.target.checked ? "motion" : "off" })}
                       className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
                     />
                     <div className="min-w-0">
-                      <span className="font-semibold text-white block text-xs">🔴 24/7 NVR-Daueraufnahme</span>
-                      <span className="text-[10px] text-slate-400 block truncate">RTSP-Stream automatisch aufzeichnen</span>
+                      <span className="font-semibold text-white block text-xs">Aufnahme aktivieren</span>
+                      <span className="text-[10px] text-slate-400 block truncate">Standardmäßig nur erkannte Bewegungen speichern</span>
                     </div>
                   </label>
 
                   {editDraft.recordEnabled && (
                     <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t border-rose-500/20 text-xs">
+                      <label className="grid gap-1 sm:col-span-2">
+                        <span className="text-slate-400 text-[11px]">Aufnahmemodus:</span>
+                        <select
+                          value={editDraft.recordMode}
+                          onChange={(e) => {
+                            const recordMode = e.target.value as CameraEditDraft["recordMode"];
+                            setEditDraft({ ...editDraft, recordMode, recordEnabled: recordMode !== "off" });
+                          }}
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
+                        >
+                          <option value="motion">Nur Bewegung (empfohlen)</option>
+                          <option value="continuous">Daueraufnahme</option>
+                        </select>
+                      </label>
                       <label className="grid gap-1">
                         <span className="text-slate-400 text-[11px]">Speicherziel:</span>
                         <select
@@ -1114,8 +1140,24 @@ export default function CameraWallPage() {
                           ))}
                         </select>
                       </label>
+                      {editDraft.recordMode === "motion" && (
+                        <>
+                          <label className="grid gap-1">
+                            <span className="text-slate-400 text-[11px]">Vorlauf:</span>
+                            <select value={editDraft.motionPreRollSeconds} onChange={(e) => setEditDraft({ ...editDraft, motionPreRollSeconds: Number(e.target.value) })} className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white">
+                              {[0, 5, 10, 15, 30].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
+                            </select>
+                          </label>
+                          <label className="grid gap-1">
+                            <span className="text-slate-400 text-[11px]">Nachlauf:</span>
+                            <select value={editDraft.motionPostRollSeconds} onChange={(e) => setEditDraft({ ...editDraft, motionPostRollSeconds: Number(e.target.value) })} className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white">
+                              {[10, 20, 30, 60, 120].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
+                            </select>
+                          </label>
+                        </>
+                      )}
 
-                      <label className="grid gap-1">
+                      {editDraft.recordMode === "continuous" && <label className="grid gap-1">
                         <span className="text-slate-400 text-[11px]">Segmentlänge:</span>
                         <select
                           value={editDraft.recordSegmentMinutes}
@@ -1127,7 +1169,7 @@ export default function CameraWallPage() {
                           <option value={30}>30 Minuten</option>
                           <option value={60}>60 Minuten</option>
                         </select>
-                      </label>
+                      </label>}
                     </div>
                   )}
                 </div>

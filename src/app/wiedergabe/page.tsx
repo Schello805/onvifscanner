@@ -97,6 +97,10 @@ type MotionEvent = {
   timeStr: string;
   totalMinutes: number;
   message: string;
+  motionRecordingId?: string | null;
+  motionRecordingStatus?: string | null;
+  clipId?: string | null;
+  streamUrl?: string | null;
 };
 
 type ClipMotionEvent = {
@@ -167,6 +171,7 @@ function getMotionEventsForClip(
   const seenSeconds = new Set<number>();
 
   for (const ev of events) {
+    if (ev.clipId && ev.clipId !== clip.id) continue;
     if (ev.cameraId && clip.cameraId && ev.cameraId !== clip.cameraId) {
       continue;
     }
@@ -741,7 +746,8 @@ export default function PlaybackPage() {
   };
 
   const playEvent = (ev: MotionEvent) => {
-    const matchingClip = timelineClips.find((c) => {
+    const linkedClip = ev.clipId ? clips.find((clip) => clip.id === ev.clipId) : undefined;
+    const matchingClip = linkedClip || timelineClips.find((c) => {
       const [h, m] = c.timeStr.split(":").map(Number);
       const clipMin = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
       return ev.totalMinutes >= clipMin && ev.totalMinutes <= clipMin + 20;
@@ -2297,6 +2303,11 @@ export default function PlaybackPage() {
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
                             {ev.cameraName} · {ev.message}
                           </p>
+                          {ev.motionRecordingStatus && ev.motionRecordingStatus !== "ready" && (
+                            <p className={`mt-0.5 text-[9px] ${ev.motionRecordingStatus === "failed" ? "text-rose-400" : "text-amber-400"}`}>
+                              {ev.motionRecordingStatus === "failed" ? "Clip konnte nicht erstellt werden" : "Clip wird erstellt …"}
+                            </p>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0">

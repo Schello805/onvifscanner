@@ -397,13 +397,13 @@ export default function HomePage() {
       <Link
         href={`/wiedergabe?search=${encodeURIComponent(ip)}`}
         className="inline-flex items-center gap-1 rounded bg-rose-500/20 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/30 transition shadow-sm animate-pulse"
-        title="Daueraufnahme aktiv – Klick zum Aufnahmen-Archiv"
+        title="Aufnahme aktiv – Klick zum Aufnahmen-Archiv"
       >
         <span className="relative flex h-1.5 w-1.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-80"></span>
           <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
         </span>
-        <span>REC Aktiv</span>
+        <span>Aufnahme aktiv</span>
       </Link>
     );
   }

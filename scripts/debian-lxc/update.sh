@@ -52,6 +52,8 @@ else
 fi
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-buffer"
+install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-staging"
 install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
 
 echo "Stopping onvifscanner.service for rebuild..."

@@ -86,6 +86,7 @@ class OnvifEventManager {
     this.activeWorkers = new Map(); // cameraId -> worker state
     this.lastAlarmTimes = new Map(); // cameraId -> timestamp
     this.unsupportedUntil = new Map(); // cameraId -> timestamp
+    this.lastHealthUpdates = new Map();
   }
 
   start() {
@@ -110,6 +111,7 @@ class OnvifEventManager {
       const unsupp = this.unsupportedUntil.get(cam.id);
       if (unsupp && Date.now() < unsupp) continue;
 
+      void this.updateEventHealth(cam.id, 'probing', 'onvif', null);
       this.spawnCameraWorker(cam);
     }
   }
@@ -184,8 +186,10 @@ class OnvifEventManager {
           // If unsupported, back off for 15 minutes so we don't spam
           if (subRes.status === 404 || subRes.status === 501 || subRes.text.includes('ActionNotSupported')) {
             this.unsupportedUntil.set(cam.id, Date.now() + 15 * 60 * 1000);
+            await this.updateEventHealth(cam.id, 'unsupported', 'onvif', `ONVIF Events nicht unterstützt (HTTP ${subRes.status}).`, true);
             return;
           }
+          await this.updateEventHealth(cam.id, 'error', 'onvif', `PullPoint-Abo fehlgeschlagen (HTTP ${subRes.status}).`);
           await new Promise((r) => setTimeout(r, 15000));
           continue;
         }
@@ -202,14 +206,18 @@ class OnvifEventManager {
           }
         }
       } catch (e) {
+        await this.updateEventHealth(cam.id, 'error', 'onvif', String(e?.message || e));
         await new Promise((r) => setTimeout(r, 10000));
         continue;
       }
 
       if (!pullPointUrl) {
+        await this.updateEventHealth(cam.id, 'error', 'onvif', 'PullPoint-Adresse fehlt.');
         await new Promise((r) => setTimeout(r, 15000));
         continue;
       }
+
+      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true);
 
       // 3. Long-polling PullMessages loop
       let consecutiveErrors = 0;
@@ -228,13 +236,16 @@ class OnvifEventManager {
 
           if (!pullRes.ok) {
             consecutiveErrors++;
+            await this.updateEventHealth(cam.id, 'error', 'onvif', `PullMessages fehlgeschlagen (HTTP ${pullRes.status}).`);
             break; // renew / recreate subscription
           }
 
           consecutiveErrors = 0;
-          this.processPullMessagesXml(cam, pullRes.text);
+          await this.updateEventHealth(cam.id, 'active', 'onvif', null);
+          await this.processPullMessagesXml(cam, pullRes.text);
         } catch (e) {
           consecutiveErrors++;
+          await this.updateEventHealth(cam.id, 'error', 'onvif', String(e?.message || e));
           await new Promise((r) => setTimeout(r, 3000));
         }
       }
@@ -280,6 +291,7 @@ class OnvifEventManager {
           timestamp: new Date()
         }
       });
+      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, new Date());
       // Keep table clean: max 500 events per camera
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
@@ -294,6 +306,36 @@ class OnvifEventManager {
       }
     } catch {
       // quiet log error
+    }
+  }
+
+  async updateEventHealth(cameraId, state, source, error, force = false, lastSeen = undefined) {
+    const signature = `${state}:${source}:${error || ''}`;
+    const previous = this.lastHealthUpdates.get(cameraId);
+    if (!force && previous?.signature === signature && Date.now() - previous.at < 60_000) return;
+    this.lastHealthUpdates.set(cameraId, { signature, at: Date.now() });
+    try {
+      if (state !== 'active' && source === 'onvif') {
+        const current = await this.prisma.camera.findUnique({
+          where: { id: cameraId },
+          select: { motionEventState: true, motionEventSource: true },
+        });
+        if (current?.motionEventState === 'active' && current.motionEventSource && current.motionEventSource !== 'onvif') {
+          return;
+        }
+      }
+      await this.prisma.camera.update({
+        where: { id: cameraId },
+        data: {
+          motionEventState: state,
+          motionEventSource: source,
+          motionEventCheckedAt: new Date(),
+          motionEventLastError: error ? String(error).slice(0, 500) : null,
+          ...(lastSeen ? { motionEventLastSeen: lastSeen } : {}),
+        },
+      });
+    } catch {
+      // Camera may have been removed while a worker was active.
     }
   }
 }
