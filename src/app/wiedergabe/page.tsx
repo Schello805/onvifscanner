@@ -88,6 +88,12 @@ type RecordingClip = {
   downloadUrl: string;
 };
 
+type RecordingCalendarDay = {
+  date: string;
+  count: number;
+  cameras: Array<{ id: string; name: string; count: number }>;
+};
+
 type MotionEvent = {
   id: string;
   cameraId: string;
@@ -234,13 +240,18 @@ function getTodayStr(): string {
   return `${y}-${m}-${day}`;
 }
 
-function getYesterdayStr(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function shiftMonth(month: string, offset: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const shifted = new Date(year, monthNumber - 1 + offset, 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonth(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString("de-DE", {
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /**
@@ -290,7 +301,9 @@ export default function PlaybackPage() {
   // Filters & Search
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(getTodayStr());
-  const [datePreset, setDatePreset] = useState<string>("today");
+  const [calendarMonth, setCalendarMonth] = useState<string>(getTodayStr().slice(0, 7));
+  const [calendarDays, setCalendarDays] = useState<Record<string, RecordingCalendarDay>>({});
+  const [loadingCalendar, setLoadingCalendar] = useState(true);
   const [timeFrom, setTimeFrom] = useState<string>("");
   const [timeTo, setTimeTo] = useState<string>("");
   const [timePreset, setTimePreset] = useState<string>("all");
@@ -343,7 +356,7 @@ export default function PlaybackPage() {
   const [activityStats, setActivityStats] = useState<ActivityStatsResponse | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  const fetchActivityStats = useCallback(async (period: string = statsPeriod) => {
+  const fetchActivityStats = useCallback(async (period: string) => {
     try {
       setLoadingStats(true);
       const res = await fetch(`/api/nvr/stats?period=${period}`, { cache: "no-store" });
@@ -356,23 +369,7 @@ export default function PlaybackPage() {
     } finally {
       setLoadingStats(false);
     }
-  }, [statsPeriod]);
-
-  const handleDatePresetChange = (preset: string) => {
-    setDatePreset(preset);
-    if (preset === "today") {
-      const d = getTodayStr();
-      setSelectedDate(d);
-      fetchClips(selectedCameraId, d);
-    } else if (preset === "yesterday") {
-      const d = getYesterdayStr();
-      setSelectedDate(d);
-      fetchClips(selectedCameraId, d);
-    } else if (preset === "all") {
-      setSelectedDate("");
-      fetchClips(selectedCameraId, "");
-    }
-  };
+  }, []);
 
   const handleTimePresetChange = (preset: string) => {
     setTimePreset(preset);
@@ -413,7 +410,7 @@ export default function PlaybackPage() {
     } catch {}
   };
 
-  const fetchClips = useCallback(async (camId = selectedCameraId, date = selectedDate) => {
+  const fetchClips = useCallback(async (camId: string, date: string) => {
     try {
       setRefreshing(true);
       const params = new URLSearchParams();
@@ -444,7 +441,39 @@ export default function PlaybackPage() {
       setLoadingClips(false);
       setRefreshing(false);
     }
-  }, [selectedCameraId, selectedDate, toast]);
+  }, [toast]);
+
+  const fetchCalendar = useCallback(async (month: string, cameraId: string) => {
+    try {
+      setLoadingCalendar(true);
+      const params = new URLSearchParams({ calendarMonth: month });
+      if (cameraId) params.set("cameraId", cameraId);
+      const response = await fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Kalender konnte nicht geladen werden.");
+      const indexed: Record<string, RecordingCalendarDay> = {};
+      for (const day of result.days ?? []) indexed[day.date] = day;
+      setCalendarDays(indexed);
+    } catch {
+      setCalendarDays({});
+    } finally {
+      setLoadingCalendar(false);
+    }
+  }, []);
+
+  const selectRecordingDate = useCallback((date: string) => {
+    setSelectedDate(date);
+    setCalendarMonth(date.slice(0, 7));
+    setTimelineStartMin(0);
+    setCurrentPage(1);
+    void fetchClips(selectedCameraId, date);
+  }, [fetchClips, selectedCameraId]);
+
+  const showAllRecordingDays = useCallback(() => {
+    setSelectedDate("");
+    setCurrentPage(1);
+    void fetchClips(selectedCameraId, "");
+  }, [fetchClips, selectedCameraId]);
 
   useEffect(() => {
     let initialCamId = "";
@@ -459,6 +488,29 @@ export default function PlaybackPage() {
     fetchClips(initialCamId, getTodayStr());
     fetchActivityStats("today");
   }, [fetchClips, fetchActivityStats]);
+
+  useEffect(() => {
+    void fetchCalendar(calendarMonth, selectedCameraId);
+  }, [calendarMonth, fetchCalendar, selectedCameraId]);
+
+  const calendarCells = useMemo(() => {
+    const [year, monthNumber] = calendarMonth.split("-").map(Number);
+    const daysInMonth = new Date(year, monthNumber, 0).getDate();
+    const leadingEmptyDays = (new Date(year, monthNumber - 1, 1).getDay() + 6) % 7;
+    return [
+      ...Array.from({ length: leadingEmptyDays }, () => null),
+      ...Array.from({ length: daysInMonth }, (_, index) => {
+        const day = String(index + 1).padStart(2, "0");
+        return `${calendarMonth}-${day}`;
+      }),
+    ];
+  }, [calendarMonth]);
+
+  const selectedCalendarDay = selectedDate ? calendarDays[selectedDate] : undefined;
+  const calendarMonthClipCount = useMemo(
+    () => Object.values(calendarDays).reduce((sum, day) => sum + day.count, 0),
+    [calendarDays]
+  );
 
   // Pre-calculate motion events per clip for instant lookup
   const clipMotionMap = useMemo(() => {
@@ -590,6 +642,7 @@ export default function PlaybackPage() {
         if (activeClip?.id === clip.id) {
           setActiveClip(null);
         }
+        void fetchCalendar(calendarMonth, selectedCameraId);
       } else {
         const data = await res.json();
         throw new Error(data.error || "Löschen fehlgeschlagen");
@@ -618,6 +671,7 @@ export default function PlaybackPage() {
         toast.success(data.message || `${count} Aufnahmen gelöscht.`);
         setClips((prev) => prev.filter((c) => !selectedClipIds.has(c.id)));
         setSelectedClipIds(new Set());
+        void fetchCalendar(calendarMonth, selectedCameraId);
       } else {
         throw new Error(data.error || "Löschen fehlgeschlagen");
       }
@@ -955,6 +1009,175 @@ export default function PlaybackPage() {
         </div>
       </div>
 
+      {/* Central recording calendar */}
+      <section className="overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/95 to-slate-950 shadow-xl">
+        <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-sky-300">
+              <Calendar className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white">Aufnahme-Kalender</h2>
+              <p className="text-[11px] text-slate-400">Blaue Markierungen zeigen Tage mit vorhandenen Aufnahmen.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-semibold text-sky-200">
+              {loadingCalendar ? "Kalender wird geladen…" : `${calendarMonthClipCount} Clips im Monat`}
+            </span>
+            {selectedCameraId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCameraId("");
+                  void fetchClips("", selectedDate);
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                Alle Kameras anzeigen
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setCalendarMonth((month) => shiftMonth(month, -1))}
+                className="touch-manipulation rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:bg-slate-800 hover:text-white"
+                aria-label="Vorheriger Monat"
+                title="Vorheriger Monat"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="flex items-center gap-2">
+                <strong className="min-w-32 text-center text-sm capitalize text-white">{formatMonth(calendarMonth)}</strong>
+                <input
+                  type="month"
+                  value={calendarMonth}
+                  onChange={(event) => event.target.value && setCalendarMonth(event.target.value)}
+                  className="max-w-36 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-xs text-slate-300 outline-none focus:border-sky-500"
+                  aria-label="Monat auswählen"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setCalendarMonth((month) => shiftMonth(month, 1))}
+                className="touch-manipulation rounded-lg border border-slate-800 bg-slate-900 p-2 text-slate-300 hover:bg-slate-800 hover:text-white"
+                aria-label="Nächster Monat"
+                title="Nächster Monat"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((weekday) => (
+                <div key={weekday} className="py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {weekday}
+                </div>
+              ))}
+              {calendarCells.map((date, index) => {
+                if (!date) return <div key={`empty-${index}`} className="min-h-14 sm:min-h-16" />;
+                const dayInfo = calendarDays[date];
+                const hasRecordings = Boolean(dayInfo?.count);
+                const selected = selectedDate === date;
+                const today = getTodayStr() === date;
+                return (
+                  <button
+                    key={date}
+                    type="button"
+                    onClick={() => selectRecordingDate(date)}
+                    className={`relative min-h-14 rounded-lg border p-1.5 text-left transition sm:min-h-16 sm:p-2 ${
+                      selected
+                        ? "border-amber-400/70 bg-amber-400/15 shadow-[0_0_14px_rgba(251,191,36,0.12)]"
+                        : hasRecordings
+                          ? "border-sky-500/30 bg-sky-500/[0.08] hover:border-sky-400/60 hover:bg-sky-500/15"
+                          : "border-white/5 bg-white/[0.02] hover:border-slate-700 hover:bg-white/[0.05]"
+                    }`}
+                    title={hasRecordings ? `${dayInfo.count} Aufnahme(n) von ${dayInfo.cameras.length} Kamera(s)` : "Keine Aufnahmen"}
+                    aria-label={`${formatGermanDate(date)}: ${hasRecordings ? `${dayInfo.count} Aufnahmen` : "keine Aufnahmen"}`}
+                  >
+                    <span className={`text-xs font-semibold sm:text-sm ${selected ? "text-amber-200" : today ? "text-emerald-300" : "text-slate-300"}`}>
+                      {Number(date.slice(-2))}
+                    </span>
+                    {hasRecordings ? (
+                      <span className="absolute inset-x-1.5 bottom-1.5 flex items-center justify-between gap-1 sm:inset-x-2 sm:bottom-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.75)]" />
+                        <span className="truncate text-[9px] font-bold text-sky-200 sm:text-[10px]">{dayInfo.count}</span>
+                      </span>
+                    ) : null}
+                    {today ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" title="Heute" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Ausgewählter Tag</div>
+                <div className="mt-0.5 text-sm font-bold text-white">
+                  {selectedDate ? formatGermanDateLong(selectedDate) : "Alle Tage"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => selectRecordingDate(getTodayStr())}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/20"
+              >
+                Heute
+              </button>
+            </div>
+
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              {selectedCalendarDay?.cameras.length ? (
+                <>
+                  <div className="mb-2 text-[11px] text-slate-400">
+                    {selectedCalendarDay.count} Aufnahme(n) von {selectedCalendarDay.cameras.length} Kamera(s)
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {selectedCalendarDay.cameras.map((camera) => (
+                      <button
+                        key={camera.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCameraId(camera.id);
+                          void fetchClips(camera.id, selectedDate);
+                        }}
+                        className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                          selectedCameraId === camera.id
+                            ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
+                            : "border-white/5 bg-white/[0.03] text-slate-300 hover:border-slate-700 hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <span className="min-w-0 truncate font-medium">{camera.name}</span>
+                        <span className="shrink-0 rounded-full bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-300">{camera.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-800 px-3 py-5 text-center text-xs text-slate-500">
+                  {selectedDate ? "An diesem Tag sind keine Aufnahmen vorhanden." : "Wähle einen Tag im Kalender aus."}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={showAllRecordingDays}
+              className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+            >
+              Alle Tage anzeigen
+            </button>
+          </aside>
+        </div>
+      </section>
+
       {/* Sleek, Modern & Uncluttered Filter Bar */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -1003,30 +1226,21 @@ export default function PlaybackPage() {
               </select>
             </div>
 
-            {/* Date Preset Dropdown */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
-              <Calendar className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-              <select
-                value={datePreset}
-                onChange={(e) => handleDatePresetChange(e.target.value)}
-                className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
-              >
-                <option value="today">Heute ({formatGermanDate(getTodayStr())})</option>
-                <option value="yesterday">Gestern ({formatGermanDate(getYesterdayStr())})</option>
-                <option value="all">Alle Tage (Gesamt)</option>
-                <option value="custom">📅 Anderes Datum...</option>
-              </select>
-              {datePreset === "custom" && (
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    fetchClips(selectedCameraId, e.target.value);
-                  }}
-                  className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none ml-1"
-                />
-              )}
+            {/* Date selected in the central calendar */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200">
+              <Calendar className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+              <span>{selectedDate ? formatGermanDateLong(selectedDate) : "Alle Tage"}</span>
+              {selectedDate ? (
+                <button
+                  type="button"
+                  onClick={showAllRecordingDays}
+                  className="ml-1 rounded px-1 text-slate-500 hover:bg-slate-800 hover:text-white"
+                  aria-label="Datumsfilter aufheben"
+                  title="Alle Tage anzeigen"
+                >
+                  ×
+                </button>
+              ) : null}
             </div>
 
             {/* Time of Day Preset Dropdown */}
@@ -1887,8 +2101,7 @@ export default function PlaybackPage() {
               type="button"
               onClick={() => {
                 if (selectedDate !== getTodayStr()) {
-                  setSelectedDate(getTodayStr());
-                  setDatePreset("today");
+                  selectRecordingDate(getTodayStr());
                 }
                 goToNow();
               }}

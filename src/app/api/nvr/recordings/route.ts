@@ -22,11 +22,19 @@ export type RecordingClip = {
   downloadUrl: string;
 };
 
+type CalendarDay = {
+  date: string;
+  count: number;
+  cameras: Array<{ id: string; name: string; count: number }>;
+};
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const filterCameraId = searchParams.get("cameraId");
     const filterDate = searchParams.get("date"); // YYYY-MM-DD
+    const calendarMonthRaw = searchParams.get("calendarMonth");
+    const calendarMonth = calendarMonthRaw && /^\d{4}-\d{2}$/.test(calendarMonthRaw) ? calendarMonthRaw : null;
 
     const cameras = await prisma.camera.findMany({
       select: { id: true, name: true, storageTargetId: true },
@@ -38,6 +46,7 @@ export async function GET(req: Request) {
     });
 
     const clips: RecordingClip[] = [];
+    const calendarDays = new Map<string, { count: number; cameras: Map<string, number> }>();
 
     for (const target of storageTargets) {
       if (!fs.existsSync(target.path)) continue;
@@ -113,6 +122,16 @@ export async function GET(req: Request) {
 
             if (filterDate && dateStr !== filterDate) continue;
 
+            if (calendarMonth) {
+              if (dateStr.startsWith(`${calendarMonth}-`)) {
+                const day = calendarDays.get(dateStr) ?? { count: 0, cameras: new Map<string, number>() };
+                day.count += 1;
+                day.cameras.set(camDir, (day.cameras.get(camDir) ?? 0) + 1);
+                calendarDays.set(dateStr, day);
+              }
+              continue;
+            }
+
             const clipId = Buffer.from(fullFilePath).toString("base64url");
             clips.push({
               id: clipId,
@@ -130,6 +149,24 @@ export async function GET(req: Request) {
           } catch {}
         }
       }
+    }
+
+    if (calendarMonth) {
+      const days: CalendarDay[] = Array.from(calendarDays.entries())
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([date, day]) => ({
+          date,
+          count: day.count,
+          cameras: Array.from(day.cameras.entries())
+            .map(([id, count]) => ({ id, name: cameraMap.get(id) || `Kamera ${id}`, count }))
+            .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)),
+        }));
+
+      return NextResponse.json({
+        month: calendarMonth,
+        days,
+        totalCount: days.reduce((sum, day) => sum + day.count, 0),
+      });
     }
 
     // Sort newest first
