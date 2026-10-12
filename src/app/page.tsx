@@ -704,7 +704,7 @@ export default function CameraWallPage() {
                   setDraggedIndex(null);
                   setDragOverIndex(null);
                 }}
-                className={`group overflow-hidden transition-all flex flex-col justify-center ${
+                className={`camera-card group overflow-hidden transition-all flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
                     : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-2 ring-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.25)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
@@ -838,7 +838,7 @@ export default function CameraWallPage() {
                         title="Live-Stream an/aus"
                       >
                         <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
-                        <span className="hidden sm:inline">{liveLoading.has(camera.id) ? "Laden…" : isLive ? "Stop" : "Live"}</span>
+                        <span className="camera-card-control-label hidden sm:inline">{liveLoading.has(camera.id) ? "Laden…" : isLive ? "Stop" : "Live"}</span>
                       </button>
 
                       {/* 1-Click Recording Button */}
@@ -856,8 +856,8 @@ export default function CameraWallPage() {
                         <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
                           {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
                         </span>
-                        <span className="hidden sm:inline">
-                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? (camera.recordMode === "motion" ? "Motion Stop" : "REC Stop") : "Aufnahme"}
+                        <span className="camera-card-control-label hidden sm:inline">
+                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "Stop" : "Aufnahme"}
                         </span>
                       </button>
 
@@ -1075,7 +1075,7 @@ export default function CameraWallPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 items-center">
+              <div className="grid gap-3">
                 <label className="grid gap-1.5">
                   <span className="font-semibold text-slate-300">Name im Bild (Overlay)</span>
                   <select

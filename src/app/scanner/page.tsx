@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Credentials, ScanResult, ScanRequest, ScanResponse } from "@/lib/types";
-import { loadWallData, saveWallData, upsertWallCameras, wallCameraFromScan } from "@/lib/cameraWall";
+import { loadWallData, saveWallData, upsertWallCameras, wallCameraFromScan, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
 
 const defaultPorts = "80,443,554,8554,8000,8080,8899";
@@ -15,6 +15,49 @@ function parsePorts(input: string): number[] {
     .map((s) => Number(s))
     .filter((n) => Number.isInteger(n) && n > 0 && n <= 65535);
   return Array.from(new Set(ports));
+}
+
+function normalizeCameraIp(value: string): string {
+  const input = value.trim();
+  if (!input) return "";
+  try {
+    const parsed = new URL(input.includes("://") ? input : `http://${input}`);
+    return parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").split("%")[0];
+  } catch {
+    return input.toLowerCase().replace(/^\[|\]$/g, "").replace(/:\d+$/, "").split("%")[0];
+  }
+}
+
+function wallCameraIdentityKeys(camera: WallCamera): string[] {
+  return Array.from(
+    new Set(
+      [camera.ip, camera.id, ...camera.snapshotUris, ...camera.streamUris]
+        .filter((value): value is string => Boolean(value))
+        .map(normalizeCameraIp)
+        .filter(Boolean)
+    )
+  );
+}
+
+function scanResultIdentityKeys(result: ScanResult): string[] {
+  return Array.from(
+    new Set(
+      [
+        result.ip,
+        ...(result.streamUris ?? []),
+        ...(result.snapshotUris ?? []),
+        ...(result.vendor?.rtspUris ?? []),
+        ...(result.vendor?.httpStreamUris ?? []),
+        ...(result.vendor?.snapshotUris ?? []),
+        ...(result.onvif?.xaddrs ?? []),
+        ...(result.onvif?.rtspUris?.map((entry) => entry.uri) ?? []),
+        ...(result.onvif?.snapshotUris?.map((entry) => entry.uri) ?? [])
+      ]
+        .filter((value): value is string => Boolean(value))
+        .map(normalizeCameraIp)
+        .filter(Boolean)
+    )
+  );
 }
 
 function buildCameraSummary(r: ScanResult, thumbnailLog?: string): string[] {
@@ -71,6 +114,7 @@ export default function HomePage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [savedCameraIps, setSavedCameraIps] = useState<Set<string>>(new Set());
   const [recordingCameraIps, setRecordingCameraIps] = useState<Set<string>>(new Set());
+  const [hiddenExistingCount, setHiddenExistingCount] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -94,6 +138,9 @@ export default function HomePage() {
   const thumbPumpRef = useRef(false);
   const thumbRequestedRef = useRef<Set<string>>(new Set());
   const initialThumbIpsRef = useRef<Set<string>>(new Set());
+  const savedCameraIpsRef = useRef<Set<string>>(new Set());
+  const savedCameraIdentityKeysRef = useRef<Set<string>>(new Set());
+  const hiddenExistingIpsRef = useRef<Set<string>>(new Set());
 
   function InfoTip(props: { tip: string }) {
     return (
@@ -150,6 +197,17 @@ export default function HomePage() {
   function apiUrl(path: string): string {
     return new URL(path, window.location.origin).toString();
   }
+
+  const applySavedCameraState = useCallback((cameras: Awaited<ReturnType<typeof loadWallData>>["cameras"]): Set<string> => {
+    const savedIps = new Set(cameras.map((camera) => normalizeCameraIp(camera.ip)).filter(Boolean));
+    savedCameraIdentityKeysRef.current = new Set(cameras.flatMap(wallCameraIdentityKeys));
+    savedCameraIpsRef.current = savedIps;
+    setSavedCameraIps(savedIps);
+    setRecordingCameraIps(
+      new Set(cameras.filter((camera) => camera.recordEnabled).map((camera) => normalizeCameraIp(camera.ip)).filter(Boolean))
+    );
+    return savedIps;
+  }, []);
 
   function getThumbUrlsForIp(ip: string): string[] {
     return latestResultsRef.current[ip]?.urls ?? [];
@@ -341,10 +399,12 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    loadWallData().then((data) => {
-      setSavedCameraIps(new Set(data.cameras.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(data.cameras.filter((c) => c.recordEnabled).map((c) => c.ip)));
-    });
+    const refreshSavedCameras = () => {
+      void loadWallData().then((data) => applySavedCameraState(data.cameras));
+    };
+
+    refreshSavedCameras();
+    window.addEventListener("onvifscanner:wall-updated", refreshSavedCameras);
     fetch("/api/network")
       .then((r) => r.json())
       .then((netData) => {
@@ -356,7 +416,9 @@ export default function HomePage() {
         }
       })
       .catch(() => {});
-  }, []);
+
+    return () => window.removeEventListener("onvifscanner:wall-updated", refreshSavedCameras);
+  }, [applySavedCameraState]);
 
   async function saveToWall(results: ScanResult[]) {
     try {
@@ -365,8 +427,15 @@ export default function HomePage() {
       const current = await loadWallData();
       const next = upsertWallCameras(current.cameras, additions);
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
+      applySavedCameraState(next);
+      const savedNow = new Set(results.map((result) => normalizeCameraIp(result.ip)));
+      setData((currentData) =>
+        currentData
+          ? { ...currentData, results: currentData.results.filter((result) => !savedNow.has(normalizeCameraIp(result.ip))) }
+          : currentData
+      );
+      for (const ip of savedNow) hiddenExistingIpsRef.current.add(ip);
+      setHiddenExistingCount(hiddenExistingIpsRef.current.size);
       if (results.length === 1) {
         toast.success(`Kamera ${results[0].ip} zu den Monitoren hinzugefügt.`);
       } else {
@@ -381,10 +450,12 @@ export default function HomePage() {
     if (!confirm(`Möchtest du die Kamera (${ip}) wirklich von den Monitoren entfernen?`)) return;
     try {
       const current = await loadWallData();
-      const next = current.cameras.filter((c) => c.ip !== ip && c.id !== ip);
+      const normalizedIp = normalizeCameraIp(ip);
+      const next = current.cameras.filter(
+        (camera) => normalizeCameraIp(camera.ip) !== normalizedIp && camera.id !== ip
+      );
       await saveWallData({ cameras: next, columns: current.columns, refresh: current.refresh });
-      setSavedCameraIps(new Set(next.map((camera) => camera.ip)));
-      setRecordingCameraIps(new Set(next.filter((c) => c.recordEnabled).map((c) => c.ip)));
+      applySavedCameraState(next);
       toast.info(`Kamera ${ip} von den Monitoren entfernt.`);
     } catch {
       toast.error("Fehler beim Entfernen von den Monitoren.");
@@ -392,7 +463,7 @@ export default function HomePage() {
   }
 
   function RecordingBadge({ ip }: { ip: string }) {
-    if (!recordingCameraIps.has(ip)) return null;
+    if (!recordingCameraIps.has(normalizeCameraIp(ip))) return null;
     return (
       <Link
         href={`/wiedergabe?search=${encodeURIComponent(ip)}`}
@@ -409,7 +480,7 @@ export default function HomePage() {
   }
 
   function WallSaveButton({ result, compact = false }: { result: ScanResult; compact?: boolean }) {
-    const saved = savedCameraIps.has(result.ip);
+    const saved = savedCameraIps.has(normalizeCameraIp(result.ip));
     return (
       <button
         type="button"
@@ -542,6 +613,33 @@ export default function HomePage() {
     setScanProgress(null);
     setData(null);
     setExpandedIps({});
+    hiddenExistingIpsRef.current = new Set();
+    setHiddenExistingCount(0);
+
+    try {
+      const wallData = await loadWallData();
+      applySavedCameraState(wallData.cameras);
+    } catch {
+      // Der zuletzt bekannte Stand reicht als Fallback aus.
+    }
+
+    const isExistingCamera = (result: ScanResult) =>
+      scanResultIdentityKeys(result).some((key) => savedCameraIdentityKeysRef.current.has(key));
+    const hideExistingCamera = (result: ScanResult) => {
+      const ip = normalizeCameraIp(result.ip);
+      if (!hiddenExistingIpsRef.current.has(ip)) {
+        hiddenExistingIpsRef.current.add(ip);
+        setHiddenExistingCount(hiddenExistingIpsRef.current.size);
+      }
+    };
+    const onlyNewCameras = (response: ScanResponse): ScanResponse => ({
+      ...response,
+      results: response.results.filter((result) => {
+        if (!isExistingCamera(result)) return true;
+        hideExistingCamera(result);
+        return false;
+      })
+    });
 
     const resetThumbs = () => {
       setThumbnails((prev) => {
@@ -607,6 +705,10 @@ export default function HomePage() {
                 const event = JSON.parse(line.slice(6));
                 if (event.type === "item" && event.item?.ip) {
                   const item: ScanResult = event.item;
+                  if (isExistingCamera(item)) {
+                    hideExistingCamera(item);
+                    continue;
+                  }
                   setData((prev) => {
                     const existingResults = prev?.results ? [...prev.results] : [];
                     const idx = existingResults.findIndex((x) => x.ip === item.ip);
@@ -638,9 +740,10 @@ export default function HomePage() {
                     setScanStatus(event.message);
                   }
                 } else if (event.type === "result") {
-                  setData(event.result);
-                  indexResultsForThumbs(event.result);
-                  enqueueInitialThumbs(event.result);
+                  const filteredResult = onlyNewCameras(event.result);
+                  setData(filteredResult);
+                  indexResultsForThumbs(filteredResult);
+                  enqueueInitialThumbs(filteredResult);
                 } else if (event.type === "error") {
                   setError(event.error);
                 }
@@ -653,9 +756,10 @@ export default function HomePage() {
       } else {
         const json = (await res.json().catch(() => ({}))) as ScanResponse;
         if (!res.ok) throw new Error(json.error ?? "Scan fehlgeschlagen.");
-        setData(json);
-        indexResultsForThumbs(json);
-        enqueueInitialThumbs(json);
+        const filteredResult = onlyNewCameras(json);
+        setData(filteredResult);
+        indexResultsForThumbs(filteredResult);
+        enqueueInitialThumbs(filteredResult);
       }
     } catch (e) {
       if (abortController.signal.aborted) {
@@ -820,7 +924,7 @@ export default function HomePage() {
           </div>
 
           {/* Primary Quick-Scan Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-12 sm:items-start">
             {/* IP / Subnet */}
             <div className="sm:col-span-5 flex flex-col gap-1.5">
               <label className="text-[11px] font-medium text-slate-300">
@@ -855,65 +959,106 @@ export default function HomePage() {
             </div>
 
             {/* Optional Credentials */}
-            <div className="sm:col-span-4 grid grid-cols-2 gap-2">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium text-slate-300">
-                  Benutzer
-                </label>
-                <input
-                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
-                  autoComplete="username"
-                />
+            <div className="sm:col-span-4 flex min-w-0 flex-col gap-1.5">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <label className="text-[11px] font-medium text-slate-300">
+                    Benutzer
+                  </label>
+                  <input
+                    className="glass-input w-full min-w-0 rounded-xl px-3 py-2 text-sm outline-none"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="admin"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <label className="text-[11px] font-medium text-slate-300">
+                    Passwort
+                  </label>
+                  <input
+                    className="glass-input w-full min-w-0 rounded-xl px-3 py-2 text-sm outline-none"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••"
+                    autoComplete="current-password"
+                  />
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-medium text-slate-300">
-                  Passwort
-                </label>
-                <input
-                  className="glass-input w-full rounded-xl px-3 py-2 text-sm outline-none"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••"
-                  autoComplete="current-password"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowMultiCreds((current) => !current)}
+                className="self-start text-[10px] font-semibold text-indigo-300 transition hover:text-white"
+                aria-expanded={showMultiCreds}
+              >
+                {showMultiCreds ? "− Weitere Zugangsdaten schließen" : "+ Weitere Zugangsdaten"}
+                {parsedCredsList.length > 0 ? ` (${parsedCredsList.length})` : ""}
+              </button>
             </div>
 
             {/* Scan Button */}
-            <div className="sm:col-span-3 flex items-center gap-2">
-              <button
-                className="w-full inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow-lg shadow-indigo-950 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-50"
-                onClick={runScan}
-                disabled={loading}
-              >
-                {loading ? (
-                  <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                )}
-                <span>{loading ? "Sucht…" : "Scannen"}</span>
-              </button>
-
-              {loading && (
+            <div className="sm:col-span-3 flex min-w-0 flex-col gap-1.5">
+              <span className="text-[11px] font-medium text-slate-300">Suche</span>
+              <div className="flex min-w-0 items-center gap-2">
                 <button
-                  type="button"
-                  onClick={stopScan}
-                  className="h-10 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 text-xs font-semibold text-rose-300 hover:bg-rose-950/60 transition"
+                  className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow-lg shadow-indigo-950 transition-all hover:bg-indigo-500 active:scale-95 disabled:opacity-50"
+                  onClick={runScan}
+                  disabled={loading}
                 >
-                  Stop
+                  {loading ? (
+                    <svg className="h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  )}
+                  <span>{loading ? "Sucht…" : "Scannen"}</span>
                 </button>
-              )}
+
+                {loading && (
+                  <button
+                    type="button"
+                    onClick={stopScan}
+                    className="h-10 shrink-0 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 text-xs font-semibold text-rose-300 transition hover:bg-rose-950/60"
+                  >
+                    Stop
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+
+          {showMultiCreds ? (
+            <div className="rounded-xl border border-indigo-500/25 bg-indigo-950/20 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">Weitere Zugangsdaten</div>
+                  <div className="mt-0.5 text-[10px] text-slate-400">
+                    Eine Kombination pro Zeile als <span className="font-mono text-slate-300">Benutzer:Passwort</span>. Nur ein Passwort verwendet den Benutzer aus dem Hauptfeld.
+                  </div>
+                </div>
+                {parsedCredsList.length > 0 ? (
+                  <span className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-200">
+                    {parsedCredsList.length} weitere Logins
+                  </span>
+                ) : null}
+              </div>
+              <textarea
+                rows={3}
+                value={multiCredsText}
+                onChange={(event) => setMultiCredsText(event.target.value)}
+                placeholder={"admin:passwort1\nviewer:passwort2\nweiteres-passwort"}
+                className="glass-input mt-2.5 w-full resize-y rounded-lg p-2.5 font-mono text-xs outline-none"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+          ) : null}
 
           {/* Progress Indicator */}
           {loading && (
@@ -926,9 +1071,13 @@ export default function HomePage() {
                 {scanProgress && scanProgress.total > 0 ? (
                   <span className="font-mono text-slate-400">
                     {Math.round((scanProgress.done / scanProgress.total) * 100)}% ({scanProgress.done}/{scanProgress.total})
+                    {hiddenExistingCount > 0 ? ` • ${hiddenExistingCount} vorhanden` : ""}
                   </span>
                 ) : (
-                  <span className="text-slate-400">{data?.results.length ?? 0} Kamera(s) gefunden</span>
+                  <span className="text-slate-400">
+                    {data?.results.length ?? 0} neue Kamera(s)
+                    {hiddenExistingCount > 0 ? ` • ${hiddenExistingCount} bereits gespeichert` : ""}
+                  </span>
                 )}
               </div>
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -976,23 +1125,6 @@ export default function HomePage() {
                 </label>
               </div>
 
-              {/* Password List */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-slate-400">Passwort-Liste (ein Passwort pro Zeile)</span>
-                  {parsedCredsList.length > 0 && (
-                    <span className="text-[10px] text-indigo-300 font-semibold">{parsedCredsList.length} aktiv</span>
-                  )}
-                </div>
-                <textarea
-                  rows={2}
-                  value={multiCredsText}
-                  onChange={(e) => setMultiCredsText(e.target.value)}
-                  placeholder={"12345\nadmin123\nadmin:admin\nroot:root"}
-                  className="glass-input w-full font-mono text-xs rounded-lg p-2 resize-y outline-none"
-                />
-              </div>
-
               {/* Checkboxes */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 <OptionCheck
@@ -1038,7 +1170,7 @@ export default function HomePage() {
               <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400 tracking-tight">
                 Ergebnisse
               </h2>
-              {data?.results ? (
+              {data?.results.length ? (
                 <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 border border-white/10">
                   <button
                     type="button"
@@ -1062,45 +1194,56 @@ export default function HomePage() {
               ) : null}
             </div>
 
-            {data?.results ? (
+            {data ? (
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => saveToWall(data.results)}
-                  className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
-                  title="Alle gefundenen Kameras unter Monitore speichern"
-                >
-                  <span>＋</span>
-                  <span>Alle zu Monitore</span>
-                </button>
+                {data.results.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => saveToWall(data.results)}
+                    className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 transition hover:bg-indigo-500/20"
+                    title="Alle neuen Kameras unter Monitore speichern"
+                  >
+                    <span>＋</span>
+                    <span>Alle neuen zu Monitore</span>
+                  </button>
+                ) : null}
                 <Link
                   href="/monitore"
                   className="touch-manipulation cursor-pointer relative z-10 flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95"
                 >
                   Monitore öffnen
                 </Link>
-                <button
-                  type="button"
-                  onClick={refreshAllThumbnails}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
-                  title="Alle Vorschaubilder jetzt neu laden"
-                >
-                  <span className={Object.values(thumbnailState).some((s) => s === "loading") ? "animate-spin" : ""}>🔄</span>
-                  <span>Refresh</span>
-                </button>
-                <select
-                  value={autoRefreshSec}
-                  onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
-                  className="rounded-xl border border-white/10 bg-slate-900 px-2 py-1.5 text-xs font-semibold text-slate-300 outline-none hover:border-white/20"
-                >
-                  <option value={0}>Auto: Aus</option>
-                  <option value={10}>Auto: 10s</option>
-                  <option value={30}>Auto: 30s</option>
-                  <option value={60}>Auto: 60s</option>
-                </select>
+                {data.results.length > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={refreshAllThumbnails}
+                      className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
+                      title="Alle Vorschaubilder jetzt neu laden"
+                    >
+                      <span className={Object.values(thumbnailState).some((s) => s === "loading") ? "animate-spin" : ""}>🔄</span>
+                      <span>Refresh</span>
+                    </button>
+                    <select
+                      value={autoRefreshSec}
+                      onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
+                      className="rounded-xl border border-white/10 bg-slate-900 px-2 py-1.5 text-xs font-semibold text-slate-300 outline-none hover:border-white/20"
+                    >
+                      <option value={0}>Auto: Aus</option>
+                      <option value={10}>Auto: 10s</option>
+                      <option value={30}>Auto: 30s</option>
+                      <option value={60}>Auto: 60s</option>
+                    </select>
+                  </>
+                ) : null}
+                {hiddenExistingCount > 0 ? (
+                  <div className="rounded-xl border border-slate-600/30 bg-slate-800/40 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                    ✓ {hiddenExistingCount} bereits gespeichert und ausgeblendet
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
                   <span className={`w-1.5 h-1.5 rounded-full ${loading ? "bg-amber-400 animate-ping" : "bg-emerald-400 animate-pulse"}`}></span>
-                  {data.results.length} Gerät(e) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
+                  {data.results.length} neue Kamera(s) {loading ? "gefunden (Scan aktiv…)" : `• ${data.meta?.durationMs ?? 0}ms`}
                   {includeThumbnails ? (
                     <span className="text-slate-300/80">
                       • Preview{" "}
@@ -1125,7 +1268,26 @@ export default function HomePage() {
             </div>
           ) : (
             <>
-            {viewMode === "grid" ? (
+            {data.results.length === 0 ? (
+              <div className="my-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-emerald-500/20 bg-emerald-500/[0.04] px-6 py-10 text-center">
+                <div className="mb-3 text-4xl">✓</div>
+                <div className="font-semibold text-emerald-300">
+                  {loading ? "Noch keine neue Kamera gefunden" : "Keine neuen Kameras gefunden"}
+                </div>
+                <div className="mt-1 max-w-lg text-sm text-slate-400">
+                  {hiddenExistingCount > 0
+                    ? `${hiddenExistingCount} bereits gespeicherte Kamera(s) wurden erkannt und bewusst nicht erneut angezeigt.`
+                    : loading
+                      ? "Der Scan läuft weiter. Neue Kameras erscheinen sofort an dieser Stelle."
+                      : "Alle gefundenen Kameras sind bereits gespeichert oder im gewählten Bereich wurde keine neue Kamera erkannt."}
+                </div>
+                {hiddenExistingCount > 0 ? (
+                  <Link href="/monitore" className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">
+                    Gespeicherte Kameras unter Monitore ansehen
+                  </Link>
+                ) : null}
+              </div>
+            ) : viewMode === "grid" ? (
               <div className="mt-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4">
                 {data.results.map((r) => (
                   <article
