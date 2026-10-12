@@ -572,7 +572,7 @@ export default function CameraWallPage() {
       ref={wallRef}
       className={`camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6 ${mobileFocusMode ? "mobile-monitor-mode" : ""} ${mobileControlsVisible || (mobileFocusMode && controlsVisible) ? "mobile-controls-visible" : ""}`}
     >
-      <div className={`mb-4 sm:mb-6 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
+      <div className={`camera-wall-toolbar mb-4 sm:mb-6 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Monitore</h1>

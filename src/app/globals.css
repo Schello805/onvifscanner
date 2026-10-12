@@ -51,11 +51,23 @@
 @media (max-width: 639px) {
   .wall-grid {
     grid-template-columns: repeat(var(--wall-columns-mobile, 2), minmax(0, 1fr));
-    gap: 0.5rem;
+    gap: 2px;
   }
 
   .camera-wall {
-    border-radius: 1rem;
+    width: auto;
+    margin-inline: -6px;
+    padding: 0;
+    border-radius: 4px;
+  }
+
+  .camera-wall .camera-wall-toolbar {
+    padding-inline: 8px;
+    padding-top: 8px;
+  }
+
+  .camera-wall .camera-card {
+    border-radius: 4px;
   }
 
   .camera-wall .camera-card-controls {
@@ -86,8 +98,9 @@
     min-height: 100dvh;
     overflow-y: auto;
     overscroll-behavior: contain;
+    margin-inline: 0;
     border-radius: 0;
-    padding: max(0.25rem, env(safe-area-inset-top)) max(0.25rem, env(safe-area-inset-right)) max(0.25rem, env(safe-area-inset-bottom)) max(0.25rem, env(safe-area-inset-left));
+    padding: max(2px, env(safe-area-inset-top)) max(2px, env(safe-area-inset-right)) max(2px, env(safe-area-inset-bottom)) max(2px, env(safe-area-inset-left));
     background: #020617;
   }
 
@@ -96,7 +109,7 @@
   }
 
   .camera-wall.mobile-monitor-mode .camera-group {
-    gap: 0.25rem;
+    gap: 2px;
   }
 
   .camera-wall.mobile-monitor-mode .camera-group-title {
@@ -104,11 +117,11 @@
   }
 
   .camera-wall.mobile-monitor-mode .wall-grid {
-    gap: 0.25rem;
+    gap: 2px;
   }
 
   .camera-wall.mobile-monitor-mode .camera-card {
-    border-radius: 0.55rem;
+    border-radius: 4px;
   }
 }
 
