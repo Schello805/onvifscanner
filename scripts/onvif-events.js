@@ -79,12 +79,94 @@ function extractXmlTag(xml, tagName) {
   return match ? match[1].trim() : null;
 }
 
+function decodeXml(value) {
+  return String(value || '')
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'");
+}
+
+function extractAttribute(attributes, name) {
+  const match = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(attributes || '');
+  return match ? decodeXml(match[1]) : null;
+}
+
+function parseBooleanState(value) {
+  if (/^(?:true|1|on|active)$/i.test(String(value || '').trim())) return true;
+  if (/^(?:false|0|off|inactive)$/i.test(String(value || '').trim())) return false;
+  return null;
+}
+
+function extractSimpleItems(xml) {
+  const items = [];
+  const pattern = /<(?:[A-Za-z0-9_]+:)?SimpleItem\b([^>]*)\/?\s*>/gi;
+  let match;
+  while ((match = pattern.exec(xml || '')) !== null) {
+    const name = extractAttribute(match[1], 'Name');
+    const value = extractAttribute(match[1], 'Value');
+    if (name && value !== null) items.push({ name, value });
+  }
+  return items;
+}
+
+function parseMotionNotification(notificationXml) {
+  const topic = decodeXml(extractXmlTag(notificationXml, 'Topic') || '').replace(/\s+/g, ' ').trim();
+  if (!/(?:^|[/.:])(?:Motion|MotionAlarm|CellMotionDetector)(?:$|[/.:])/i.test(topic)) return null;
+
+  const dataXml = extractXmlTag(notificationXml, 'Data') || '';
+  const stateNames = /^(?:IsMotion|Motion|MotionAlarm|State|LogicalState|Active)$/i;
+  let state = null;
+  for (const item of extractSimpleItems(dataXml)) {
+    if (!stateNames.test(item.name)) continue;
+    state = parseBooleanState(item.value);
+    if (state !== null) break;
+  }
+
+  if (state === null) {
+    for (const tagName of ['IsMotion', 'Motion', 'MotionAlarm', 'State', 'LogicalState', 'Active']) {
+      const value = extractXmlTag(dataXml, tagName);
+      if (value === null) continue;
+      state = parseBooleanState(value);
+      if (state !== null) break;
+    }
+  }
+  if (state === null) return null;
+
+  const messagePattern = /<(?:[A-Za-z0-9_]+:)?Message\b([^>]*)>/gi;
+  let messageAttributes = '';
+  let messageMatch;
+  while ((messageMatch = messagePattern.exec(notificationXml)) !== null) {
+    if (/\b(?:PropertyOperation|UtcTime)\s*=/i.test(messageMatch[1])) {
+      messageAttributes = messageMatch[1];
+      break;
+    }
+  }
+  const operation = (extractAttribute(messageAttributes, 'PropertyOperation') || '').toLowerCase();
+  const utcTime = extractAttribute(messageAttributes, 'UtcTime');
+  const parsedTime = utcTime ? new Date(utcTime) : null;
+  const sourceXml = extractXmlTag(notificationXml, 'Source') || '';
+  const sourceKey = extractSimpleItems(sourceXml)
+    .map((item) => `${item.name}=${item.value}`)
+    .sort()
+    .join('|');
+
+  return {
+    key: `${topic}|${sourceKey}`,
+    operation,
+    state,
+    timestamp: parsedTime && !Number.isNaN(parsedTime.getTime()) ? parsedTime : new Date(),
+  };
+}
+
 class OnvifEventManager {
   constructor(prisma) {
     this.prisma = prisma;
     this.running = false;
     this.activeWorkers = new Map(); // cameraId -> worker state
     this.lastAlarmTimes = new Map(); // cameraId -> timestamp
+    this.eventStates = new Map();
     this.unsupportedUntil = new Map(); // cameraId -> timestamp
     this.lastHealthUpdates = new Map();
   }
@@ -258,29 +340,31 @@ class OnvifEventManager {
   async processPullMessagesXml(cam, xml) {
     if (!xml) return;
 
-    // Check for motion or analytics events
-    const hasMotionTopic =
-      xml.includes('Motion') ||
-      xml.includes('CellMotionDetector') ||
-      xml.includes('RuleEngine') ||
-      xml.includes('VideoSource/MotionAlarm') ||
-      xml.includes('VideoAnalytics');
+    const notifications = [];
+    const pattern = /<(?:[A-Za-z0-9_]+:)?NotificationMessage\b[^>]*>[\s\S]*?<\/(?:[A-Za-z0-9_]+:)?NotificationMessage>/gi;
+    let match;
+    while ((match = pattern.exec(xml)) !== null) notifications.push(match[0]);
 
-    if (!hasMotionTopic) return;
+    for (const notification of notifications) {
+      const event = parseMotionNotification(notification);
+      if (!event) continue;
 
-    // Check if the event state is active (true / 1)
-    const isStateTrue =
-      /Value="(?:true|1)"/i.test(xml) ||
-      /<(?:\w+:)?State>true<\/(?:\w+:)?State>/i.test(xml) ||
-      /<(?:\w+:)?IsMotion>true<\/(?:\w+:)?IsMotion>/i.test(xml);
+      const stateKey = `${cam.id}|${event.key}`;
+      const previousState = this.eventStates.get(stateKey);
+      this.eventStates.set(stateKey, event.state);
 
-    if (!isStateTrue) return;
+      if (event.operation === 'initialized') continue;
+      if (!event.state || previousState === true) continue;
+      if (previousState === undefined && event.operation !== 'changed') continue;
 
-    // Debounce to at most 1 alarm per 5 seconds per camera
+      await this.recordMotionEvent(cam, event.timestamp);
+    }
+  }
+
+  async recordMotionEvent(cam, timestamp) {
     const now = Date.now();
     const last = this.lastAlarmTimes.get(cam.id) || 0;
     if (now - last < 5000) return;
-
     this.lastAlarmTimes.set(cam.id, now);
 
     try {
@@ -288,11 +372,10 @@ class OnvifEventManager {
         data: {
           cameraId: cam.id,
           message: 'Bewegung erkannt (ONVIF)',
-          timestamp: new Date()
+          timestamp,
         }
       });
-      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, new Date());
-      // Keep table clean: max 500 events per camera
+      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, timestamp);
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },
@@ -301,12 +384,10 @@ class OnvifEventManager {
       });
       if (oldEvents.length) {
         await this.prisma.alarmLog.deleteMany({
-          where: { id: { in: oldEvents.map((e) => e.id) } }
+          where: { id: { in: oldEvents.map((event) => event.id) } }
         });
       }
-    } catch {
-      // quiet log error
-    }
+    } catch {}
   }
 
   async updateEventHealth(cameraId, state, source, error, force = false, lastSeen = undefined) {
@@ -341,5 +422,6 @@ class OnvifEventManager {
 }
 
 module.exports = {
-  OnvifEventManager
+  OnvifEventManager,
+  parseMotionNotification,
 };
