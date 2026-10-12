@@ -99,6 +99,7 @@ export default function HomePage() {
   const [ports, setPorts] = useState(defaultPorts);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [showMultiCreds, setShowMultiCreds] = useState(false);
   const [multiCredsText, setMultiCredsText] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
@@ -977,14 +978,39 @@ export default function HomePage() {
                   <label className="text-[11px] font-medium text-slate-300">
                     Passwort
                   </label>
-                  <input
-                    className="glass-input w-full min-w-0 rounded-xl px-3 py-2 text-sm outline-none"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••"
-                    autoComplete="current-password"
-                  />
+                  <div className="relative min-w-0">
+                    <input
+                      className="glass-input w-full min-w-0 rounded-xl py-2 pl-3 pr-10 text-sm outline-none"
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="••••••"
+                      autoComplete="off"
+                      name="camera-scan-credential"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      data-form-type="other"
+                      spellCheck={false}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((visible) => !visible)}
+                      className="absolute inset-y-0 right-0 inline-flex w-10 items-center justify-center rounded-r-xl text-slate-400 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                      aria-label={showPassword ? "Passwort ausblenden" : "Passwort anzeigen"}
+                      title={showPassword ? "Passwort ausblenden" : "Passwort anzeigen"}
+                    >
+                      {showPassword ? (
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.6 10.7a2 2 0 002.7 2.7M9.9 4.2A10.8 10.8 0 0112 4c5.5 0 9.5 5.2 9.5 8a8.8 8.8 0 01-2.1 3.8M6.6 6.6C4 8.2 2.5 10.6 2.5 12c0 2.8 4 8 9.5 8a10 10 0 004.1-.9" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12C2.5 9.2 6.5 4 12 4s9.5 5.2 9.5 8-4 8-9.5 8-9.5-5.2-9.5-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
               <button

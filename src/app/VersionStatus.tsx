@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type VersionInfo = {
   currentVersion: string;
@@ -9,10 +10,15 @@ type VersionInfo = {
   updateCommand: string;
   repoUrl: string;
   error?: string;
+  checkedAt?: string;
 };
 
+const VERSION_CACHE_KEY = "onvifscanner.version-status.v1";
+
 export function VersionStatus(props: { currentVersion: string }) {
+  const pathname = usePathname();
   const [info, setInfo] = useState<VersionInfo | null>(null);
+  const [checking, setChecking] = useState(true);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -22,15 +28,46 @@ export function VersionStatus(props: { currentVersion: string }) {
     const controller = new AbortController();
 
     async function load() {
+      setChecking(true);
       try {
-        const res = await fetch("/api/version", {
+        const cached = window.localStorage.getItem(VERSION_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as VersionInfo;
+          if (parsed.currentVersion === props.currentVersion && !cancelled) setInfo(parsed);
+        }
+      } catch {
+        // Der Netzwerk-Check funktioniert auch ohne lokalen Cache.
+      }
+
+      try {
+        const res = await fetch(`/api/version?ts=${Date.now()}`, {
           cache: "no-store",
+          headers: { "cache-control": "no-cache" },
           signal: controller.signal
         });
         const json = (await res.json()) as VersionInfo;
-        if (!cancelled) setInfo(json);
+        if (!cancelled) {
+          setInfo(json);
+          if (!json.error) {
+            try {
+              window.localStorage.setItem(VERSION_CACHE_KEY, JSON.stringify(json));
+            } catch {
+              // Die Anzeige funktioniert auch bei deaktiviertem Local Storage.
+            }
+          }
+        }
       } catch {
-        if (!cancelled) setInfo(null);
+        if (!cancelled) {
+          setInfo((current) => current ?? {
+            currentVersion: props.currentVersion,
+            updateAvailable: false,
+            updateCommand: "",
+            repoUrl: "",
+            error: "Versionsprüfung nicht erreichbar"
+          });
+        }
+      } finally {
+        if (!cancelled) setChecking(false);
       }
     }
 
@@ -39,7 +76,7 @@ export function VersionStatus(props: { currentVersion: string }) {
       cancelled = true;
       controller.abort();
     };
-  }, []);
+  }, [pathname, props.currentVersion]);
 
   // Close popup when clicking outside
   useEffect(() => {
@@ -53,6 +90,7 @@ export function VersionStatus(props: { currentVersion: string }) {
   }, []);
 
   const updateAvailable = Boolean(info?.updateAvailable);
+  const checkFailed = Boolean(info?.error && !info.latestVersion);
   const latestVersion = info?.latestVersion;
   const updateCommand =
     info?.updateCommand ??
@@ -107,6 +145,15 @@ export function VersionStatus(props: { currentVersion: string }) {
         {updateAvailable ? (
           <span className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20 transition">
             Update verfügbar
+          </span>
+        ) : checking && !info ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-400/20 bg-slate-400/10 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-300" />
+            prüft…
+          </span>
+        ) : checkFailed ? (
+          <span className="inline-flex items-center rounded-full border border-slate-400/20 bg-slate-400/10 px-2 py-0.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-400/20 transition">
+            Prüfung nicht möglich
           </span>
         ) : (
           <span className="inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-400/20 transition">
@@ -168,13 +215,18 @@ export function VersionStatus(props: { currentVersion: string }) {
               </div>
             </div>
           </>
+        ) : checkFailed ? (
+          <>
+            <span className="block font-semibold text-slate-200">Versionsprüfung momentan nicht möglich.</span>
+            <span className="mt-1 block text-slate-400">Die App läuft normal weiter. Beim nächsten Seitenaufruf wird automatisch erneut geprüft.</span>
+          </>
         ) : (
           <>
             <span className="block font-semibold text-emerald-200">
               Installation ist aktuell.
             </span>
             <span className="mt-1 block text-slate-400">
-              Geprüft gegen GitHub{info?.error ? `, Check aktuell nicht möglich: ${info.error}` : "."}
+              Geprüft gegen GitHub.{checking ? " Aktualisierung läuft im Hintergrund…" : ""}
             </span>
           </>
         )}

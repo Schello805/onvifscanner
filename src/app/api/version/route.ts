@@ -3,6 +3,8 @@ import pkg from "../../../../package.json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 const repoUrl =
   process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/Schello805/onvifscanner";
@@ -14,8 +16,11 @@ export async function GET() {
   const currentVersion = pkg.version;
 
   try {
-    const res = await fetch(latestPackageUrl, {
+    const url = new URL(latestPackageUrl);
+    url.searchParams.set("ts", Date.now().toString());
+    const res = await fetch(url, {
       cache: "no-store",
+      signal: AbortSignal.timeout(4000),
       headers: {
         accept: "application/json",
         "user-agent": "ONVIFscanner/version-check"
@@ -25,7 +30,7 @@ export async function GET() {
     if (!res.ok) {
       return NextResponse.json(
         buildPayload(currentVersion, undefined, `GitHub HTTP ${res.status}`),
-        { status: 200 }
+        { status: 200, headers: noCacheHeaders() }
       );
     }
 
@@ -33,14 +38,22 @@ export async function GET() {
     const latestVersion = typeof latest.version === "string" ? latest.version : undefined;
     return NextResponse.json(buildPayload(currentVersion, latestVersion), {
       status: 200,
-      headers: { "cache-control": "no-store" }
+      headers: noCacheHeaders()
     });
   } catch (e) {
     return NextResponse.json(
       buildPayload(currentVersion, undefined, e instanceof Error ? e.message : "Version check failed"),
-      { status: 200 }
+      { status: 200, headers: noCacheHeaders() }
     );
   }
+}
+
+function noCacheHeaders() {
+  return {
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    pragma: "no-cache",
+    expires: "0"
+  };
 }
 
 function buildPayload(currentVersion: string, latestVersion?: string, error?: string) {
@@ -51,7 +64,8 @@ function buildPayload(currentVersion: string, latestVersion?: string, error?: st
     repoUrl,
     updateCommand:
       "curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash",
-    error
+    error,
+    checkedAt: new Date().toISOString()
   };
 }
 
