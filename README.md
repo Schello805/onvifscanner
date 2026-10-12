@@ -53,7 +53,7 @@ Nach einem Scan können einzelne Kameras oder alle Ergebnisse über `+ Wall` bzw
 
 Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Datenbank gespeichert. Falls ein Snapshot oder Stream eine Anmeldung benötigt, werden die Zugangsdaten ebenfalls dort gespeichert und nicht an externe Dienste übertragen. RTSP kann ein Browser nicht direkt darstellen; die normale Wall-Ansicht nutzt daher HTTP-Snapshots.
 
-Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
+Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Vor dem Start prüft ONVIFscanner den Codec; nicht WebRTC-kompatible Streams wie H.265/HEVC bleiben automatisch in der Snapshot-Ansicht. Auf Smartphones werden zum Schutz vor Decoder- und Verbindungsabbrüchen höchstens vier Live-Streams parallel geöffnet. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
 ## Aufnahmemodi
 

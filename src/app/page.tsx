@@ -480,16 +480,23 @@ export default function CameraWallPage() {
     if (document.fullscreenElement) await document.exitFullscreen();
   }
 
-  async function toggleLive(cameraId: string) {
+  async function toggleLive(cameraId: string, quiet = false): Promise<boolean> {
     const cam = cameras.find((c) => c.id === cameraId);
     if (liveCameras.has(cameraId)) {
       setLiveCameras((current) => {
         const next = new Set(current);
         next.delete(cameraId);
+        liveCamerasRef.current = next;
         return next;
       });
-      toast.info(`Live-Stream für "${cam?.name || cameraId}" gestoppt.`);
-      return;
+      if (!quiet) toast.info(`Live-Stream für "${cam?.name || cameraId}" gestoppt.`);
+      return true;
+    }
+
+    const isMobile = window.matchMedia("(max-width: 639px)").matches;
+    if (isMobile && liveCamerasRef.current.size >= 4) {
+      if (!quiet) toast.info("Auf Smartphones sind maximal vier parallele Live-Streams möglich. Weitere Kameras bleiben in der Snapshot-Ansicht.");
+      return false;
     }
 
     setLiveErrors((current) => ({ ...current, [cameraId]: "" }));
@@ -500,20 +507,26 @@ export default function CameraWallPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cameraId })
       });
-      const result = (await response.json().catch(() => null)) as { playbackUrl?: string; error?: string } | null;
+      const result = (await response.json().catch(() => null)) as { playbackUrl?: string; error?: string; code?: string } | null;
       if (!response.ok || !result?.playbackUrl) {
         throw new Error(result?.error ?? `Live-Stream konnte nicht gestartet werden (HTTP ${response.status}).`);
       }
       setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
-      setLiveCameras((current) => new Set(current).add(cameraId));
-      toast.success(`Live-Stream für "${cam?.name || cameraId}" aktiv.`);
+      setLiveCameras((current) => {
+        const next = new Set(current).add(cameraId);
+        liveCamerasRef.current = next;
+        return next;
+      });
+      if (!quiet) toast.success(`Live-Stream für "${cam?.name || cameraId}" aktiv.`);
+      return true;
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Live-Stream konnte nicht gestartet werden.";
       setLiveErrors((current) => ({
         ...current,
         [cameraId]: msg
       }));
-      toast.error(msg);
+      if (!quiet) toast.error(msg);
+      return false;
     } finally {
       setLiveLoading((current) => {
         const next = new Set(current);
@@ -523,19 +536,33 @@ export default function CameraWallPage() {
     }
   }
 
-  function toggleAllLive() {
+  async function toggleAllLive() {
     const allIds = cameras.map(c => c.id);
     const anyNotLive = allIds.some(id => !liveCameras.has(id));
     
     if (anyNotLive) {
+      const isMobile = window.matchMedia("(max-width: 639px)").matches;
+      if (isMobile) {
+        const maximum = 4;
+        for (const id of allIds) {
+          if (liveCamerasRef.current.size >= maximum) break;
+          if (!liveCamerasRef.current.has(id) && !liveLoading.has(id)) await toggleLive(id, true);
+        }
+        toast.info(
+          liveCamerasRef.current.size > 0
+            ? `${liveCamerasRef.current.size} Live-Streams aktiv. Weitere Kameras nutzen ressourcenschonende Snapshots.`
+            : "Kein kompatibler Live-Stream verfügbar. Die Snapshot-Ansicht bleibt aktiv."
+        );
+        return;
+      }
+
       toast.info("Starte alle Live-Streams...");
       for (const id of allIds) {
-        if (!liveCameras.has(id) && !liveLoading.has(id)) {
-          void toggleLive(id);
-        }
+        if (!liveCameras.has(id) && !liveLoading.has(id)) void toggleLive(id, true);
       }
     } else {
       setLiveCameras(new Set());
+      liveCamerasRef.current = new Set();
       toast.info("Alle Live-Streams gestoppt.");
     }
   }
@@ -630,7 +657,7 @@ export default function CameraWallPage() {
 
             <button
               type="button"
-              onClick={toggleAllLive}
+              onClick={() => void toggleAllLive()}
               disabled={cameras.length === 0}
               className={`touch-manipulation rounded-lg px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 ${
                 cameras.length > 0 && cameras.every(c => liveCameras.has(c.id))
