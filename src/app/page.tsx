@@ -802,7 +802,7 @@ export default function CameraWallPage() {
                 className={`camera-card group overflow-hidden transition-all flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-2 ring-rose-500/50 shadow-[0_0_20px_rgba(244,63,94,0.25)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                    : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
                 <div 
@@ -833,7 +833,7 @@ export default function CameraWallPage() {
                         openExpanded(camera.id);
                       }
                     }}
-                    className={`absolute top-2 right-2 z-10 p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    className={`z-[100000] p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'fixed right-[max(3px,env(safe-area-inset-right))] top-[max(3px,env(safe-area-inset-top))] opacity-100' : 'absolute top-1 right-1 opacity-0 group-hover:opacity-100'}`}
                     title={expandedCameraId === camera.id ? "Vollbild schließen" : "Vollbild öffnen"}
                   >
                     {expandedCameraId === camera.id ? (

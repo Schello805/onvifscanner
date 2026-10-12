@@ -58,7 +58,7 @@
     width: auto;
     margin-inline: -6px;
     padding: 0;
-    border-radius: 4px;
+    border-radius: 3px;
   }
 
   .camera-wall .camera-wall-toolbar {
@@ -67,7 +67,7 @@
   }
 
   .camera-wall .camera-card {
-    border-radius: 4px;
+    border-radius: 3px;
   }
 
   .camera-wall .camera-card-controls {
@@ -121,7 +121,7 @@
   }
 
   .camera-wall.mobile-monitor-mode .camera-card {
-    border-radius: 4px;
+    border-radius: 3px;
   }
 }
 
