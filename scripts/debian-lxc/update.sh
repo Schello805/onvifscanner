@@ -6,20 +6,39 @@ APP_USER="${APP_USER:-onvifscanner}"
 REPO_URL="${REPO_URL:-https://github.com/Schello805/onvifscanner.git}"
 RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
 NPM_CACHE_DIR="${NPM_CACHE_DIR:-/var/cache/onvifscanner/npm}"
+FORCE_SYSTEM_PACKAGES="${FORCE_SYSTEM_PACKAGES:-false}"
+FORCE_REBUILD="${FORCE_REBUILD:-false}"
+DEPENDENCIES_CHANGED=false
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Please run as root (sudo)." >&2
   exit 1
 fi
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y --no-install-recommends \
-  ca-certificates curl git gnupg \
-  build-essential python3 make g++ pkg-config \
-  libvips libvips-dev \
-  libc6 ffmpeg \
-  cifs-utils nfs-common sudo
+if [[ "$FORCE_SYSTEM_PACKAGES" == "true" ]] ||
+  ! command -v curl >/dev/null 2>&1 ||
+  ! command -v git >/dev/null 2>&1 ||
+  ! command -v gpg >/dev/null 2>&1 ||
+  ! command -v python3 >/dev/null 2>&1 ||
+  ! command -v make >/dev/null 2>&1 ||
+  ! command -v g++ >/dev/null 2>&1 ||
+  ! command -v pkg-config >/dev/null 2>&1 ||
+  ! command -v ffmpeg >/dev/null 2>&1 ||
+  ! command -v mount.cifs >/dev/null 2>&1 ||
+  ! command -v mount.nfs >/dev/null 2>&1 ||
+  ! command -v sudo >/dev/null 2>&1 ||
+  ! pkg-config --exists vips; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y --no-install-recommends \
+    ca-certificates curl git gnupg \
+    build-essential python3 make g++ pkg-config \
+    libvips libvips-dev \
+    libc6 ffmpeg \
+    cifs-utils nfs-common sudo
+else
+  echo "System requirements already installed; skipping apt."
+fi
 
 if command -v node >/dev/null 2>&1; then
   major="$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)"
@@ -38,6 +57,7 @@ if [[ "${major:-0}" -lt 20 ]]; then
   apt-get install -y --no-install-recommends nodejs
 fi
 
+previous_commit=""
 if [[ ! -d "$APP_DIR/.git" ]]; then
   echo "No git repo found in $APP_DIR. Installing fresh..." >&2
   rm -rf "$APP_DIR"
@@ -46,27 +66,74 @@ if [[ ! -d "$APP_DIR/.git" ]]; then
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
 else
   chown -R "$APP_USER:$APP_USER" "$APP_DIR" || true
+  previous_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD)"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' fetch --all --prune"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' pull --ff-only"
 fi
+current_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD)"
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-buffer"
 install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-staging"
 install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
+state_dir="$APP_DIR/data/.update-state"
+install -d -o "$APP_USER" -g "$APP_USER" "$state_dir"
+
+if [[ -n "$previous_commit" && "$previous_commit" == "$current_commit" && "$FORCE_REBUILD" != "true" && -f "$APP_DIR/.next/BUILD_ID" && -x "$APP_DIR/mediamtx" ]] && systemctl is-active --quiet onvifscanner.service; then
+  echo "ONVIFscanner is already current; skipping dependencies, build and restart."
+  exit 0
+fi
 
 echo "Stopping onvifscanner.service for rebuild..."
 systemctl stop onvifscanner.service || true
 
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+dependency_hash="$(node -e '
+  const fs = require("fs");
+  const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  const lock = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+  delete lock.name;
+  delete lock.version;
+  if (lock.packages?.[""]) {
+    delete lock.packages[""].name;
+    delete lock.packages[""].version;
+  }
+  process.stdout.write(JSON.stringify({
+    dependencies: pkg.dependencies,
+    devDependencies: pkg.devDependencies,
+    optionalDependencies: pkg.optionalDependencies,
+    packageManager: pkg.packageManager,
+    lock
+  }));
+' "$APP_DIR/package.json" "$APP_DIR/package-lock.json" | sha256sum | awk '{print $1}')"
+dependency_marker="$state_dir/dependencies.sha256"
+installed_hash="$(cat "$dependency_marker" 2>/dev/null || true)"
+if [[ -x "$APP_DIR/node_modules/.bin/next" && -x "$APP_DIR/node_modules/.bin/prisma" && "$dependency_hash" == "$installed_hash" ]]; then
+  echo "Node dependencies unchanged; skipping npm ci."
+else
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  printf '%s\n' "$dependency_hash" >"$dependency_marker"
+  chown "$APP_USER:$APP_USER" "$dependency_marker"
+  DEPENDENCIES_CHANGED=true
+fi
 
 APP_DIR="$APP_DIR" APP_USER="$APP_USER" bash "$APP_DIR/scripts/debian-lxc/setup-media.sh"
 
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
+schema_hash="$(sha256sum "$APP_DIR/prisma/schema.prisma" | awk '{print $1}')"
+schema_marker="$state_dir/prisma-schema.sha256"
+installed_schema_hash="$(cat "$schema_marker" 2>/dev/null || true)"
+if [[ "$schema_hash" != "$installed_schema_hash" ]]; then
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
+  printf '%s\n' "$schema_hash" >"$schema_marker"
+  chown "$APP_USER:$APP_USER" "$schema_marker"
+elif [[ "$DEPENDENCIES_CHANGED" == "true" ]]; then
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npx prisma generate"
+  echo "Database schema unchanged; skipping Prisma migration."
+else
+  echo "Database schema unchanged; skipping Prisma migration."
+fi
 
 runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=512'; cd '$APP_DIR' && npm run build"
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
 if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   echo "Running runtime dependency audit (omit=dev)..."
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"

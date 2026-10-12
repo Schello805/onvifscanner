@@ -120,7 +120,25 @@ build_app() {
   APP_DIR="$APP_DIR" APP_USER="$APP_USER" bash "$APP_DIR/scripts/debian-lxc/setup-media.sh"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=1536'; cd '$APP_DIR' && npm run build"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm prune --omit=dev"
+  local state_dir dependency_hash schema_hash
+  state_dir="$APP_DIR/data/.update-state"
+  install -d -o "$APP_USER" -g "$APP_USER" "$state_dir"
+  dependency_hash="$(node -e '
+    const fs = require("fs");
+    const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const lock = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    delete lock.name;
+    delete lock.version;
+    if (lock.packages?.[""]) {
+      delete lock.packages[""].name;
+      delete lock.packages[""].version;
+    }
+    process.stdout.write(JSON.stringify({ dependencies: pkg.dependencies, devDependencies: pkg.devDependencies, optionalDependencies: pkg.optionalDependencies, packageManager: pkg.packageManager, lock }));
+  ' "$APP_DIR/package.json" "$APP_DIR/package-lock.json" | sha256sum | awk '{print $1}')"
+  schema_hash="$(sha256sum "$APP_DIR/prisma/schema.prisma" | awk '{print $1}')"
+  printf '%s\n' "$dependency_hash" >"$state_dir/dependencies.sha256"
+  printf '%s\n' "$schema_hash" >"$state_dir/prisma-schema.sha256"
+  chown -R "$APP_USER:$APP_USER" "$state_dir"
   if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
     echo "Running runtime dependency audit (omit=dev)..."
     runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"

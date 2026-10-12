@@ -56,7 +56,8 @@ RUN_NPM_AUDIT=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvif
 - installiert Node.js 20 (via NodeSource)
 - legt User `onvifscanner` an
 - cloned nach `/opt/onvifscanner`
-- `npm ci` → `npm run build` → `npm prune --omit=dev`
+- `npm ci` → Prisma-Setup → `npm run build`
+- Bei späteren Updates werden unveränderte Abhängigkeiten und Datenbankschritte automatisch übersprungen.
 - installiert systemd service `onvifscanner.service`
 - installiert `ffmpeg` und MediaMTX für die RTSP-zu-WebRTC-Liveansicht
 - legt eine Env-Datei an: `/etc/onvifscanner/onvifscanner.env`
@@ -115,6 +116,12 @@ nginx -t && systemctl reload nginx
 curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
 ```
 
+Das Script prüft zuerst den aktuellen Stand und überspringt automatisch `apt`, `npm ci`, Prisma-Schritte und den Build, soweit sie nicht benötigt werden. Ist die Installation bereits aktuell, wird der laufende Dienst nicht neu gestartet. Einen vollständigen Rebuild kannst du erzwingen:
+
+```bash
+FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+```
+
 ## Update (ohne Script, manuell)
 
 ```bash
@@ -123,8 +130,9 @@ git fetch --all --prune
 git checkout -f main
 git pull --ff-only
 npm ci
+npx prisma generate
+npx prisma db push --accept-data-loss
 npm run build
-npm prune --omit=dev
 systemctl restart onvifscanner
 ```
 

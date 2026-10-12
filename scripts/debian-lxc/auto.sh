@@ -12,6 +12,8 @@ set -euo pipefail
 #   APP_USER=onvifscanner
 #   ENV_FILE=/etc/onvifscanner/onvifscanner.env
 #   INSTALL_NGINX=true
+#   FORCE_SYSTEM_PACKAGES=true
+#   FORCE_REBUILD=true
 #
 
 REPO_URL="${REPO_URL:-https://github.com/Schello805/onvifscanner.git}"
@@ -21,6 +23,12 @@ ENV_FILE="${ENV_FILE:-/etc/onvifscanner/onvifscanner.env}"
 INSTALL_NGINX="${INSTALL_NGINX:-false}"
 RUN_NPM_AUDIT="${RUN_NPM_AUDIT:-false}"
 NPM_CACHE_DIR="${NPM_CACHE_DIR:-/var/cache/onvifscanner/npm}"
+FORCE_SYSTEM_PACKAGES="${FORCE_SYSTEM_PACKAGES:-false}"
+FORCE_REBUILD="${FORCE_REBUILD:-false}"
+SOURCE_CHANGED=true
+DEPENDENCIES_CHANGED=false
+PREVIOUS_COMMIT=""
+CURRENT_COMMIT=""
 
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -37,6 +45,23 @@ require_systemd() {
 }
 
 ensure_packages() {
+  if [[ "$FORCE_SYSTEM_PACKAGES" != "true" ]] &&
+    command -v curl >/dev/null 2>&1 &&
+    command -v git >/dev/null 2>&1 &&
+    command -v gpg >/dev/null 2>&1 &&
+    command -v python3 >/dev/null 2>&1 &&
+    command -v make >/dev/null 2>&1 &&
+    command -v g++ >/dev/null 2>&1 &&
+    command -v pkg-config >/dev/null 2>&1 &&
+    command -v ffmpeg >/dev/null 2>&1 &&
+    command -v mount.cifs >/dev/null 2>&1 &&
+    command -v mount.nfs >/dev/null 2>&1 &&
+    command -v sudo >/dev/null 2>&1 &&
+    pkg-config --exists vips; then
+    echo "System requirements already installed; skipping apt."
+    return 0
+  fi
+
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y --no-install-recommends \
@@ -91,20 +116,94 @@ checkout_repo() {
     # "dubious ownership" safety check for the service user.
     chown -R "$APP_USER:$APP_USER" "$APP_DIR" || true
     # Git refuses to operate on repos owned by other users when run as root ("dubious ownership").
+    PREVIOUS_COMMIT="$(as_app_user "git -C '$APP_DIR' rev-parse HEAD")"
     as_app_user "git -C '$APP_DIR' fetch --all --prune"
     as_app_user "git -C '$APP_DIR' checkout -f main"
     as_app_user "git -C '$APP_DIR' pull --ff-only"
+    CURRENT_COMMIT="$(as_app_user "git -C '$APP_DIR' rev-parse HEAD")"
+    if [[ "$PREVIOUS_COMMIT" == "$CURRENT_COMMIT" ]]; then
+      SOURCE_CHANGED=false
+    fi
   else
     rm -rf "$APP_DIR"
     install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
     as_app_user "git clone '$REPO_URL' '$APP_DIR'"
     as_app_user "git -C '$APP_DIR' checkout -f main"
+    CURRENT_COMMIT="$(as_app_user "git -C '$APP_DIR' rev-parse HEAD")"
   fi
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/recordings"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-buffer"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/motion-staging"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+}
+
+state_dir() {
+  echo "$APP_DIR/data/.update-state"
+}
+
+combined_hash() {
+  sha256sum "$@" | sha256sum | awk '{print $1}'
+}
+
+dependency_hash() {
+  node -e '
+    const fs = require("fs");
+    const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const lock = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    delete lock.name;
+    delete lock.version;
+    if (lock.packages?.[""]) {
+      delete lock.packages[""].name;
+      delete lock.packages[""].version;
+    }
+    process.stdout.write(JSON.stringify({
+      dependencies: pkg.dependencies,
+      devDependencies: pkg.devDependencies,
+      optionalDependencies: pkg.optionalDependencies,
+      packageManager: pkg.packageManager,
+      lock
+    }));
+  ' "$APP_DIR/package.json" "$APP_DIR/package-lock.json" | sha256sum | awk '{print $1}'
+}
+
+install_dependencies_if_needed() {
+  local marker current_hash previous_hash=""
+  marker="$(state_dir)/dependencies.sha256"
+  current_hash="$(dependency_hash)"
+  if [[ -f "$marker" ]]; then
+    previous_hash="$(cat "$marker")"
+  fi
+
+  if [[ -x "$APP_DIR/node_modules/.bin/next" && -x "$APP_DIR/node_modules/.bin/prisma" && "$current_hash" == "$previous_hash" ]]; then
+    echo "Node dependencies unchanged; skipping npm ci."
+    return 0
+  fi
+
+  as_app_user "cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  printf '%s\n' "$current_hash" >"$marker"
+  chown "$APP_USER:$APP_USER" "$marker"
+  DEPENDENCIES_CHANGED=true
+}
+
+update_database_if_needed() {
+  local marker current_hash previous_hash=""
+  marker="$(state_dir)/prisma-schema.sha256"
+  current_hash="$(combined_hash "$APP_DIR/prisma/schema.prisma")"
+  if [[ -f "$marker" ]]; then
+    previous_hash="$(cat "$marker")"
+  fi
+
+  if [[ "$current_hash" != "$previous_hash" ]]; then
+    as_app_user "cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
+    printf '%s\n' "$current_hash" >"$marker"
+    chown "$APP_USER:$APP_USER" "$marker"
+  elif [[ "$DEPENDENCIES_CHANGED" == "true" ]]; then
+    as_app_user "cd '$APP_DIR' && npx prisma generate"
+    echo "Database schema unchanged; skipping Prisma migration."
+  else
+    echo "Database schema unchanged; skipping Prisma migration."
+  fi
 }
 
 ensure_env_file() {
@@ -145,15 +244,23 @@ EOF
 }
 
 build_app() {
-  as_app_user "cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  install -d -o "$APP_USER" -g "$APP_USER" "$(state_dir)"
+  install_dependencies_if_needed
   APP_DIR="$APP_DIR" APP_USER="$APP_USER" bash "$APP_DIR/scripts/debian-lxc/setup-media.sh"
-  as_app_user "cd '$APP_DIR' && npx prisma generate && npx prisma db push --accept-data-loss"
+  update_database_if_needed
   as_app_user "cd '$APP_DIR' && NODE_OPTIONS='--max-old-space-size=1536' npm run build"
-  as_app_user "cd '$APP_DIR' && npm prune --omit=dev"
   if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
     echo "Running runtime dependency audit (omit=dev)..."
     as_app_user "cd '$APP_DIR' && npm audit --omit=dev || true"
   fi
+}
+
+deployment_is_current() {
+  [[ "$SOURCE_CHANGED" == "false" ]] &&
+    [[ "$FORCE_REBUILD" != "true" ]] &&
+    [[ -f "$APP_DIR/.next/BUILD_ID" ]] &&
+    [[ -x "$APP_DIR/mediamtx" ]] &&
+    systemctl is-active --quiet onvifscanner.service
 }
 
 stop_service_if_running() {
@@ -212,6 +319,14 @@ main() {
   ensure_user
   checkout_repo
   ensure_env_file
+  if deployment_is_current; then
+    echo "ONVIFscanner is already current; skipping dependencies, build and restart."
+    if [[ "$INSTALL_NGINX" == "true" ]]; then
+      setup_nginx
+    fi
+    print_summary
+    return 0
+  fi
   stop_service_if_running
   build_app
   install_service

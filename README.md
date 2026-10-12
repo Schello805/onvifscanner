@@ -109,6 +109,12 @@ Schnellinstallation/Update:
 curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
 ```
 
+Das Update verwendet einen Schnellpfad: Bereits installierte Systempakete, unveränderte npm-Abhängigkeiten und ein unverändertes Prisma-Schema werden übersprungen. Ist Git bereits aktuell, entfallen Build und Service-Neustart vollständig. Für eine erzwungene Neuprüfung und einen sauberen Rebuild:
+
+```bash
+FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+```
+
 ## Konfiguration (Environment)
 
 - `NEXT_PUBLIC_REPO_URL` (optional): URL, die im Header/Footer als “Repo/GitHub” verlinkt wird.
