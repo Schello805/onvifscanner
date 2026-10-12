@@ -19,6 +19,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
+- **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.
 

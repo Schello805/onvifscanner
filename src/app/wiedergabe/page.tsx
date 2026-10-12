@@ -94,6 +94,22 @@ type RecordingCalendarDay = {
   cameras: Array<{ id: string; name: string; count: number }>;
 };
 
+type ClipSortBy =
+  | "newest"
+  | "oldest"
+  | "camera-asc"
+  | "camera-desc"
+  | "motion-most"
+  | "motion-least"
+  | "largest"
+  | "smallest"
+  | "storage-asc"
+  | "storage-desc"
+  | "filename-asc"
+  | "filename-desc";
+
+type ClipSizeFilter = "all" | "under-25" | "25-100" | "100-500" | "over-500";
+
 type MotionEvent = {
   id: string;
   cameraId: string;
@@ -308,7 +324,9 @@ export default function PlaybackPage() {
   const [timeTo, setTimeTo] = useState<string>("");
   const [timePreset, setTimePreset] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "largest" | "smallest">("newest");
+  const [sortBy, setSortBy] = useState<ClipSortBy>("newest");
+  const [storageFilter, setStorageFilter] = useState("");
+  const [sizeFilter, setSizeFilter] = useState<ClipSizeFilter>("all");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [filterMotionOnly, setFilterMotionOnly] = useState(false);
 
@@ -531,6 +549,19 @@ export default function PlaybackPage() {
     return count;
   }, [clips, clipMotionMap]);
 
+  const availableStorageTargets = useMemo(
+    () => Array.from(new Set(clips.map((clip) => clip.storageTargetName))).sort((left, right) => left.localeCompare(right, "de")),
+    [clips]
+  );
+
+  const toggleTableSort = (ascending: ClipSortBy, descending: ClipSortBy) => {
+    setSortBy((current) => current === ascending ? descending : ascending);
+    setCurrentPage(1);
+  };
+
+  const sortIndicator = (ascending: ClipSortBy, descending: ClipSortBy) =>
+    sortBy === ascending ? "↑" : sortBy === descending ? "↓" : "↕";
+
   // Filtered & Sorted Clips
   const filteredClips = useMemo(() => {
     let result = [...clips];
@@ -566,6 +597,21 @@ export default function PlaybackPage() {
       result = result.filter((c) => (clipMotionMap.get(c.id)?.length || 0) > 0);
     }
 
+    if (storageFilter) {
+      result = result.filter((clip) => clip.storageTargetName === storageFilter);
+    }
+
+    const megabyte = 1024 * 1024;
+    if (sizeFilter === "under-25") {
+      result = result.filter((clip) => clip.sizeBytes < 25 * megabyte);
+    } else if (sizeFilter === "25-100") {
+      result = result.filter((clip) => clip.sizeBytes >= 25 * megabyte && clip.sizeBytes < 100 * megabyte);
+    } else if (sizeFilter === "100-500") {
+      result = result.filter((clip) => clip.sizeBytes >= 100 * megabyte && clip.sizeBytes < 500 * megabyte);
+    } else if (sizeFilter === "over-500") {
+      result = result.filter((clip) => clip.sizeBytes >= 500 * megabyte);
+    }
+
     if (sortBy === "newest") {
       result.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     } else if (sortBy === "oldest") {
@@ -574,9 +620,21 @@ export default function PlaybackPage() {
       result.sort((a, b) => b.sizeBytes - a.sizeBytes);
     } else if (sortBy === "smallest") {
       result.sort((a, b) => a.sizeBytes - b.sizeBytes);
+    } else if (sortBy === "camera-asc" || sortBy === "camera-desc") {
+      const direction = sortBy === "camera-asc" ? 1 : -1;
+      result.sort((a, b) => direction * a.cameraName.localeCompare(b.cameraName, "de", { numeric: true }));
+    } else if (sortBy === "motion-most" || sortBy === "motion-least") {
+      const direction = sortBy === "motion-most" ? -1 : 1;
+      result.sort((a, b) => direction * ((clipMotionMap.get(a.id)?.length || 0) - (clipMotionMap.get(b.id)?.length || 0)));
+    } else if (sortBy === "storage-asc" || sortBy === "storage-desc") {
+      const direction = sortBy === "storage-asc" ? 1 : -1;
+      result.sort((a, b) => direction * a.storageTargetName.localeCompare(b.storageTargetName, "de", { numeric: true }));
+    } else if (sortBy === "filename-asc" || sortBy === "filename-desc") {
+      const direction = sortBy === "filename-asc" ? 1 : -1;
+      result.sort((a, b) => direction * a.filename.localeCompare(b.filename, "de", { numeric: true }));
     }
     return result;
-  }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, clipMotionMap]);
+  }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, clipMotionMap, storageFilter, sizeFilter]);
 
   // Clips for 24h Timeline (clips matching selected date and selected camera)
   const timelineClips = useMemo(() => {
@@ -1308,6 +1366,45 @@ export default function PlaybackPage() {
                 </span>
               )}
             </button>
+
+            {/* Storage target filter */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+              <HardDrive className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+              <select
+                value={storageFilter}
+                onChange={(event) => {
+                  setStorageFilter(event.target.value);
+                  setCurrentPage(1);
+                }}
+                className="max-w-[150px] cursor-pointer bg-transparent text-xs text-white focus:outline-none"
+                aria-label="Nach Speicherort filtern"
+              >
+                <option value="">Alle Speicherorte</option>
+                {availableStorageTargets.map((target) => (
+                  <option key={target} value={target}>{target}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* File size filter */}
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+              <Gauge className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+              <select
+                value={sizeFilter}
+                onChange={(event) => {
+                  setSizeFilter(event.target.value as ClipSizeFilter);
+                  setCurrentPage(1);
+                }}
+                className="cursor-pointer bg-transparent text-xs text-white focus:outline-none"
+                aria-label="Nach Dateigröße filtern"
+              >
+                <option value="all">Alle Größen</option>
+                <option value="under-25">Unter 25 MB</option>
+                <option value="25-100">25–100 MB</option>
+                <option value="100-500">100–500 MB</option>
+                <option value="over-500">Ab 500 MB</option>
+              </select>
+            </div>
           </div>
 
           {/* Right Group: Sort, View Switcher & Counter */}
@@ -1322,8 +1419,16 @@ export default function PlaybackPage() {
               >
                 <option value="newest">Neueste zuerst</option>
                 <option value="oldest">Älteste zuerst</option>
+                <option value="camera-asc">Kamera A–Z</option>
+                <option value="camera-desc">Kamera Z–A</option>
+                <option value="motion-most">Meiste Bewegungen</option>
+                <option value="motion-least">Wenigste Bewegungen</option>
                 <option value="largest">Größte zuerst</option>
                 <option value="smallest">Kleinste zuerst</option>
+                <option value="storage-asc">Speicherort A–Z</option>
+                <option value="storage-desc">Speicherort Z–A</option>
+                <option value="filename-asc">Dateiname A–Z</option>
+                <option value="filename-desc">Dateiname Z–A</option>
               </select>
             </div>
 
@@ -2596,12 +2701,66 @@ export default function PlaybackPage() {
                     </button>
                   </th>
                   <th className="py-2.5 px-3 w-12 text-center">Play</th>
-                  <th className="py-2.5 px-3">Kamera</th>
-                  <th className="py-2.5 px-3">Aufnahmezeit</th>
-                  <th className="py-2.5 px-3">Bewegung</th>
-                  <th className="py-2.5 px-3">Größe</th>
-                  <th className="py-2.5 px-3 hidden md:table-cell">Speicherort</th>
-                  <th className="py-2.5 px-3 hidden lg:table-cell">Dateiname</th>
+                  <th className="py-2.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("camera-asc", "camera-desc")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Kameraname sortieren"
+                    >
+                      Kamera <span aria-hidden="true">{sortIndicator("camera-asc", "camera-desc")}</span>
+                    </button>
+                  </th>
+                  <th className="py-2.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("oldest", "newest")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Aufnahmezeit sortieren"
+                    >
+                      Aufnahmezeit <span aria-hidden="true">{sortIndicator("oldest", "newest")}</span>
+                    </button>
+                  </th>
+                  <th className="py-2.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("motion-least", "motion-most")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Anzahl der Bewegungen sortieren"
+                    >
+                      Bewegung <span aria-hidden="true">{sortIndicator("motion-least", "motion-most")}</span>
+                    </button>
+                  </th>
+                  <th className="py-2.5 px-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("smallest", "largest")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Dateigröße sortieren"
+                    >
+                      Größe <span aria-hidden="true">{sortIndicator("smallest", "largest")}</span>
+                    </button>
+                  </th>
+                  <th className="py-2.5 px-3 hidden md:table-cell">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("storage-asc", "storage-desc")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Speicherort sortieren"
+                    >
+                      Speicherort <span aria-hidden="true">{sortIndicator("storage-asc", "storage-desc")}</span>
+                    </button>
+                  </th>
+                  <th className="py-2.5 px-3 hidden lg:table-cell">
+                    <button
+                      type="button"
+                      onClick={() => toggleTableSort("filename-asc", "filename-desc")}
+                      className="inline-flex items-center gap-1 hover:text-white"
+                      title="Nach Dateiname sortieren"
+                    >
+                      Dateiname <span aria-hidden="true">{sortIndicator("filename-asc", "filename-desc")}</span>
+                    </button>
+                  </th>
                   <th className="py-2.5 px-3 text-right">Aktionen</th>
                 </tr>
               </thead>
