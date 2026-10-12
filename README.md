@@ -15,6 +15,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Auto-Korrektur von Kamera-IPs**: Behebt das Problem falscher lokaler IPs, die von Kameras in RTSP-Links gemeldet werden.
 - **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
 - **Kamera-Wall**: Speichert Scan-Ergebnisse lokal auf dem ONVIFscanner-Server und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
+- **Mobile Fokusansicht**: Nutzt auf Smartphones die gesamte verfügbare Fläche, blendet Bedienelemente standardmäßig aus und zeigt Kameranamen als dezentes Overlay.
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.

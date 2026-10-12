@@ -57,5 +57,58 @@
   .camera-wall {
     border-radius: 1rem;
   }
+
+  .camera-wall .camera-card-controls {
+    display: none;
+  }
+
+  .camera-wall.mobile-controls-visible .camera-card-controls {
+    display: flex;
+  }
+
+  .camera-card .camera-card-overlay {
+    margin: 0.2rem;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.42);
+    padding: 0.1rem 0.35rem;
+    font-size: 0.625rem;
+    line-height: 1rem;
+    box-shadow: none;
+    backdrop-filter: blur(3px);
+  }
+
+  .camera-wall.mobile-monitor-mode {
+    position: fixed;
+    inset: 0;
+    z-index: 9990;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 0;
+    padding: max(0.25rem, env(safe-area-inset-top)) max(0.25rem, env(safe-area-inset-right)) max(0.25rem, env(safe-area-inset-bottom)) max(0.25rem, env(safe-area-inset-left));
+    background: #020617;
+  }
+
+  .camera-wall.mobile-monitor-mode > .flex {
+    gap: 0.25rem;
+  }
+
+  .camera-wall.mobile-monitor-mode .camera-group {
+    gap: 0.25rem;
+  }
+
+  .camera-wall.mobile-monitor-mode .camera-group-title {
+    display: none;
+  }
+
+  .camera-wall.mobile-monitor-mode .wall-grid {
+    gap: 0.25rem;
+  }
+
+  .camera-wall.mobile-monitor-mode .camera-card {
+    border-radius: 0.55rem;
+  }
 }
 

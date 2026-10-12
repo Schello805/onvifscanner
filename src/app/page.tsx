@@ -47,6 +47,8 @@ export default function CameraWallPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mobileFocusMode, setMobileFocusMode] = useState(false);
+  const [mobileControlsVisible, setMobileControlsVisible] = useState(false);
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
   const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
   const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
@@ -116,6 +118,15 @@ export default function CameraWallPage() {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!mobileFocusMode) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileFocusMode]);
 
   const openExpanded = useCallback((id: string) => {
     if (typeof window !== "undefined") {
@@ -450,11 +461,22 @@ export default function CameraWallPage() {
   }
 
   async function enterMonitorMode() {
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      setMobileControlsVisible(false);
+      setControlsVisible(false);
+      setMobileFocusMode(true);
+      return;
+    }
     setControlsVisible(false);
     await wallRef.current?.requestFullscreen();
   }
 
   async function leaveFullscreen() {
+    if (mobileFocusMode) {
+      setMobileFocusMode(false);
+      setControlsVisible(true);
+      return;
+    }
     if (document.fullscreenElement) await document.exitFullscreen();
   }
 
@@ -519,8 +541,11 @@ export default function CameraWallPage() {
   }
 
   return (
-    <div ref={wallRef} className="camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6">
-      <div className={`mb-4 sm:mb-6 ${isFullscreen && !controlsVisible ? "hidden" : "block"}`}>
+    <div
+      ref={wallRef}
+      className={`camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6 ${mobileFocusMode ? "mobile-monitor-mode" : ""} ${mobileControlsVisible || (mobileFocusMode && controlsVisible) ? "mobile-controls-visible" : ""}`}
+    >
+      <div className={`mb-4 sm:mb-6 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Monitore</h1>
@@ -578,7 +603,7 @@ export default function CameraWallPage() {
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
               <span className="text-slate-400">Intervall:</span>
               <select
                 aria-label="Aktualisierungsintervall"
@@ -600,7 +625,7 @@ export default function CameraWallPage() {
               className="touch-manipulation rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 transition"
               title="Alle Kamerabilder jetzt aktualisieren"
             >
-              ↻ Refresh
+              ↻ <span className="hidden sm:inline">Refresh</span>
             </button>
 
             <button
@@ -613,8 +638,33 @@ export default function CameraWallPage() {
                   : "border border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
               }`}
             >
-              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? "■ Alle stoppen" : "▶ Alle Live"}
+              {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? (
+                <>■ <span className="hidden sm:inline">Alle stoppen</span></>
+              ) : (
+                <>▶ <span className="hidden sm:inline">Alle Live</span></>
+              )}
             </button>
+
+            <div className="flex sm:hidden items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1 text-xs text-slate-300">
+              <button
+                type="button"
+                onClick={() => changeMobileColumns(mobileColumns === 1 ? 2 : 1)}
+                className="touch-manipulation rounded px-2 py-1 font-semibold hover:bg-white/10"
+                title="Raster zwischen einer und zwei Spalten wechseln"
+                aria-label={`Aktuell ${mobileColumns} Spalten. Raster wechseln.`}
+              >
+                {mobileColumns === 1 ? "▭" : "▦"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileControlsVisible((visible) => !visible)}
+                className={`touch-manipulation rounded px-2 py-1 font-semibold ${mobileControlsVisible ? "bg-indigo-500/25 text-indigo-200" : "hover:bg-white/10"}`}
+                title={mobileControlsVisible ? "Kamera-Bedienung ausblenden" : "Kamera-Bedienung einblenden"}
+                aria-pressed={mobileControlsVisible}
+              >
+                {mobileControlsVisible ? "◉" : "◎"}
+              </button>
+            </div>
 
             {isFullscreen ? (
               <button
@@ -631,17 +681,35 @@ export default function CameraWallPage() {
                 className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
                 title="Vollbild-Überwachungsmodus"
               >
-                ▣ Vollbild
+                <span className="sm:hidden">▣ Fokus</span>
+                <span className="hidden sm:inline">▣ Vollbild</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {isFullscreen ? (
-        <button type="button" onClick={() => setControlsVisible((value) => !value)} className={`fixed right-3 top-3 z-50 rounded-full border border-white/10 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur-md transition-opacity ${controlsVisible ? "opacity-100" : "opacity-0 hover:opacity-100 focus:opacity-100"}`}>
-          {controlsVisible ? "Bedienung ausblenden" : "Bedienung"}
-        </button>
+      {isFullscreen || mobileFocusMode ? (
+        <div className="fixed right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-[10000] flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setControlsVisible((value) => !value)}
+            className="rounded-full border border-white/15 bg-black/55 px-3 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur-md"
+            aria-pressed={controlsVisible}
+            title={controlsVisible ? "Kamera-Bedienung ausblenden" : "Kamera-Bedienung einblenden"}
+          >
+            {controlsVisible ? "◉ Bedienung" : "◎ Bedienung"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void leaveFullscreen()}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg text-white shadow-lg backdrop-blur-md"
+            aria-label="Fokusmodus schließen"
+            title="Fokusmodus schließen"
+          >
+            ×
+          </button>
+        </div>
       ) : null}
 
       {!cameras.length ? (
@@ -661,9 +729,9 @@ export default function CameraWallPage() {
               return acc;
             }, {} as Record<string, WallCamera[]>)
           ).sort((a, b) => a[0] === "Ungruppiert" ? 1 : b[0] === "Ungruppiert" ? -1 : a[0].localeCompare(b[0])).map(([groupName, groupCameras]) => (
-            <div key={groupName} className="flex flex-col gap-3">
+            <div key={groupName} className="camera-group flex flex-col gap-3">
               {groupName !== "Ungruppiert" && (
-                <h2 className="px-2 text-lg font-semibold text-white/90 flex items-center gap-2">
+                <h2 className="camera-group-title px-2 text-lg font-semibold text-white/90 flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
                   {groupName}
                 </h2>
@@ -800,7 +868,7 @@ export default function CameraWallPage() {
                   )}
 
                   {image?.src && camera.overlayPosition && (
-                    <div className={`absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
+                    <div className={`camera-card-overlay absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
                       ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
                       ${camera.overlayPosition === "top-right" ? "top-0 right-0" : ""}
                       ${camera.overlayPosition === "bottom-left" ? "bottom-0 left-0" : ""}
@@ -822,8 +890,8 @@ export default function CameraWallPage() {
                   )}
                 </div>
 
-                {!isFullscreen || controlsVisible ? (
-                  <div className="bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
+                {(!isFullscreen && !mobileFocusMode) || controlsVisible ? (
+                  <div className="camera-card-controls bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
                     <div className="flex items-center gap-1 min-w-0 shrink flex-nowrap">
                       {/* Live Stream Button */}
                       <button
