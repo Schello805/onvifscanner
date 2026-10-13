@@ -11,7 +11,7 @@ const FILE_PATH = path.join(DATA_DIR, "wall.json");
 
 function normalizeMotionRegions(value: unknown) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 32).flatMap((region) => {
+  return value.slice(0, 256).flatMap((region) => {
     if (!region || typeof region !== "object") return [];
     const source = region as Record<string, unknown>;
     const x = Math.min(1, Math.max(0, Number(source.x)));

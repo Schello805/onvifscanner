@@ -102,7 +102,7 @@ export async function PATCH(req: Request) {
     }
     if (body.motionIgnoreRegions !== undefined) {
       const regions = Array.isArray(body.motionIgnoreRegions) ? body.motionIgnoreRegions : [];
-      updateData.motionIgnoreRegions = JSON.stringify(regions.slice(0, 32).flatMap((region: unknown) => {
+      updateData.motionIgnoreRegions = JSON.stringify(regions.slice(0, 256).flatMap((region: unknown) => {
         if (!region || typeof region !== "object") return [];
         const source = region as Record<string, unknown>;
         const x = Math.min(1, Math.max(0, Number(source.x)));
