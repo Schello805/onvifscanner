@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { X, Settings2, Bell, Save, Send } from "lucide-react";
 import { useToast } from "./ToastProvider";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type SettingsData = {
   ntfyTopic: string | null;
@@ -26,6 +27,7 @@ export function SettingsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingNotification, setIsTestingNotification] = useState(false);
+  useBodyScrollLock(isOpen);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
@@ -110,7 +112,7 @@ export function SettingsModal({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-slate-900 border border-slate-700/60 shadow-2xl animate-in zoom-in-95 fade-in slide-in-from-bottom-4">
+      <div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-slate-900 border border-slate-700/60 shadow-2xl animate-in zoom-in-95 fade-in slide-in-from-bottom-4">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4 bg-slate-900/50">
@@ -129,7 +131,7 @@ export function SettingsModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6 space-y-6">
           {isLoading ? (
             <div className="flex justify-center py-10">
               <span className="loading loading-spinner text-indigo-500"></span>

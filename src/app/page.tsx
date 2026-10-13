@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type CameraImageState = {
   src?: string;
@@ -61,6 +62,7 @@ export default function CameraWallPage() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode));
 
   useEffect(() => {
     setMounted(true);
@@ -120,15 +122,6 @@ export default function CameraWallPage() {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
-
-  useEffect(() => {
-    if (!mobileFocusMode) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [mobileFocusMode]);
 
   const openExpanded = useCallback((id: string) => {
     if (typeof window !== "undefined") {

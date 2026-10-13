@@ -22,6 +22,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type StorageTargetItem = {
   id: string;
@@ -132,6 +133,7 @@ export default function StorageManagementPage() {
 
   // Edit Modal State
   const [editingTarget, setEditingTarget] = useState<StorageTargetItem | null>(null);
+  useBodyScrollLock(Boolean(isModalOpen || editingTarget));
 
   const fetchTargets = useCallback(async () => {
     try {
@@ -1374,7 +1376,7 @@ export default function StorageManagementPage() {
       {/* Edit Storage Target Modal */}
       {editingTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="relative w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+          <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Settings2 className="h-5 w-5 text-cyan-400" />

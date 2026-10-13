@@ -40,6 +40,7 @@ import {
   Award,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type CameraRankingItem = {
   cameraId: string;
@@ -384,6 +385,7 @@ export default function PlaybackPage() {
   const [statsPeriod, setStatsPeriod] = useState<"today" | "yesterday" | "7d" | "30d" | "all">("today");
   const [activityStats, setActivityStats] = useState<ActivityStatsResponse | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  useBodyScrollLock(Boolean(showStatsModal || activeClip || cameraPickerOpen));
 
   const fetchActivityStats = useCallback(async (period: string) => {
     try {
