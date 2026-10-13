@@ -12,6 +12,11 @@
 }
 
 @layer base {
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
   body {
     @apply min-h-screen text-slate-200 antialiased selection:bg-indigo-500/30;
     /* Create a deep, moody, dynamic background */

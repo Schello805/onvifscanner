@@ -110,6 +110,8 @@ type ClipSortBy =
 
 type ClipSizeFilter = "all" | "under-25" | "25-100" | "100-500" | "over-500";
 
+const cameraNameCollator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+
 type MotionEvent = {
   id: string;
   cameraId: string;
@@ -430,7 +432,9 @@ export default function PlaybackPage() {
             ip: c.ip,
             recordEnabled: Boolean(c.recordEnabled),
             recordSegmentMinutes: c.recordSegmentMinutes,
-          }))
+          })).sort((left: CameraSimple, right: CameraSimple) =>
+            cameraNameCollator.compare(left.name, right.name) || left.ip.localeCompare(right.ip, "de", { numeric: true })
+          )
         );
       }
     } catch {}
@@ -3276,7 +3280,7 @@ export default function PlaybackPage() {
 
       {cameraPickerOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-end bg-black/70 backdrop-blur-sm sm:hidden"
+          className="fixed inset-0 z-[100] flex items-end overscroll-none bg-black/70 backdrop-blur-sm sm:hidden"
           role="presentation"
           onClick={() => setCameraPickerOpen(false)}
         >
@@ -3301,7 +3305,7 @@ export default function PlaybackPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="max-h-[calc(72dvh-4.5rem)] space-y-1 overflow-y-auto p-3 pb-6">
+            <div className="max-h-[calc(72dvh-4.5rem)] touch-pan-y space-y-1 overflow-y-auto overscroll-contain p-3 pb-6 [-webkit-overflow-scrolling:touch]">
               <button
                 type="button"
                 onClick={() => selectCameraFilter("")}

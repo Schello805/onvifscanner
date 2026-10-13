@@ -159,7 +159,7 @@ export async function GET(req: Request) {
           count: day.count,
           cameras: Array.from(day.cameras.entries())
             .map(([id, count]) => ({ id, name: cameraMap.get(id) || `Kamera ${id}`, count }))
-            .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name)),
+            .sort((left, right) => left.name.localeCompare(right.name, "de", { numeric: true, sensitivity: "base" })),
         }));
 
       return NextResponse.json({
