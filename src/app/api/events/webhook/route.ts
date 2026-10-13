@@ -68,6 +68,20 @@ export async function POST(req: Request) {
     }
 
     if (matchedCamera) {
+      let hasMotionMask = false;
+      try {
+        const regions = JSON.parse(matchedCamera.motionIgnoreRegions || "[]");
+        hasMotionMask = Array.isArray(regions) && regions.length > 0;
+      } catch {}
+      if (hasMotionMask) {
+        return NextResponse.json({
+          ok: true,
+          recorded: false,
+          cameraId: matchedCamera.id,
+          cameraName: matchedCamera.name,
+          note: "Kamera-Ereignis ignoriert; die konfigurierte Bildmaske wird durch die Server-Bildanalyse ausgewertet.",
+        });
+      }
       const eventTime = new Date();
       await prisma.camera.update({
         where: { id: matchedCamera.id },

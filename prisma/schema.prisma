@@ -29,6 +29,7 @@ model Camera {
   motionPreRollSeconds  Int            @default(10)
   motionPostRollSeconds Int            @default(30)
   motionSensitivity    Int            @default(80)
+  motionIgnoreRegions String         @default("[]") // normalized rectangles: [{x,y,width,height}]
   motionEventState      String         @default("unknown") // unknown | probing | active | unsupported | error
   motionEventSource     String?
   motionEventLastSeen   DateTime?

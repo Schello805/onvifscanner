@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
-import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
+import { loadWallData, saveWallData, type MotionRegion, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
@@ -29,12 +29,137 @@ type CameraEditDraft = {
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
   motionSensitivity: number;
+  motionIgnoreRegions: MotionRegion[];
   notificationsEnabled: boolean;
   storageTargetId: string;
 };
 
 function apiUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
+}
+
+function MotionMaskEditor({
+  imageSrc,
+  regions,
+  onChange,
+}: {
+  imageSrc?: string;
+  regions: MotionRegion[];
+  onChange: (regions: MotionRegion[]) => void;
+}) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const [drawing, setDrawing] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
+
+  const pointFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = surfaceRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+    };
+  };
+
+  const finishDrawing = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drawing) return;
+    const point = pointFromEvent(event) ?? { x: drawing.x, y: drawing.y };
+    const region = {
+      x: Math.min(drawing.startX, point.x),
+      y: Math.min(drawing.startY, point.y),
+      width: Math.abs(point.x - drawing.startX),
+      height: Math.abs(point.y - drawing.startY),
+    };
+    setDrawing(null);
+    if (region.width >= 0.02 && region.height >= 0.02) onChange([...regions, region]);
+  };
+
+  const drawingRegion = drawing ? {
+    x: Math.min(drawing.startX, drawing.x),
+    y: Math.min(drawing.startY, drawing.y),
+    width: Math.abs(drawing.x - drawing.startX),
+    height: Math.abs(drawing.y - drawing.startY),
+  } : null;
+
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 p-3">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-white">Bewegungsbereiche maskieren</div>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">
+            Ziehe rote Bereiche über Bildteile, die ignoriert werden sollen, z. B. Bäume oder Straßen.
+          </p>
+        </div>
+        {regions.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="shrink-0 rounded-lg border border-rose-500/30 px-2 py-1 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/10"
+          >
+            Alle löschen
+          </button>
+        ) : null}
+      </div>
+      <div
+        ref={surfaceRef}
+        className="relative aspect-video w-full touch-none select-none overflow-hidden rounded-lg border border-white/10 bg-slate-900 cursor-crosshair"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          const point = pointFromEvent(event);
+          if (!point) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDrawing({ startX: point.x, startY: point.y, x: point.x, y: point.y });
+        }}
+        onPointerMove={(event) => {
+          if (!drawing) return;
+          const point = pointFromEvent(event);
+          if (!point) return;
+          event.preventDefault();
+          setDrawing({ ...drawing, x: point.x, y: point.y });
+        }}
+        onPointerUp={finishDrawing}
+        onPointerCancel={() => setDrawing(null)}
+      >
+        {imageSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageSrc} alt="Vorschau für Bewegungsmaske" draggable={false} className="h-full w-full object-fill opacity-90" />
+        ) : (
+          <div className="flex h-full items-center justify-center px-4 text-center text-[11px] text-slate-500">
+            Noch kein Vorschaubild geladen. Die Maske kann trotzdem eingezeichnet werden.
+          </div>
+        )}
+        {[...regions, ...(drawingRegion ? [drawingRegion] : [])].map((region, index) => {
+          const saved = index < regions.length;
+          return (
+            <button
+              key={`${saved ? "saved" : "drawing"}-${index}`}
+              type="button"
+              disabled={!saved}
+              title={saved ? "Ignorierbereich entfernen" : undefined}
+              aria-label={saved ? `Ignorierbereich ${index + 1} entfernen` : undefined}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (saved) onChange(regions.filter((_, regionIndex) => regionIndex !== index));
+              }}
+              className="absolute flex items-start justify-end border-2 border-rose-400 bg-rose-500/35 p-1 text-xs font-bold text-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)] enabled:cursor-pointer"
+              style={{
+                left: `${region.x * 100}%`,
+                top: `${region.y * 100}%`,
+                width: `${region.width * 100}%`,
+                height: `${region.height * 100}%`,
+              }}
+            >
+              {saved ? <span className="rounded bg-black/60 px-1 leading-5">×</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+        <span>Außerhalb der roten Flächen bleibt die Erkennung aktiv.</span>
+        <span>{regions.length} Maske(n)</span>
+      </div>
+    </div>
+  );
 }
 
 export default function CameraWallPage() {
@@ -329,6 +454,7 @@ export default function CameraWallPage() {
       motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
       motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
       motionSensitivity: camera.motionSensitivity ?? 80,
+      motionIgnoreRegions: camera.motionIgnoreRegions ?? [],
       notificationsEnabled: Boolean(camera.notificationsEnabled),
       storageTargetId: camera.storageTargetId || "",
     });
@@ -443,6 +569,7 @@ export default function CameraWallPage() {
       motionPreRollSeconds: editDraft.motionPreRollSeconds,
       motionPostRollSeconds: editDraft.motionPostRollSeconds,
       motionSensitivity: editDraft.motionSensitivity,
+      motionIgnoreRegions: editDraft.motionIgnoreRegions,
       notificationsEnabled: editDraft.notificationsEnabled,
       storageTargetId: editDraft.storageTargetId || null,
     } : camera);
@@ -458,6 +585,7 @@ export default function CameraWallPage() {
         motionPreRollSeconds: editDraft.motionPreRollSeconds,
         motionPostRollSeconds: editDraft.motionPostRollSeconds,
         motionSensitivity: editDraft.motionSensitivity,
+        motionIgnoreRegions: editDraft.motionIgnoreRegions,
         notificationsEnabled: editDraft.notificationsEnabled,
         storageTargetId: editDraft.storageTargetId || null,
       })
@@ -1453,6 +1581,13 @@ export default function CameraWallPage() {
                               <span>Erkennt kleinere Bewegungen</span>
                             </span>
                           </label>
+                          <div className="sm:col-span-2">
+                            <MotionMaskEditor
+                              imageSrc={images[editingCameraId]?.src}
+                              regions={editDraft.motionIgnoreRegions}
+                              onChange={(motionIgnoreRegions) => setEditDraft({ ...editDraft, motionIgnoreRegions })}
+                            />
+                          </div>
                           <label className="grid gap-1">
                             <span className="text-slate-400 text-[11px]">Vorlauf:</span>
                             <select value={editDraft.motionPreRollSeconds} onChange={(e) => setEditDraft({ ...editDraft, motionPreRollSeconds: Number(e.target.value) })} className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white">

@@ -18,6 +18,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Mobile Fokusansicht**: Nutzt auf Smartphones die gesamte verfügbare Fläche, blendet Bedienelemente standardmäßig aus und zeigt Kameranamen als dezentes Overlay.
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
+- **Bewegungsmasken pro Kamera**: Rote Ignorierbereiche lassen sich direkt auf dem Kamerabild einzeichnen, damit etwa Bäume, Straßen oder Zeitstempel keine Aufnahme auslösen.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
 - **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
@@ -64,6 +65,8 @@ Für jede gespeicherte Kamera kann unter `Aufnahmen` oder direkt beim Bearbeiten
 - **Daueraufnahme**: Der RTSP-Stream wird wie bisher ohne Unterbrechung in konfigurierbaren Segmenten archiviert.
 
 Standardmäßig nutzt die Bewegungsaufnahme 10 Sekunden Vorlauf und 30 Sekunden Nachlauf. Wiederholte Ereignisse verlängern das persistente Aufnahmefenster automatisch. Nach dem Nachlauf verbindet `ffmpeg` alle zugehörigen Ringpuffer-Segmente verlustfrei zu einem Bewegungsclip. Der temporäre Puffer liegt unter `data/motion-buffer`, Arbeitsdateien unter `data/motion-staging`; nur der fertige Clip wird in das gewählte Speicherziel übernommen. Aufnahmefenster und Ereignis-Zuordnung liegen in SQLite und überstehen dadurch einen Neustart der Anwendung.
+
+Im Kamera-Editor können außerdem rote Ignorierbereiche direkt auf dem Vorschaubild eingezeichnet werden. Die Koordinaten werden proportional gespeichert und funktionieren daher unabhängig von der Analyseauflösung. Sobald eine Kamera eine Maske besitzt, wird ihre Bewegung ausschließlich durch die serverseitige Bildanalyse bewertet, da ONVIF- und Webhook-Ereignisse keine räumlichen Koordinaten für die Maske liefern.
 
 Für Smartphones normalisiert ONVIFscanner neue Bewegungsclips in ein kompatibles MP4/H.264-Format. Falls ein älterer oder kontinuierlich aufgezeichneter Clip vom Browser nicht unterstützt wird, erzeugt die Wiedergabeseite automatisch eine zwischengespeicherte H.264-Version unter `data/playback-cache` und versucht die Wiedergabe erneut.
 

@@ -2,6 +2,13 @@ import type { Credentials, ScanResult } from "@/lib/types";
 
 export const CAMERA_WALL_STORAGE_KEY = "onvifscanner.camera-wall.v1";
 
+export type MotionRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type WallCamera = {
   id: string;
   ip: string;
@@ -16,6 +23,7 @@ export type WallCamera = {
   motionPreRollSeconds?: number;
   motionPostRollSeconds?: number;
   motionSensitivity?: number;
+  motionIgnoreRegions?: MotionRegion[];
   notificationsEnabled?: boolean;
   storageTargetId?: string | null;
   snapshotUris: string[];
@@ -141,6 +149,7 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         motionPreRollSeconds: existing.motionPreRollSeconds,
         motionPostRollSeconds: existing.motionPostRollSeconds,
         motionSensitivity: existing.motionSensitivity,
+        motionIgnoreRegions: existing.motionIgnoreRegions ?? camera.motionIgnoreRegions,
         notificationsEnabled: existing.notificationsEnabled,
         storageTargetId: existing.storageTargetId,
         snapshotUris: Array.from(new Set([...existing.snapshotUris, ...camera.snapshotUris])),

@@ -34,6 +34,9 @@ export async function GET() {
       motionPreRollSeconds: c.motionPreRollSeconds,
       motionPostRollSeconds: c.motionPostRollSeconds,
       motionSensitivity: c.motionSensitivity,
+      motionIgnoreRegions: (() => {
+        try { return JSON.parse(c.motionIgnoreRegions || "[]"); } catch { return []; }
+      })(),
       notificationsEnabled: c.notificationsEnabled,
       motionEventState: c.motionEventState,
       motionEventSource: c.motionEventSource,
@@ -96,6 +99,20 @@ export async function PATCH(req: Request) {
     }
     if (body.motionSensitivity !== undefined) {
       updateData.motionSensitivity = Math.min(100, Math.max(1, Math.round(Number(body.motionSensitivity) || 80)));
+    }
+    if (body.motionIgnoreRegions !== undefined) {
+      const regions = Array.isArray(body.motionIgnoreRegions) ? body.motionIgnoreRegions : [];
+      updateData.motionIgnoreRegions = JSON.stringify(regions.slice(0, 32).flatMap((region: unknown) => {
+        if (!region || typeof region !== "object") return [];
+        const source = region as Record<string, unknown>;
+        const x = Math.min(1, Math.max(0, Number(source.x)));
+        const y = Math.min(1, Math.max(0, Number(source.y)));
+        const width = Math.min(1 - x, Math.max(0, Number(source.width)));
+        const height = Math.min(1 - y, Math.max(0, Number(source.height)));
+        return Number.isFinite(x) && Number.isFinite(y) && width >= 0.01 && height >= 0.01
+          ? [{ x, y, width, height }]
+          : [];
+      }));
     }
     if (body.notificationsEnabled !== undefined) {
       updateData.notificationsEnabled = Boolean(body.notificationsEnabled);

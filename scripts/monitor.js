@@ -30,6 +30,26 @@ const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
 let motionSensitivityDefaultsMigrated = false;
 
+function parseMotionIgnoreRegions(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((region) => region
+      && Number.isFinite(Number(region.x))
+      && Number.isFinite(Number(region.y))
+      && Number(region.width) > 0
+      && Number(region.height) > 0
+    ).map((region) => ({
+      x: Math.min(1, Math.max(0, Number(region.x))),
+      y: Math.min(1, Math.max(0, Number(region.y))),
+      width: Math.min(1, Math.max(0, Number(region.width))),
+      height: Math.min(1, Math.max(0, Number(region.height))),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 async function mapWithConcurrency(items, concurrency, task) {
   let nextIndex = 0;
   const results = new Array(items.length);
@@ -134,7 +154,9 @@ async function runMonitorCycle() {
 
     // Phase 4: Sync ONVIF Event Pull workers (low resource, event-driven)
     try {
-      void onvifEvents.syncCameras(cameras.filter((c) => Boolean(c.ip)));
+      void onvifEvents.syncCameras(cameras.filter((camera) =>
+        Boolean(camera.ip) && parseMotionIgnoreRegions(camera.motionIgnoreRegions).length === 0
+      ));
     } catch (e) {
       // quiet
     }
@@ -176,10 +198,13 @@ async function runMotionDetection() {
 async function detectCameraMotion(cam) {
   if (cam.status && !cam.status.isOnline) return;
 
+  const ignoreRegions = parseMotionIgnoreRegions(cam.motionIgnoreRegions);
+  const maskKey = JSON.stringify(ignoreRegions);
+
   const onvifEventIsRecent = cam.motionEventSource === 'onvif'
     && cam.motionEventLastSeen
     && Date.now() - cam.motionEventLastSeen.getTime() < 5 * 60_000;
-  if (onvifEventIsRecent) return;
+  if (onvifEventIsRecent && ignoreRegions.length === 0) return;
 
   let snapshotUris = [];
   let streamUris = [];
@@ -216,25 +241,38 @@ async function detectCameraMotion(cam) {
       .toBuffer({ resolveWithObject: true });
 
     const previous = motionFrames.get(cam.id);
-    if (!previous || previous.pixels.length !== pixels.length) {
-      motionFrames.set(cam.id, { pixels, noiseArea: 0, noiseMean: 0 });
+    if (!previous || previous.pixels.length !== pixels.length || previous.maskKey !== maskKey) {
+      motionFrames.set(cam.id, { pixels, noiseArea: 0, noiseMean: 0, maskKey });
       return;
     }
 
     let changedPixels = 0;
     let differenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
-    const pixelCount = Math.floor(pixels.length / channels);
+    let activePixelCount = 0;
     const sensitivity = Math.min(100, Math.max(1, Number(cam.motionSensitivity) || 80));
     const sensitivityFactor = 1.5 - sensitivity / 100;
     const effectivePixelThreshold = Math.max(8, Math.round(motionPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
+      const pixelIndex = Math.floor(index / channels);
+      const x = (pixelIndex % info.width) / info.width;
+      const y = Math.floor(pixelIndex / info.width) / info.height;
+      const ignored = ignoreRegions.some((region) =>
+        x >= region.x && x <= region.x + region.width
+        && y >= region.y && y <= region.y + region.height
+      );
+      if (ignored) continue;
+      activePixelCount += 1;
       const difference = Math.abs(pixels[index] - previous.pixels[index]);
       differenceSum += difference;
       if (difference >= effectivePixelThreshold) changedPixels += 1;
     }
-    const changedArea = pixelCount ? changedPixels / pixelCount : 0;
-    const meanDifference = pixelCount ? differenceSum / pixelCount : 0;
+    if (activePixelCount === 0) {
+      motionFrames.set(cam.id, { pixels, noiseArea: 0, noiseMean: 0, maskKey });
+      return;
+    }
+    const changedArea = changedPixels / activePixelCount;
+    const meanDifference = differenceSum / activePixelCount;
     const requiredArea = Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.004) * sensitivityFactor;
     const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4) * sensitivityFactor;
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
@@ -243,6 +281,7 @@ async function detectCameraMotion(cam) {
       pixels,
       noiseArea: movementDetected ? previous.noiseArea : previous.noiseArea * 0.85 + changedArea * 0.15,
       noiseMean: movementDetected ? previous.noiseMean : previous.noiseMean * 0.85 + meanDifference * 0.15,
+      maskKey,
     });
 
     const checkedAt = new Date();

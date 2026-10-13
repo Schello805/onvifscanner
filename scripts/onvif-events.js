@@ -188,6 +188,13 @@ class OnvifEventManager {
   async syncCameras(cameras) {
     if (!this.running) return;
 
+    const desiredCameraIds = new Set(cameras.map((camera) => camera.id));
+    for (const [cameraId, worker] of this.activeWorkers.entries()) {
+      if (!desiredCameraIds.has(cameraId)) {
+        worker.aborted = true;
+      }
+    }
+
     for (const cam of cameras) {
       if (this.activeWorkers.has(cam.id)) continue;
 

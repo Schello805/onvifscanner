@@ -9,6 +9,21 @@ export const dynamic = "force-dynamic";
 const DATA_DIR = path.join(process.cwd(), "data");
 const FILE_PATH = path.join(DATA_DIR, "wall.json");
 
+function normalizeMotionRegions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 32).flatMap((region) => {
+    if (!region || typeof region !== "object") return [];
+    const source = region as Record<string, unknown>;
+    const x = Math.min(1, Math.max(0, Number(source.x)));
+    const y = Math.min(1, Math.max(0, Number(source.y)));
+    const width = Math.min(1 - x, Math.max(0, Number(source.width)));
+    const height = Math.min(1 - y, Math.max(0, Number(source.height)));
+    return Number.isFinite(x) && Number.isFinite(y) && width >= 0.01 && height >= 0.01
+      ? [{ x, y, width, height }]
+      : [];
+  });
+}
+
 export async function GET() {
   try {
     const dbCameras = await prisma.camera.findMany({
@@ -79,6 +94,7 @@ export async function GET() {
       motionPreRollSeconds: cam.motionPreRollSeconds,
       motionPostRollSeconds: cam.motionPostRollSeconds,
       motionSensitivity: cam.motionSensitivity,
+      motionIgnoreRegions: normalizeMotionRegions(JSON.parse(cam.motionIgnoreRegions || "[]")),
       notificationsEnabled: cam.notificationsEnabled,
       storageTargetId: cam.storageTargetId ?? undefined,
       snapshotUris: JSON.parse(cam.snapshotUris),
@@ -145,6 +161,7 @@ export async function POST(req: Request) {
             motionPreRollSeconds: typeof cam.motionPreRollSeconds === "number" ? cam.motionPreRollSeconds : undefined,
             motionPostRollSeconds: typeof cam.motionPostRollSeconds === "number" ? cam.motionPostRollSeconds : undefined,
             motionSensitivity: typeof cam.motionSensitivity === "number" ? Math.min(100, Math.max(1, Math.round(cam.motionSensitivity))) : undefined,
+            motionIgnoreRegions: cam.motionIgnoreRegions !== undefined ? JSON.stringify(normalizeMotionRegions(cam.motionIgnoreRegions)) : undefined,
             notificationsEnabled: typeof cam.notificationsEnabled === "boolean" ? cam.notificationsEnabled : undefined,
             storageTargetId: typeof cam.storageTargetId === "string" ? cam.storageTargetId : (cam.storageTargetId === null ? null : undefined),
             snapshotUris: JSON.stringify(cam.snapshotUris || []),
@@ -168,6 +185,7 @@ export async function POST(req: Request) {
             motionPreRollSeconds: typeof cam.motionPreRollSeconds === "number" ? cam.motionPreRollSeconds : 10,
             motionPostRollSeconds: typeof cam.motionPostRollSeconds === "number" ? cam.motionPostRollSeconds : 30,
             motionSensitivity: typeof cam.motionSensitivity === "number" ? Math.min(100, Math.max(1, Math.round(cam.motionSensitivity))) : 80,
+            motionIgnoreRegions: JSON.stringify(normalizeMotionRegions(cam.motionIgnoreRegions)),
             notificationsEnabled: Boolean(cam.notificationsEnabled),
             storageTargetId: typeof cam.storageTargetId === "string" ? cam.storageTargetId : null,
             snapshotUris: JSON.stringify(cam.snapshotUris || []),
