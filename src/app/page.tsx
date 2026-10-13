@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
@@ -52,6 +52,7 @@ export default function CameraWallPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mobileFocusMode, setMobileFocusMode] = useState(false);
   const [mobileControlsVisible, setMobileControlsVisible] = useState(false);
+  const [mediaTransform, setMediaTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
   const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
   const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
@@ -82,10 +83,24 @@ export default function CameraWallPage() {
   const liveCamerasRef = useRef<Set<string>>(new Set());
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
+  const mediaTransformRef = useRef(mediaTransform);
+  const mediaPointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const mediaGestureRef = useRef({ distance: 0, centerX: 0, centerY: 0, moved: false });
 
   useEffect(() => {
     liveCamerasRef.current = liveCameras;
   }, [liveCameras]);
+
+  useEffect(() => {
+    mediaTransformRef.current = mediaTransform;
+  }, [mediaTransform]);
+
+  useEffect(() => {
+    mediaPointersRef.current.clear();
+    mediaGestureRef.current = { distance: 0, centerX: 0, centerY: 0, moved: false };
+    mediaTransformRef.current = { scale: 1, x: 0, y: 0 };
+    setMediaTransform({ scale: 1, x: 0, y: 0 });
+  }, [expandedCameraId]);
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
@@ -575,6 +590,88 @@ export default function CameraWallPage() {
     }
   }
 
+  function applyMediaTransform(next: { scale: number; x: number; y: number }, element?: HTMLElement) {
+    const scale = Math.min(4, Math.max(1, next.scale));
+    const rect = element?.getBoundingClientRect();
+    const maxX = rect ? (rect.width * (scale - 1)) / 2 : Number.POSITIVE_INFINITY;
+    const maxY = rect ? (rect.height * (scale - 1)) / 2 : Number.POSITIVE_INFINITY;
+    const transform = {
+      scale,
+      x: scale === 1 ? 0 : Math.min(maxX, Math.max(-maxX, next.x)),
+      y: scale === 1 ? 0 : Math.min(maxY, Math.max(-maxY, next.y)),
+    };
+    mediaTransformRef.current = transform;
+    setMediaTransform(transform);
+  }
+
+  function toggleMediaZoom() {
+    const nextScale = mediaTransformRef.current.scale > 1 ? 1 : 2;
+    applyMediaTransform({ scale: nextScale, x: 0, y: 0 });
+  }
+
+  function handleMediaPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!expandedCameraId || (event.target as HTMLElement).closest("button, a")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = [...mediaPointersRef.current.values()];
+    if (points.length === 1) {
+      mediaGestureRef.current = { distance: 0, centerX: points[0].x, centerY: points[0].y, moved: false };
+    } else {
+      const [first, second] = points;
+      mediaGestureRef.current.distance = Math.hypot(second.x - first.x, second.y - first.y);
+      mediaGestureRef.current.centerX = (first.x + second.x) / 2;
+      mediaGestureRef.current.centerY = (first.y + second.y) / 2;
+    }
+  }
+
+  function handleMediaPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const previousPoint = mediaPointersRef.current.get(event.pointerId);
+    if (!expandedCameraId || !previousPoint) return;
+    event.preventDefault();
+    mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = [...mediaPointersRef.current.values()];
+    const gesture = mediaGestureRef.current;
+
+    if (points.length >= 2) {
+      const [first, second] = points;
+      const distance = Math.hypot(second.x - first.x, second.y - first.y);
+      const centerX = (first.x + second.x) / 2;
+      const centerY = (first.y + second.y) / 2;
+      const scaleFactor = gesture.distance > 0 ? distance / gesture.distance : 1;
+      const current = mediaTransformRef.current;
+      applyMediaTransform({
+        scale: current.scale * scaleFactor,
+        x: current.x + centerX - gesture.centerX,
+        y: current.y + centerY - gesture.centerY,
+      }, event.currentTarget);
+      gesture.distance = distance;
+      gesture.centerX = centerX;
+      gesture.centerY = centerY;
+      gesture.moved = true;
+      return;
+    }
+
+    const deltaX = event.clientX - previousPoint.x;
+    const deltaY = event.clientY - previousPoint.y;
+    if (mediaTransformRef.current.scale > 1 && (Math.abs(deltaX) + Math.abs(deltaY) > 0)) {
+      const current = mediaTransformRef.current;
+      applyMediaTransform({ ...current, x: current.x + deltaX, y: current.y + deltaY }, event.currentTarget);
+      gesture.moved = true;
+    }
+    gesture.centerX = event.clientX;
+    gesture.centerY = event.clientY;
+  }
+
+  function handleMediaPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    mediaPointersRef.current.delete(event.pointerId);
+    const remaining = [...mediaPointersRef.current.values()];
+    if (remaining.length === 1) {
+      mediaGestureRef.current.distance = 0;
+      mediaGestureRef.current.centerX = remaining[0].x;
+      mediaGestureRef.current.centerY = remaining[0].y;
+    }
+  }
+
   return (
     <div
       ref={wallRef}
@@ -817,13 +914,20 @@ export default function CameraWallPage() {
                 }`}
               >
                 <div 
+                  onPointerDown={handleMediaPointerDown}
+                  onPointerMove={handleMediaPointerMove}
+                  onPointerUp={handleMediaPointerEnd}
+                  onPointerCancel={handleMediaPointerEnd}
                   onClick={() => {
+                    if (mediaGestureRef.current.moved) {
+                      mediaGestureRef.current.moved = false;
+                      return;
+                    }
                     const now = Date.now();
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
-                      // Double click detected!
                       if (expandedCameraId === camera.id) {
-                        closeExpanded();
+                        toggleMediaZoom();
                       } else {
                         openExpanded(camera.id);
                       }
@@ -832,7 +936,7 @@ export default function CameraWallPage() {
                       lastClickRef.current = { id: camera.id, time: now };
                     }
                   }}
-                  className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
+                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none' : 'flex-1 w-full aspect-video'}`}
                 >
                   {expandedCameraId === camera.id ? (
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
@@ -852,6 +956,21 @@ export default function CameraWallPage() {
                       >
                         <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
                         <span>{liveLoading.has(camera.id) ? "Laden" : isLive ? "Live" : "Live"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          toggleMediaZoom();
+                        }}
+                        className={`flex h-11 min-w-11 touch-manipulation items-center justify-center rounded-lg px-2 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition-colors ${
+                          mediaTransform.scale > 1 ? "bg-indigo-600/90 active:bg-indigo-500" : "bg-black/65 active:bg-black/90"
+                        }`}
+                        title={mediaTransform.scale > 1 ? "Zoom zurücksetzen" : "Zweifach vergrößern"}
+                        aria-label={mediaTransform.scale > 1 ? "Zoom zurücksetzen" : "Zweifach vergrößern"}
+                      >
+                        {mediaTransform.scale > 1 ? `${mediaTransform.scale.toFixed(1)}×` : "2×"}
                       </button>
                       <button
                         type="button"
@@ -899,6 +1018,13 @@ export default function CameraWallPage() {
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
                     </button>
                   )}
+                  <div
+                    className="h-full w-full will-change-transform"
+                    style={{
+                      transform: `translate3d(${mediaTransform.x}px, ${mediaTransform.y}px, 0) scale(${mediaTransform.scale})`,
+                      transition: mediaPointersRef.current.size ? "none" : "transform 160ms ease-out",
+                    }}
+                  >
                   {isLive ? (
                      <iframe 
                         src={livePlaybackUrls[camera.id]}
@@ -950,6 +1076,7 @@ export default function CameraWallPage() {
                       )}
                     </div>
                   )}
+                  </div>
 
                   {expandedCameraId !== camera.id ? (
                     <button
