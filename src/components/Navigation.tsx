@@ -7,19 +7,12 @@ import { usePathname } from "next/navigation";
 import {
   Radar,
   LayoutGrid,
-  Radio,
   Film,
   HardDrive,
-  Menu,
-  X,
   ExternalLink,
-  ChevronRight,
-  Sparkles,
-  RefreshCw,
   Settings,
 } from "lucide-react";
 import { SettingsModal } from "./SettingsModal";
-import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type NavItem = {
   href: string;
@@ -95,11 +88,9 @@ export function Navigation({
   repoUrl = "https://github.com/Schello805/onvifscanner",
 }: NavigationProps) {
   const pathname = usePathname();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [recordingCount, setRecordingCount] = useState<number>(0);
-  useBodyScrollLock(mobileMenuOpen);
 
   // Poll active recording count every 15s to keep navigation live
   useEffect(() => {
@@ -122,11 +113,6 @@ export function Navigation({
       clearInterval(interval);
     };
   }, []);
-
-  // Close mobile drawer on route change
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   // Detect fullscreen mode to hide bottom bar
   useEffect(() => {
@@ -252,132 +238,10 @@ export function Navigation({
               <Settings className="h-5 w-5" />
             </button>
 
-            {/* Mobile Menu Button */}
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((open) => !open)}
-              className="inline-flex md:hidden items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 transition-colors hover:bg-white/10 hover:text-white active:scale-95"
-              aria-label={mobileMenuOpen ? "Menü schließen" : "Menü öffnen"}
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
-            </button>
           </div>
         </div>
 
       </header>
-        {/* ─── MOBILE SLIDE-DOWN DRAWER ────────────────────────────── */}
-        {mobileMenuOpen && (
-          <div className="md:hidden fixed inset-x-0 top-[57px] bottom-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex flex-col justify-between border-t border-white/10 p-4 overflow-y-auto animate-in fade-in slide-in-from-top-3 duration-200">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between px-2 pt-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Navigation
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  Alle Seiten & Module
-                </span>
-              </div>
-              <div className="grid gap-2">
-                {NAV_ITEMS.map((item) => {
-                  const active = isItemActive(item);
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all active:scale-[0.98] ${
-                        active
-                          ? `${item.activeBg} ${item.activeBorder} text-white shadow-lg`
-                          : "border-white/5 bg-white/[0.02] text-slate-300 hover:border-white/10 hover:bg-white/5"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                            active
-                              ? `${item.activeBorder} ${item.activeBg}`
-                              : "border-white/10 bg-white/5"
-                          }`}
-                        >
-                          <Icon
-                            className={`h-5 w-5 ${
-                              active ? item.color : "text-slate-400"
-                            }`}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-sm text-white">
-                              {item.label}
-                            </span>
-                            {item.href === "/" && recordingCount > 0 && (
-                              <span className="rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-300 animate-pulse">
-                                ● {recordingCount} REC aktiv
-                              </span>
-                            )}
-                            {active && (
-                              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                                Aktiv
-                              </span>
-                            )}
-                          </div>
-                          <p className="truncate text-xs text-slate-400 mt-0.5">
-                            {item.description}
-                          </p>
-                        </div>
-                      </div>
-                      <ChevronRight
-                        className={`h-4 w-4 shrink-0 transition-transform ${
-                          active ? item.color : "text-slate-600"
-                        }`}
-                      />
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="pt-6 pb-20 border-t border-white/10 space-y-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== "undefined") {
-                    if ("caches" in window) {
-                      caches.keys().then((keys) => {
-                        keys.forEach((k) => caches.delete(k));
-                      }).catch(() => {});
-                    }
-                    const url = new URL(window.location.href);
-                    url.searchParams.set("_v", Date.now().toString());
-                    window.location.replace(url.toString());
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-2 rounded-xl border border-indigo-500/30 bg-indigo-500/10 py-2.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 hover:text-white transition-colors active:scale-98"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>App aktualisieren (Cache leeren)</span>
-              </button>
-              <a
-                href={repoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-medium text-slate-300 hover:bg-white/10 hover:text-white"
-              >
-                <span>GitHub Repository</span>
-                <ExternalLink className="h-3.5 w-3.5 opacity-70" />
-              </a>
-              <p className="text-center text-[11px] text-slate-400">
-                Tipp: Einmal nach unten ziehen (Pull-to-Refresh) aktualisiert die App ebenfalls.
-              </p>
-            </div>
-          </div>
-        )}
-
 
       {/* ─── MOBILE BOTTOM NAVIGATION BAR ─────────────────────────── */}
       {!isFullscreen && (

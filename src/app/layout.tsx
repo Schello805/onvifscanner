@@ -38,7 +38,7 @@ function Footer() {
           </div>
           <SystemStatus />
         </div>
-        <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+        <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-xs md:flex">
           <Link href="/" className="text-slate-400 hover:text-white transition-colors">
             Scanner
           </Link>

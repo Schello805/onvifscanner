@@ -1425,7 +1425,7 @@ export default function CameraWallPage() {
               event.preventDefault();
               saveCameraDetails();
             }}
-            className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+            className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl animate-in fade-in zoom-in-95 duration-150 lg:max-w-4xl"
           >
             {/* Sticky Header */}
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-slate-900/80">
@@ -1440,9 +1440,19 @@ export default function CameraWallPage() {
                     </span>
                   )}
                 </div>
-                <p className="font-mono text-xs text-slate-400">
-                  {cameras.find((camera) => camera.id === editingCameraId)?.ip}
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-mono text-xs text-slate-400">
+                    {cameras.find((camera) => camera.id === editingCameraId)?.ip}
+                  </p>
+                  <a
+                    href={`http://${cameras.find((camera) => camera.id === editingCameraId)?.ip}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md border border-cyan-500/25 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 hover:bg-cyan-500/20 hover:text-cyan-100"
+                  >
+                    Kamera-UI öffnen ↗
+                  </a>
+                </div>
               </div>
               <button
                 type="button"
