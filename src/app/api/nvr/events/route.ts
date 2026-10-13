@@ -37,10 +37,10 @@ export async function GET(req: Request) {
       take: 2000,
       include: {
         camera: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, recordEnabled: true, recordMode: true },
         },
         motionRecording: {
-          select: { id: true, status: true, filePath: true, startedAt: true, endedAt: true },
+          select: { id: true, status: true, filePath: true, startedAt: true, endedAt: true, error: true },
         },
       },
     });
@@ -59,6 +59,9 @@ export async function GET(req: Request) {
       const recordingPath = ev.motionRecording?.status === "ready" ? ev.motionRecording.filePath : null;
       const clipId = recordingPath ? Buffer.from(recordingPath).toString("base64url") : null;
 
+      const recordingStatus = ev.motionRecording?.status
+        ?? (ev.camera?.recordMode === "motion" ? "pending" : ev.camera?.recordMode === "continuous" ? "continuous" : "disabled");
+
       return {
         id: ev.id,
         cameraId: ev.cameraId,
@@ -69,7 +72,8 @@ export async function GET(req: Request) {
         totalMinutes,
         message: ev.message || "Bewegung erkannt",
         motionRecordingId: ev.motionRecording?.id ?? null,
-        motionRecordingStatus: ev.motionRecording?.status ?? null,
+        motionRecordingStatus: recordingStatus,
+        motionRecordingError: ev.motionRecording?.error ?? null,
         clipId,
         streamUrl: clipId ? `/api/nvr/recordings/stream?clipId=${clipId}` : null,
       };

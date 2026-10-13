@@ -368,17 +368,25 @@ class OnvifEventManager {
     if (now - last < 5000) return;
     this.lastAlarmTimes.set(cam.id, now);
 
+    const cameraTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const timestampIsValid = !Number.isNaN(cameraTimestamp.getTime());
+    const clockSkewMs = timestampIsValid ? Math.abs(cameraTimestamp.getTime() - now) : Number.POSITIVE_INFINITY;
+    const effectiveTimestamp = clockSkewMs <= 30_000 ? cameraTimestamp : new Date(now);
+    if (clockSkewMs > 30_000 && timestampIsValid) {
+      console.warn(`[ONVIF Events] ${cam.name}: Kamera-Uhr weicht um ${Math.round(clockSkewMs / 1000)}s ab; Serverzeit wird für Aufnahme und Ereignis verwendet.`);
+    }
+
     try {
       await this.prisma.alarmLog.create({
         data: {
           cameraId: cam.id,
           message: 'Bewegung erkannt (ONVIF)',
-          timestamp,
+          timestamp: effectiveTimestamp,
         }
       });
       const currentCamera = await this.prisma.camera.findUnique({ where: { id: cam.id } });
       await sendCameraNotification(this.prisma, currentCamera || cam, 'Bewegung erkannt (ONVIF)');
-      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, timestamp);
+      await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, effectiveTimestamp);
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },

@@ -54,7 +54,7 @@ class MotionRecorder {
           select: { path: true },
         }),
         this.prisma.alarmLog.findMany({
-          where: { timestamp: { gte: this.lastEventAt } },
+          where: { timestamp: { gte: new Date(this.lastEventAt.getTime() - 30_000) } },
           orderBy: { timestamp: 'asc' },
           take: 500,
         }),

@@ -123,6 +123,7 @@ type MotionEvent = {
   message: string;
   motionRecordingId?: string | null;
   motionRecordingStatus?: string | null;
+  motionRecordingError?: string | null;
   clipId?: string | null;
   streamUrl?: string | null;
 };
@@ -440,9 +441,9 @@ export default function PlaybackPage() {
     } catch {}
   };
 
-  const fetchClips = useCallback(async (camId: string, date: string) => {
+  const fetchClips = useCallback(async (camId: string, date: string, silent = false) => {
     try {
-      setRefreshing(true);
+      if (!silent) setRefreshing(true);
       const params = new URLSearchParams();
       if (camId) params.set("cameraId", camId);
       if (date) params.set("date", date);
@@ -455,8 +456,10 @@ export default function PlaybackPage() {
       const dataClips = await resClips.json();
       if (dataClips.clips) {
         setClips(dataClips.clips);
-        setSelectedClipIds(new Set());
-        setCurrentPage(1);
+        if (!silent) {
+          setSelectedClipIds(new Set());
+          setCurrentPage(1);
+        }
       }
 
       const dataEvents = await resEvents.json().catch(() => ({ events: [] }));
@@ -466,10 +469,10 @@ export default function PlaybackPage() {
         setMotionEvents([]);
       }
     } catch {
-      toast.error("Fehler beim Laden der Aufnahmen.");
+      if (!silent) toast.error("Fehler beim Laden der Aufnahmen.");
     } finally {
       setLoadingClips(false);
-      setRefreshing(false);
+      if (!silent) setRefreshing(false);
     }
   }, [toast]);
 
@@ -543,6 +546,17 @@ export default function PlaybackPage() {
   useEffect(() => {
     void fetchCalendar(calendarMonth, selectedCameraId);
   }, [calendarMonth, fetchCalendar, selectedCameraId]);
+
+  useEffect(() => {
+    const clipIsBeingCreated = motionEvents.some((event) =>
+      ["pending", "buffering", "merging"].includes(event.motionRecordingStatus || "")
+    );
+    if (!clipIsBeingCreated) return;
+    const timer = window.setInterval(() => {
+      void fetchClips(selectedCameraId, selectedDate, true);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [fetchClips, motionEvents, selectedCameraId, selectedDate]);
 
   const calendarCells = useMemo(() => {
     const [year, monthNumber] = calendarMonth.split("-").map(Number);
@@ -927,7 +941,15 @@ export default function PlaybackPage() {
       openClipWithOffset(matchingClip, clampedOffset);
       toast.info(`Springe zu ${matchingClip.cameraName} (${ev.timeStr} Uhr)`);
     } else {
-      toast.warning(`Keine passende Videoaufnahme für ${ev.timeStr} Uhr gefunden.`);
+      if (["pending", "buffering", "merging"].includes(ev.motionRecordingStatus || "")) {
+        toast.info(`Der Clip für ${ev.timeStr} Uhr wird noch erstellt.`);
+      } else if (ev.motionRecordingStatus === "failed") {
+        toast.error(ev.motionRecordingError || `Der Clip für ${ev.timeStr} Uhr konnte nicht erstellt werden.`);
+      } else if (ev.motionRecordingStatus === "disabled") {
+        toast.warning("Für diese Kamera war die Bewegungsaufnahme nicht aktiviert.");
+      } else {
+        toast.warning(`Keine passende Videoaufnahme für ${ev.timeStr} Uhr gefunden.`);
+      }
     }
   };
 
@@ -2800,9 +2822,13 @@ export default function PlaybackPage() {
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
                             {ev.cameraName} · {ev.message}
                           </p>
-                          {ev.motionRecordingStatus && ev.motionRecordingStatus !== "ready" && (
-                            <p className={`mt-0.5 text-[9px] ${ev.motionRecordingStatus === "failed" ? "text-rose-400" : "text-amber-400"}`}>
-                              {ev.motionRecordingStatus === "failed" ? "Clip konnte nicht erstellt werden" : "Clip wird erstellt …"}
+                          {ev.motionRecordingStatus && !["ready", "continuous"].includes(ev.motionRecordingStatus) && (
+                            <p className={`mt-0.5 text-[9px] ${["failed", "disabled"].includes(ev.motionRecordingStatus) ? "text-rose-400" : "text-amber-400"}`} title={ev.motionRecordingError || undefined}>
+                              {ev.motionRecordingStatus === "failed"
+                                ? "Clip konnte nicht erstellt werden"
+                                : ev.motionRecordingStatus === "disabled"
+                                  ? "Bewegungsaufnahme war nicht aktiv"
+                                  : "Clip wird erstellt …"}
                             </p>
                           )}
                         </div>
