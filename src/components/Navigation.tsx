@@ -19,6 +19,7 @@ import {
   Settings,
 } from "lucide-react";
 import { SettingsModal } from "./SettingsModal";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type NavItem = {
   href: string;
@@ -98,6 +99,7 @@ export function Navigation({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [recordingCount, setRecordingCount] = useState<number>(0);
+  useBodyScrollLock(mobileMenuOpen);
 
   // Poll active recording count every 15s to keep navigation live
   useEffect(() => {
@@ -135,18 +137,6 @@ export function Navigation({
     return () =>
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
-
-  // Prevent background scrolling when mobile drawer is open
-  useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [mobileMenuOpen]);
 
   const isItemActive = (item: NavItem) => {
     if (item.matchExact) {

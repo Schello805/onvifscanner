@@ -798,12 +798,21 @@ export default function RecordingsConfigPage() {
                           max={100}
                           step={1}
                           value={cam.motionSensitivity ?? 80}
-                          onChange={(event) => setCameras((prev) => prev.map((camera) => camera.id === cam.id
-                            ? { ...camera, motionSensitivity: Number(event.target.value) }
-                            : camera))}
+                          onInput={(event) => {
+                            const motionSensitivity = Number(event.currentTarget.value);
+                            setCameras((prev) => prev.map((camera) => camera.id === cam.id
+                              ? { ...camera, motionSensitivity }
+                              : camera));
+                          }}
+                          onPointerDown={(event) => {
+                            try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+                          }}
                           onPointerUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
+                          onPointerCancel={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
                           onKeyUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
-                          className="range range-warning range-xs"
+                          onBlur={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
+                          draggable={false}
+                          className="motion-sensitivity-range range range-warning range-sm sm:range-xs"
                           aria-label={`Bewegungsempfindlichkeit für ${cam.name}`}
                         />
                         <div className="mt-1 flex justify-between text-[9px] text-slate-600">

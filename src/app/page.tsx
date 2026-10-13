@@ -1069,7 +1069,7 @@ export default function CameraWallPage() {
               event.preventDefault();
               saveCameraDetails();
             }}
-            className="relative flex flex-col w-full max-w-xl max-h-[88vh] rounded-2xl border border-white/15 bg-slate-950 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
           >
             {/* Sticky Header */}
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-slate-900/80">
@@ -1101,7 +1101,7 @@ export default function CameraWallPage() {
             </div>
 
             {/* Scrollable Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 text-xs">
+            <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 py-4 space-y-4 text-xs">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1.5">
                   <span className="font-semibold text-slate-300">Anzeigename</span>
@@ -1278,8 +1278,12 @@ export default function CameraWallPage() {
                               max={100}
                               step={1}
                               value={editDraft.motionSensitivity}
-                              onChange={(event) => setEditDraft({ ...editDraft, motionSensitivity: Number(event.target.value) })}
-                              className="range range-warning range-xs"
+                              onInput={(event) => setEditDraft({ ...editDraft, motionSensitivity: Number(event.currentTarget.value) })}
+                              onPointerDown={(event) => {
+                                try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+                              }}
+                              draggable={false}
+                              className="motion-sensitivity-range range range-warning range-sm sm:range-xs"
                               aria-label="Bewegungsempfindlichkeit"
                             />
                             <span className="flex justify-between text-[9px] text-slate-500">
