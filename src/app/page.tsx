@@ -827,25 +827,54 @@ export default function CameraWallPage() {
                   }}
                   className={`flex flex-col justify-center bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full' : 'flex-1 w-full aspect-video'}`}
                 >
-                  <button 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (expandedCameraId === camera.id) {
-                        closeExpanded();
-                      } else {
+                  {expandedCameraId === camera.id ? (
+                    <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openEditor(camera);
+                        }}
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg bg-black/65 text-white shadow-lg backdrop-blur-md transition-colors active:bg-black/90"
+                        title="Kameraname und Einstellungen bearbeiten"
+                        aria-label="Kamera bearbeiten"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.862 3.487a2.25 2.25 0 0 1 3.182 3.182L8.25 18.463 3.75 19.5l1.037-4.5L16.862 3.487Z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          closeExpanded();
+                        }}
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg bg-black/65 text-white shadow-lg backdrop-blur-md transition-colors active:bg-black/90"
+                        title="Vollbild schließen"
+                        aria-label="Vollbild schließen"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4v3a2 2 0 0 1-2 2H4m16 0h-3a2 2 0 0 1-2-2V4M4 15h3a2 2 0 0 1 2 2v3m6 0v-3a2 2 0 0 1 2-2h3" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         openExpanded(camera.id);
-                      }
-                    }}
-                    className={`z-[100000] p-2 rounded-lg bg-black/60 text-white backdrop-blur-md transition-all hover:bg-black/80 hover:scale-110 ${expandedCameraId === camera.id ? 'fixed right-[max(3px,env(safe-area-inset-right))] top-[max(3px,env(safe-area-inset-top))] opacity-100' : 'absolute top-1 right-1 opacity-0 group-hover:opacity-100'}`}
-                    title={expandedCameraId === camera.id ? "Vollbild schließen" : "Vollbild öffnen"}
-                  >
-                    {expandedCameraId === camera.id ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20H5v-4m14-5v4h-4M5 9V5h4m5-4h4v4" /></svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                    )}
-                  </button>
+                      }}
+                      className="absolute right-1 top-1 z-10 flex h-9 w-9 items-center justify-center rounded-lg bg-black/60 text-white opacity-0 backdrop-blur-md transition-all hover:scale-110 hover:bg-black/80 group-hover:opacity-100"
+                      title="Vollbild öffnen"
+                      aria-label="Vollbild öffnen"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                    </button>
+                  )}
                   {isLive ? (
                      <iframe 
                         src={livePlaybackUrls[camera.id]}
@@ -1030,7 +1059,7 @@ export default function CameraWallPage() {
 
       {editingCameraId && editDraft && mounted ? createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
           role="dialog"
           aria-modal="true"
           aria-labelledby="camera-edit-title"
