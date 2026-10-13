@@ -936,7 +936,7 @@ export default function CameraWallPage() {
                       lastClickRef.current = { id: camera.id, time: now };
                     }
                   }}
-                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none' : 'flex-1 w-full aspect-video'}`}
+                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
                   {expandedCameraId === camera.id ? (
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
@@ -1003,21 +1003,7 @@ export default function CameraWallPage() {
                         </svg>
                       </button>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        openExpanded(camera.id);
-                      }}
-                      className="absolute right-1 top-1 z-10 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-black/60 text-white opacity-100 backdrop-blur-md transition-all active:bg-black/90 sm:opacity-0 sm:hover:scale-110 sm:hover:bg-black/80 sm:group-hover:opacity-100"
-                      title="Vollbild öffnen"
-                      aria-label="Vollbild öffnen"
-                    >
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                    </button>
-                  )}
+                  ) : null}
                   <div
                     className="h-full w-full will-change-transform"
                     style={{
