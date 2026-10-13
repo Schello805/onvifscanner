@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="/opt/onvifscanner"
+UPDATE_SCRIPT="/usr/local/libexec/onvifscanner-update"
+UNIT_NAME="onvifscanner-update"
+
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "Der Update-Helper benötigt root-Rechte." >&2
+  exit 1
+fi
+
+if [[ ! -x "$UPDATE_SCRIPT" ]]; then
+  echo "Update-Skript nicht gefunden: $UPDATE_SCRIPT" >&2
+  exit 1
+fi
+
+if systemctl is-active --quiet "${UNIT_NAME}.service"; then
+  echo '{"success":true,"alreadyRunning":true,"message":"Update läuft bereits."}'
+  exit 0
+fi
+
+RUNTIME_SCRIPT="$(mktemp /run/onvifscanner-update.XXXXXX)"
+cp "$UPDATE_SCRIPT" "$RUNTIME_SCRIPT"
+chmod 0700 "$RUNTIME_SCRIPT"
+
+systemd-run \
+  --unit="$UNIT_NAME" \
+  --collect \
+  --no-block \
+  --property=Type=exec \
+  --property=WorkingDirectory="$APP_DIR" \
+  /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+
+echo '{"success":true,"message":"Update wurde als Hintergrunddienst gestartet."}'

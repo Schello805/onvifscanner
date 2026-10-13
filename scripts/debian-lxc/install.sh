@@ -166,7 +166,10 @@ build_app() {
 install_service() {
   install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
   install -m 0755 "$APP_DIR/deploy/onvifscanner-storage-helper" /usr/local/bin/onvifscanner-storage-helper
-  echo "onvifscanner ALL=(ALL) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper" > /etc/sudoers.d/onvifscanner
+  install -d -m 0755 /usr/local/libexec
+  install -m 0755 "$APP_DIR/scripts/debian-lxc/update.sh" /usr/local/libexec/onvifscanner-update
+  install -m 0755 "$APP_DIR/deploy/onvifscanner-update-helper" /usr/local/bin/onvifscanner-update-helper
+  echo "onvifscanner ALL=(root) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper, /usr/local/bin/onvifscanner-update-helper" > /etc/sudoers.d/onvifscanner
   chmod 0440 /etc/sudoers.d/onvifscanner
   install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
   systemctl daemon-reload

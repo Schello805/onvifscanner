@@ -158,8 +158,11 @@ fi
 install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
 if [[ -f "$APP_DIR/deploy/onvifscanner-storage-helper" ]]; then
   install -m 0755 "$APP_DIR/deploy/onvifscanner-storage-helper" /usr/local/bin/onvifscanner-storage-helper
+  install -d -m 0755 /usr/local/libexec
+  install -m 0755 "$APP_DIR/scripts/debian-lxc/update.sh" /usr/local/libexec/onvifscanner-update
+  install -m 0755 "$APP_DIR/deploy/onvifscanner-update-helper" /usr/local/bin/onvifscanner-update-helper
   mkdir -p /etc/sudoers.d
-  echo "${APP_USER} ALL=(ALL) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper" > /etc/sudoers.d/onvifscanner
+  echo "${APP_USER} ALL=(root) NOPASSWD: /usr/local/bin/onvifscanner-storage-helper, /usr/local/bin/onvifscanner-update-helper" > /etc/sudoers.d/onvifscanner
   chmod 0440 /etc/sudoers.d/onvifscanner
 fi
 install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service

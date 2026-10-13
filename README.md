@@ -116,6 +116,8 @@ curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/script
 
 Das Update verwendet einen Schnellpfad: Bereits installierte Systempakete, unveränderte npm-Abhängigkeiten und ein unverändertes Prisma-Schema werden übersprungen. Ist Git bereits aktuell, entfallen Build und Service-Neustart vollständig. Für eine erzwungene Neuprüfung und einen sauberen Rebuild:
 
+Ab Version `0.13.2` installiert das LXC-Skript außerdem einen eng begrenzten systemd-Helper für den **1-Klick-Update-Button** im Footer. Bei einer älteren Installation muss das Update auf `0.13.2` einmalig mit dem obigen Terminal-Befehl erfolgen; danach können weitere Updates direkt in der Oberfläche gestartet werden.
+
 ```bash
 FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
 ```

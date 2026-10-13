@@ -105,16 +105,18 @@ export function VersionStatus(props: { currentVersion: string }) {
     setUpdateMessage("Update startet...");
     try {
       const res = await fetch("/api/update", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        setUpdateMessage("Leite um...");
-        window.location.href = "/update-status.html";
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setUpdateMessage(data.alreadyRunning ? "Update läuft bereits…" : "Update gestartet…");
+        window.setTimeout(() => {
+          window.location.href = "/update-status.html";
+        }, 500);
       } else {
-        setUpdateMessage("Fehler: " + data.error);
+        setUpdateMessage(data.error || `Update konnte nicht gestartet werden (HTTP ${res.status}).`);
         setUpdating(false);
       }
-    } catch (err) {
-      setUpdateMessage("Fehler beim Update-Start.");
+    } catch {
+      setUpdateMessage("Update-Dienst ist nicht erreichbar.");
       setUpdating(false);
     }
   }
@@ -195,6 +197,11 @@ export function VersionStatus(props: { currentVersion: string }) {
               >
                 {updating ? updateMessage : "1-Klick Update starten"}
               </button>
+              {!updating && updateMessage ? (
+                <p className="mt-2 rounded-lg border border-rose-400/25 bg-rose-400/10 px-2.5 py-2 text-[11px] leading-relaxed text-rose-200">
+                  {updateMessage}
+                </p>
+              ) : null}
             </div>
 
             <span className="mt-4 block text-slate-400 text-[10px] uppercase tracking-wide font-semibold">
