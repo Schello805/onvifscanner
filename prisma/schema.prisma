@@ -28,6 +28,7 @@ model Camera {
   recordSegmentMinutes  Int            @default(15)
   motionPreRollSeconds  Int            @default(10)
   motionPostRollSeconds Int            @default(30)
+  motionSensitivity    Int            @default(50)
   motionEventState      String         @default("unknown") // unknown | probing | active | unsupported | error
   motionEventSource     String?
   motionEventLastSeen   DateTime?

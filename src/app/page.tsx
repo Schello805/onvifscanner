@@ -27,6 +27,7 @@ type CameraEditDraft = {
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
+  motionSensitivity: number;
   notificationsEnabled: boolean;
   storageTargetId: string;
 };
@@ -319,6 +320,7 @@ export default function CameraWallPage() {
       recordSegmentMinutes: camera.recordSegmentMinutes || 15,
       motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
       motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
+      motionSensitivity: camera.motionSensitivity ?? 50,
       notificationsEnabled: Boolean(camera.notificationsEnabled),
       storageTargetId: camera.storageTargetId || "",
     });
@@ -432,6 +434,7 @@ export default function CameraWallPage() {
       recordSegmentMinutes: editDraft.recordSegmentMinutes,
       motionPreRollSeconds: editDraft.motionPreRollSeconds,
       motionPostRollSeconds: editDraft.motionPostRollSeconds,
+      motionSensitivity: editDraft.motionSensitivity,
       notificationsEnabled: editDraft.notificationsEnabled,
       storageTargetId: editDraft.storageTargetId || null,
     } : camera);
@@ -446,6 +449,7 @@ export default function CameraWallPage() {
         recordSegmentMinutes: editDraft.recordSegmentMinutes,
         motionPreRollSeconds: editDraft.motionPreRollSeconds,
         motionPostRollSeconds: editDraft.motionPostRollSeconds,
+        motionSensitivity: editDraft.motionSensitivity,
         notificationsEnabled: editDraft.notificationsEnabled,
         storageTargetId: editDraft.storageTargetId || null,
       })
@@ -1270,6 +1274,26 @@ export default function CameraWallPage() {
                       </label>
                       {editDraft.recordMode === "motion" && (
                         <>
+                          <label className="grid gap-1 sm:col-span-2">
+                            <span className="flex items-center justify-between text-slate-400 text-[11px]">
+                              <span>Bewegungsempfindlichkeit:</span>
+                              <strong className="text-amber-300">{editDraft.motionSensitivity}%</strong>
+                            </span>
+                            <input
+                              type="range"
+                              min={1}
+                              max={100}
+                              step={1}
+                              value={editDraft.motionSensitivity}
+                              onChange={(event) => setEditDraft({ ...editDraft, motionSensitivity: Number(event.target.value) })}
+                              className="range range-warning range-xs"
+                              aria-label="Bewegungsempfindlichkeit"
+                            />
+                            <span className="flex justify-between text-[9px] text-slate-500">
+                              <span>Weniger Fehlalarme</span>
+                              <span>Erkennt kleinere Bewegungen</span>
+                            </span>
+                          </label>
                           <label className="grid gap-1">
                             <span className="text-slate-400 text-[11px]">Vorlauf:</span>
                             <select value={editDraft.motionPreRollSeconds} onChange={(e) => setEditDraft({ ...editDraft, motionPreRollSeconds: Number(e.target.value) })} className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white">

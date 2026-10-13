@@ -34,6 +34,7 @@ type CameraNvrItem = {
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
+  motionSensitivity: number;
   motionEventState: "unknown" | "probing" | "active" | "unsupported" | "error";
   motionEventSource?: string | null;
   motionEventLastSeen?: string | null;
@@ -188,6 +189,22 @@ export default function RecordingsConfigPage() {
       setCameras((prev) => prev.map((camera) => camera.id === cameraId ? { ...camera, [field]: value } : camera));
     } catch {
       toast.error("Vor-/Nachlauf konnte nicht gespeichert werden.");
+    }
+  };
+
+  const handleUpdateMotionSensitivity = async (cameraId: string, value: number) => {
+    const motionSensitivity = Math.min(100, Math.max(1, Math.round(value)));
+    setCameras((prev) => prev.map((camera) => camera.id === cameraId ? { ...camera, motionSensitivity } : camera));
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: cameraId, motionSensitivity }),
+      });
+      if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+    } catch {
+      toast.error("Bewegungsempfindlichkeit konnte nicht gespeichert werden.");
+      void fetchCameras();
     }
   };
 
@@ -716,6 +733,30 @@ export default function RecordingsConfigPage() {
                   </div>
                   {cam.recordMode === "motion" && (
                     <>
+                      <div className="col-span-2">
+                        <label className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-400">
+                          <span>Bewegungsempfindlichkeit</span>
+                          <strong className="text-amber-300">{cam.motionSensitivity ?? 50}%</strong>
+                        </label>
+                        <input
+                          type="range"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={cam.motionSensitivity ?? 50}
+                          onChange={(event) => setCameras((prev) => prev.map((camera) => camera.id === cam.id
+                            ? { ...camera, motionSensitivity: Number(event.target.value) }
+                            : camera))}
+                          onPointerUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
+                          onKeyUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
+                          className="range range-warning range-xs"
+                          aria-label={`Bewegungsempfindlichkeit für ${cam.name}`}
+                        />
+                        <div className="mt-1 flex justify-between text-[9px] text-slate-600">
+                          <span>Weniger Fehlalarme</span>
+                          <span>Kleinere Bewegungen</span>
+                        </div>
+                      </div>
                       <div>
                         <label className="text-[11px] text-slate-400 block mb-1 font-medium">Vorlauf</label>
                         <select

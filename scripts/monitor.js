@@ -205,15 +205,18 @@ async function detectCameraMotion(cam) {
     let differenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
     const pixelCount = Math.floor(pixels.length / channels);
+    const sensitivity = Math.min(100, Math.max(1, Number(cam.motionSensitivity) || 50));
+    const sensitivityFactor = 1.5 - sensitivity / 100;
+    const effectivePixelThreshold = Math.max(8, Math.round(motionPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
       const difference = Math.abs(pixels[index] - previous.pixels[index]);
       differenceSum += difference;
-      if (difference >= motionPixelThreshold) changedPixels += 1;
+      if (difference >= effectivePixelThreshold) changedPixels += 1;
     }
     const changedArea = pixelCount ? changedPixels / pixelCount : 0;
     const meanDifference = pixelCount ? differenceSum / pixelCount : 0;
-    const requiredArea = Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.004);
-    const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4);
+    const requiredArea = Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.004) * sensitivityFactor;
+    const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4) * sensitivityFactor;
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
 
     motionFrames.set(cam.id, {
