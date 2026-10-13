@@ -1323,7 +1323,7 @@ export default function CameraWallPage() {
                   <div className="min-w-0">
                     <span className="block text-xs font-semibold text-white">Push-Benachrichtigung</span>
                     <span className="block text-[10px] leading-relaxed text-slate-400">
-                      Meldet Bewegungen dieser Kamera über das global konfigurierte ntfy-Topic.
+                      Meldet Bewegungen dieser Kamera mit aktuellem Bild über das global konfigurierte ntfy-Topic.
                     </span>
                   </div>
                   <input

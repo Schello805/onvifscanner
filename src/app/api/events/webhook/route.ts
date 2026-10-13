@@ -102,11 +102,40 @@ export async function POST(req: Request) {
         if (matchedCamera.notificationsEnabled) {
           try {
             const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+            let attachment: { data: Uint8Array; contentType: string; filename: string } | undefined;
+            try {
+              const snapshotUris = JSON.parse(matchedCamera.snapshotUris || "[]");
+              const streamUris = JSON.parse(matchedCamera.streamUris || "[]");
+              const imageResponse = await fetch(`http://127.0.0.1:${process.env.PORT || "3000"}/api/thumbnail`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  urls: [...snapshotUris, ...streamUris],
+                  size: 480,
+                  timeoutMs: 3_000,
+                  fastAuth: true,
+                  fresh: true,
+                  credentials: matchedCamera.username
+                    ? { username: matchedCamera.username, password: matchedCamera.password || "" }
+                    : undefined,
+                }),
+                signal: AbortSignal.timeout(5_000),
+              });
+              const imageContentType = imageResponse.headers.get("content-type") || "";
+              if (imageResponse.ok && imageContentType.toLowerCase().startsWith("image/")) {
+                attachment = {
+                  data: new Uint8Array(await imageResponse.arrayBuffer()),
+                  contentType: imageContentType,
+                  filename: `kamera-${matchedCamera.ip}-${Date.now()}.jpg`,
+                };
+              }
+            } catch {}
             await sendNtfyMessage({
               server: settings?.ntfyServer,
               topic: settings?.ntfyTopic,
               title: "ONVIFscanner Alarm",
               message: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
+              attachment,
             });
           } catch (pushErr) {
             console.error(`ntfy notification for ${matchedCamera.name} failed:`, pushErr);

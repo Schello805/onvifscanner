@@ -277,7 +277,10 @@ async function detectCameraMotion(cam) {
           timestamp: checkedAt,
         },
       });
-      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)');
+      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)', {
+        imageBuffer: image,
+        contentType: response.headers.get('content-type') || 'image/jpeg',
+      });
       console.log(`[Motion Detection] ${cam.name}: Bewegung erkannt (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({
         where: { cameraId: cam.id },

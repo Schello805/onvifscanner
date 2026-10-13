@@ -145,7 +145,7 @@ export function SettingsModal({
                   <span>Push-Benachrichtigungen (ntfy)</span>
                 </div>
                 <div className="text-sm text-slate-400 mb-2 leading-relaxed">
-                  Trage deinen ntfy-Server und das Topic ein. Push wird anschließend für jede gewünschte Kamera einzeln in deren Bearbeiten-Dialog aktiviert. Ohne Server wird ntfy.sh verwendet.
+                  Trage deinen ntfy-Server und das Topic ein. Push wird anschließend für jede gewünschte Kamera einzeln in deren Bearbeiten-Dialog aktiviert. Bei Bewegungen wird nach Möglichkeit ein aktuelles Kamerabild mitgesendet. Ohne Server wird ntfy.sh verwendet.
                 </div>
                 <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
                   <span className="text-slate-500 select-none">Server</span>
