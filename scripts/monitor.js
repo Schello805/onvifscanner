@@ -25,6 +25,7 @@ const motionFailureLogTimes = new Map();
 let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
+let motionSensitivityDefaultsMigrated = false;
 
 async function mapWithConcurrency(items, concurrency, task) {
   let nextIndex = 0;
@@ -71,6 +72,21 @@ async function runMonitorCycle() {
         data: { recordMode: 'motion' },
       });
       legacyRecordingModesMigrated = true;
+    }
+    if (!motionSensitivityDefaultsMigrated) {
+      const settings = await prisma.settings.findUnique({ where: { id: 'default' } });
+      if (!settings?.motionSensitivityV3Migrated) {
+        await prisma.$transaction([
+          prisma.camera.updateMany({ data: { motionSensitivity: 80 } }),
+          prisma.settings.upsert({
+            where: { id: 'default' },
+            update: { motionSensitivityV3Migrated: true },
+            create: { id: 'default', motionSensitivityV3Migrated: true },
+          }),
+        ]);
+        console.log('[Motion Detection] Bewegungsempfindlichkeit bestehender Kameras auf 80 % gesetzt.');
+      }
+      motionSensitivityDefaultsMigrated = true;
     }
     const cameras = await prisma.camera.findMany();
     const cameraChecks = await mapWithConcurrency(cameras, 8, async (cam) => {
@@ -205,7 +221,7 @@ async function detectCameraMotion(cam) {
     let differenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
     const pixelCount = Math.floor(pixels.length / channels);
-    const sensitivity = Math.min(100, Math.max(1, Number(cam.motionSensitivity) || 50));
+    const sensitivity = Math.min(100, Math.max(1, Number(cam.motionSensitivity) || 80));
     const sensitivityFactor = 1.5 - sensitivity / 100;
     const effectivePixelThreshold = Math.max(8, Math.round(motionPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {

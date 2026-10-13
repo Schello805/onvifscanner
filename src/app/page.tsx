@@ -320,7 +320,7 @@ export default function CameraWallPage() {
       recordSegmentMinutes: camera.recordSegmentMinutes || 15,
       motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
       motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
-      motionSensitivity: camera.motionSensitivity ?? 50,
+      motionSensitivity: camera.motionSensitivity ?? 80,
       notificationsEnabled: Boolean(camera.notificationsEnabled),
       storageTargetId: camera.storageTargetId || "",
     });

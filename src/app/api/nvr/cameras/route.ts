@@ -95,7 +95,7 @@ export async function PATCH(req: Request) {
       updateData.motionPostRollSeconds = Math.min(300, Math.max(5, Number(body.motionPostRollSeconds) || 30));
     }
     if (body.motionSensitivity !== undefined) {
-      updateData.motionSensitivity = Math.min(100, Math.max(1, Math.round(Number(body.motionSensitivity) || 50)));
+      updateData.motionSensitivity = Math.min(100, Math.max(1, Math.round(Number(body.motionSensitivity) || 80)));
     }
     if (body.notificationsEnabled !== undefined) {
       updateData.notificationsEnabled = Boolean(body.notificationsEnabled);

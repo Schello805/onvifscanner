@@ -28,7 +28,7 @@ model Camera {
   recordSegmentMinutes  Int            @default(15)
   motionPreRollSeconds  Int            @default(10)
   motionPostRollSeconds Int            @default(30)
-  motionSensitivity    Int            @default(50)
+  motionSensitivity    Int            @default(80)
   motionEventState      String         @default("unknown") // unknown | probing | active | unsupported | error
   motionEventSource     String?
   motionEventLastSeen   DateTime?
@@ -68,12 +68,13 @@ model DeviceStatus {
 }
 
 model Settings {
-  id          String   @id @default("default")
-  columns     Int?
-  refresh     Int?
-  autoCleanup Boolean? @default(true)
-  ntfyTopic   String?
-  ntfyServer  String?
+  id                           String   @id @default("default")
+  columns                      Int?
+  refresh                      Int?
+  autoCleanup                  Boolean? @default(true)
+  ntfyTopic                    String?
+  ntfyServer                   String?
+  motionSensitivityV3Migrated  Boolean  @default(false)
 }
 
 model DiscoveredDevice {

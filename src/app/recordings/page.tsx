@@ -736,14 +736,14 @@ export default function RecordingsConfigPage() {
                       <div className="col-span-2">
                         <label className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-400">
                           <span>Bewegungsempfindlichkeit</span>
-                          <strong className="text-amber-300">{cam.motionSensitivity ?? 50}%</strong>
+                          <strong className="text-amber-300">{cam.motionSensitivity ?? 80}%</strong>
                         </label>
                         <input
                           type="range"
                           min={1}
                           max={100}
                           step={1}
-                          value={cam.motionSensitivity ?? 50}
+                          value={cam.motionSensitivity ?? 80}
                           onChange={(event) => setCameras((prev) => prev.map((camera) => camera.id === cam.id
                             ? { ...camera, motionSensitivity: Number(event.target.value) }
                             : camera))}

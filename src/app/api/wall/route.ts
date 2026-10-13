@@ -167,7 +167,7 @@ export async function POST(req: Request) {
             recordSegmentMinutes: typeof cam.recordSegmentMinutes === "number" ? cam.recordSegmentMinutes : 15,
             motionPreRollSeconds: typeof cam.motionPreRollSeconds === "number" ? cam.motionPreRollSeconds : 10,
             motionPostRollSeconds: typeof cam.motionPostRollSeconds === "number" ? cam.motionPostRollSeconds : 30,
-            motionSensitivity: typeof cam.motionSensitivity === "number" ? Math.min(100, Math.max(1, Math.round(cam.motionSensitivity))) : 50,
+            motionSensitivity: typeof cam.motionSensitivity === "number" ? Math.min(100, Math.max(1, Math.round(cam.motionSensitivity))) : 80,
             notificationsEnabled: Boolean(cam.notificationsEnabled),
             storageTargetId: typeof cam.storageTargetId === "string" ? cam.storageTargetId : null,
             snapshotUris: JSON.stringify(cam.snapshotUris || []),
