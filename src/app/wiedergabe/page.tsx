@@ -329,6 +329,7 @@ export default function PlaybackPage() {
   const [sizeFilter, setSizeFilter] = useState<ClipSizeFilter>("all");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [filterMotionOnly, setFilterMotionOnly] = useState(false);
+  const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
 
   // Timeline Zoom & Event Inspector State
   const [timelineZoom, setTimelineZoom] = useState<24 | 12 | 6 | 2 | 1>(24);
@@ -479,6 +480,27 @@ export default function PlaybackPage() {
     }
   }, []);
 
+  const selectCameraFilter = useCallback((cameraId: string) => {
+    setSelectedCameraId(cameraId);
+    setCurrentPage(1);
+    setCameraPickerOpen(false);
+    void fetchClips(cameraId, selectedDate);
+  }, [fetchClips, selectedDate]);
+
+  useEffect(() => {
+    if (!cameraPickerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCameraPickerOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [cameraPickerOpen]);
+
   const selectRecordingDate = useCallback((date: string) => {
     setSelectedDate(date);
     setCalendarMonth(date.slice(0, 7));
@@ -525,6 +547,7 @@ export default function PlaybackPage() {
   }, [calendarMonth]);
 
   const selectedCalendarDay = selectedDate ? calendarDays[selectedDate] : undefined;
+  const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId);
   const calendarMonthClipCount = useMemo(
     () => Object.values(calendarDays).reduce((sum, day) => sum + day.count, 0),
     [calendarDays]
@@ -1265,15 +1288,25 @@ export default function PlaybackPage() {
             </div>
 
             {/* Camera Dropdown */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs">
+            <div className="flex w-full items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs sm:w-auto">
               <Video className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <button
+                type="button"
+                onClick={() => setCameraPickerOpen(true)}
+                className="flex min-w-0 flex-1 touch-manipulation items-center justify-between gap-2 py-0.5 text-left text-white sm:hidden"
+                aria-haspopup="dialog"
+                aria-expanded={cameraPickerOpen}
+              >
+                <span className="truncate">
+                  {selectedCamera ? `${selectedCamera.recordEnabled ? "🔴 " : ""}${selectedCamera.name}${selectedCamera.recordEnabled ? " (REC)" : ""}` : "Alle Kameras"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
               <select
                 value={selectedCameraId}
-                onChange={(e) => {
-                  setSelectedCameraId(e.target.value);
-                  fetchClips(e.target.value, selectedDate);
-                }}
-                className="bg-transparent text-xs text-white focus:outline-none max-w-[150px] truncate cursor-pointer"
+                onChange={(event) => selectCameraFilter(event.target.value)}
+                className="hidden max-w-[150px] cursor-pointer truncate bg-transparent text-xs text-white focus:outline-none sm:block"
+                aria-label="Kamera auswählen"
               >
                 <option value="">Alle Kameras</option>
                 {cameras.map((c) => (
@@ -3096,6 +3129,72 @@ export default function PlaybackPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {cameraPickerOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end bg-black/70 backdrop-blur-sm sm:hidden"
+          role="presentation"
+          onClick={() => setCameraPickerOpen(false)}
+        >
+          <div
+            className="max-h-[72dvh] w-full overflow-hidden rounded-t-2xl border-x border-t border-slate-700 bg-slate-950 shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="camera-picker-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div>
+                <h2 id="camera-picker-title" className="font-semibold text-white">Kamera auswählen</h2>
+                <p className="mt-0.5 text-xs text-slate-400">Aufnahmen nach Kamera filtern</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCameraPickerOpen(false)}
+                className="touch-manipulation rounded-lg border border-slate-700 bg-slate-900 p-2 text-slate-300 active:bg-slate-800"
+                aria-label="Kamera-Auswahl schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[calc(72dvh-4.5rem)] space-y-1 overflow-y-auto p-3 pb-6">
+              <button
+                type="button"
+                onClick={() => selectCameraFilter("")}
+                className={`flex min-h-12 w-full touch-manipulation items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm ${
+                  !selectedCameraId
+                    ? "border-amber-400/60 bg-amber-500/15 text-amber-100"
+                    : "border-slate-800 bg-slate-900 text-slate-200 active:bg-slate-800"
+                }`}
+              >
+                <span className="font-medium">Alle Kameras</span>
+                {!selectedCameraId && <span className="text-amber-300">✓</span>}
+              </button>
+              {cameras.map((camera) => (
+                <button
+                  key={camera.id}
+                  type="button"
+                  onClick={() => selectCameraFilter(camera.id)}
+                  className={`flex min-h-12 w-full touch-manipulation items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left text-sm ${
+                    selectedCameraId === camera.id
+                      ? "border-sky-400/60 bg-sky-500/15 text-sky-100"
+                      : "border-slate-800 bg-slate-900 text-slate-200 active:bg-slate-800"
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{camera.name}</span>
+                    <span className="block truncate text-xs text-slate-500">{camera.ip}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {camera.recordEnabled && <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-300">● REC</span>}
+                    {selectedCameraId === camera.id && <span className="text-sky-300">✓</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
