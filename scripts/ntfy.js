@@ -26,16 +26,19 @@ async function fetchCameraImage(camera) {
   const urls = [...snapshotUris, ...streamUris].filter((url) => typeof url === 'string' && url);
   if (!urls.length) return null;
 
+  const imageWidth = Math.max(480, Math.min(1280, Number(process.env.NTFY_IMAGE_WIDTH) || 960));
+  const imageQuality = Math.max(60, Math.min(90, Number(process.env.NTFY_IMAGE_QUALITY) || 82));
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
+  const timeout = setTimeout(() => controller.abort(), 7_000);
   try {
     const response = await fetch(`http://127.0.0.1:${process.env.PORT || '3000'}/api/thumbnail`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls,
-        size: 480,
-        timeoutMs: 3_000,
+        size: imageWidth,
+        quality: imageQuality,
+        timeoutMs: 4_500,
         fastAuth: true,
         fresh: true,
         credentials: camera.username ? { username: camera.username, password: camera.password || '' } : undefined,

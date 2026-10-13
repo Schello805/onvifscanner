@@ -16,6 +16,9 @@ const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MO
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
 const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
+const motionSourceWidth = Math.max(256, Math.min(768, Number(process.env.MOTION_SOURCE_WIDTH) || 384));
+const motionAnalysisWidth = Math.max(160, Math.min(512, Number(process.env.MOTION_ANALYSIS_WIDTH) || 256));
+const motionAnalysisHeight = Math.round(motionAnalysisWidth * 9 / 16);
 const autoDiscoveryEnabled = process.env.ENABLE_AUTO_DISCOVERY === 'true';
 const monitorIntervalMs = Math.max(30_000, Number(process.env.MONITOR_INTERVAL_MS) || 60_000);
 let isMonitoring = false;
@@ -193,7 +196,8 @@ async function detectCameraMotion(cam) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls: uris,
-        size: 128,
+        size: motionSourceWidth,
+        quality: 75,
         timeoutMs: 2_500,
         fastAuth: true,
         fresh: true,
@@ -205,9 +209,9 @@ async function detectCameraMotion(cam) {
 
     const image = Buffer.from(await response.arrayBuffer());
     const { data: pixels, info } = await sharp(image, { limitInputPixels: 32_000_000 })
-      .resize(96, 54, { fit: 'fill' })
+      .resize(motionAnalysisWidth, motionAnalysisHeight, { fit: 'fill' })
       .greyscale()
-      .blur(1)
+      .blur(0.5)
       .raw()
       .toBuffer({ resolveWithObject: true });
 
@@ -277,10 +281,7 @@ async function detectCameraMotion(cam) {
           timestamp: checkedAt,
         },
       });
-      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)', {
-        imageBuffer: image,
-        contentType: response.headers.get('content-type') || 'image/jpeg',
-      });
+      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)');
       console.log(`[Motion Detection] ${cam.name}: Bewegung erkannt (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
@@ -625,7 +626,7 @@ function startMonitor() {
   
   console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
   if (motionDetectionEnabled) {
-    console.log(`🎯 Server motion detection enabled (${motionDetectionIntervalMs}ms, concurrency ${motionDetectionConcurrency}).`);
+    console.log(`🎯 Server motion detection enabled (${motionDetectionIntervalMs}ms, concurrency ${motionDetectionConcurrency}, analysis ${motionAnalysisWidth}x${motionAnalysisHeight}).`);
   } else {
     console.log('Server motion detection is disabled.');
   }

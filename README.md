@@ -136,7 +136,10 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `ENABLE_MOTION_DETECTION` (default `true`): Aktiviert die serverseitige Bildanalyse für Kameras ohne kürzlich empfangenes ONVIF-Bewegungsereignis.
 - `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der serverseitigen Bildanalyse; laufende Zyklen überlappen sich nicht.
 - `MOTION_DETECTION_CONCURRENCY` (default `3`): Maximal parallel analysierte Kamerabilder.
+- `MOTION_SOURCE_WIDTH` (default `384`): Breite des frisch geladenen Bildes für die Bewegungserkennung.
+- `MOTION_ANALYSIS_WIDTH` (default `256`): Interne Analysebreite; statt der früheren 96 px bleiben dadurch kleine Bewegungen besser sichtbar.
 - `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
+- `NTFY_IMAGE_WIDTH` (default `960`) und `NTFY_IMAGE_QUALITY` (default `82`): Qualität des separat geladenen Alarmbildes für Ntfy.
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 

@@ -13,6 +13,7 @@ type Body = {
   url?: string;
   urls?: string[];
   size?: number;
+  quality?: number;
   timeoutMs?: number;
   fastAuth?: boolean;
   fresh?: boolean;
@@ -138,7 +139,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const size = clampInt(body.size ?? 200, 64, 512);
+  const size = clampInt(body.size ?? 200, 64, 1280);
+  const quality = clampInt(body.quality ?? 65, 45, 90);
   const timeoutMs = clampInt(body.timeoutMs ?? 1500, 300, 8000);
   const fastAuth = body.fastAuth !== false;
 
@@ -169,7 +171,7 @@ export async function POST(req: Request) {
     acquired = true;
 
     for (const url of parsedCandidates) {
-      const cacheKey = `${url.toString()}|s=${size}|u=${body.credentials?.username ?? ""}`;
+      const cacheKey = `${url.toString()}|s=${size}|q=${quality}|u=${body.credentials?.username ?? ""}`;
       const cached = cache.get(cacheKey);
       if (!body.fresh && cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
         return new NextResponse(cached.bytes as unknown as BodyInit, {
@@ -289,7 +291,7 @@ export async function POST(req: Request) {
       const output = await sharp(input, { limitInputPixels: 32_000_000 })
         .rotate()
         .resize({ width: size })
-        .jpeg({ quality: 65, mozjpeg: true })
+        .jpeg({ quality, mozjpeg: true })
         .toBuffer();
 
       cache.set(cacheKey, {
