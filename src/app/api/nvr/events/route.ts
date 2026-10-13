@@ -77,6 +77,9 @@ export async function GET(req: Request) {
         objectDetections: (() => {
           try { return JSON.parse(ev.objectDetections || "[]"); } catch { return []; }
         })(),
+        licensePlates: (() => {
+          try { return JSON.parse(ev.licensePlates || "[]"); } catch { return []; }
+        })(),
         motionRecordingId: ev.motionRecording?.id ?? null,
         motionRecordingStatus: recordingStatus,
         motionRecordingError: ev.motionRecording?.error ?? null,

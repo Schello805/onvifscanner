@@ -159,7 +159,7 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `MOTION_SOURCE_WIDTH` (default `640`): Breite des nur bei erkannter Bewegung nachgeladenen Detailbildes für Objekterkennung und Benachrichtigung.
 - `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
 - `ENABLE_OBJECT_DETECTION` (default `true`): Erlaubt die pro Kamera aktivierbare lokale Person-/Fahrzeug-/Tiererkennung.
-- **Lokale Kennzeichenerkennung:** Im Kamera-Dialog optional pro Kamera aktivierbar. Nach bestätigter Bewegung wird nur bei einem erkannten Fahrzeug die lokale Tesseract-OCR gestartet; es werden keine Bilder an einen Cloud-Dienst übertragen.
+- **Lokale Kennzeichenerkennung:** Im Kamera-Dialog optional pro Kamera aktivierbar. Nach bestätigter Bewegung wird nur bei einem erkannten Fahrzeug die lokale Tesseract-OCR gestartet. Die Bewegungsmaske gilt auch für OCR, erkannte Kennzeichen erscheinen strukturiert im Protokoll und Bilder werden nicht an einen Cloud-Dienst übertragen.
 - `OBJECT_DETECTION_MODEL_URL` (optional): Eigene lokale oder erreichbare URL für das COCO-SSD-Modell. Ohne Angabe wird beim ersten Einsatz das Standardmodell geladen; Kamerabilder verlassen den Server nicht.
 - `NTFY_IMAGE_WIDTH` (default `960`) und `NTFY_IMAGE_QUALITY` (default `82`): Qualität des separat geladenen Alarmbildes für Ntfy.
 

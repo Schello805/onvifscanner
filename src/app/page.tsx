@@ -23,6 +23,7 @@ type ActivityEvent = {
   cameraIp: string;
   timestamp: string;
   message: string;
+  licensePlates?: string[];
 };
 
 type CameraEditDraft = {
@@ -1471,6 +1472,15 @@ export default function CameraWallPage() {
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-white">{event.cameraName}</div>
                           <div className="truncate text-[11px] text-slate-400">{event.cameraIp} · {event.message}</div>
+                          {event.licensePlates?.length ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {event.licensePlates.map((plate) => (
+                                <span key={plate} className="rounded border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-200">
+                                  Kennzeichen {plate}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                         <time className="whitespace-nowrap font-mono text-[11px] text-slate-400" dateTime={event.timestamp}>
                           {new Date(event.timestamp).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "medium" })}
@@ -1808,7 +1818,7 @@ export default function CameraWallPage() {
                               <span>
                                 <strong className="block text-xs text-white">Fahrzeuge und Kennzeichen lokal erkennen</strong>
                                 <span className="block text-[10px] leading-relaxed text-slate-400">
-                                  Prüft bestätigte Bewegungen auf Fahrzeuge und liest sichtbare Kennzeichen lokal per OCR aus. Nur für diese Kamera und nur bei Bewegung.
+                                  Prüft bestätigte Bewegungen auf Fahrzeuge und liest sichtbare Kennzeichen lokal per OCR aus. Rot maskierte Bildbereiche werden dabei ebenfalls ignoriert.
                                 </span>
                               </span>
                             </label>

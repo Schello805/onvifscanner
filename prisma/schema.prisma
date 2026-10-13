@@ -123,6 +123,7 @@ model AlarmLog {
   message           String?
   objectClasses     String?
   objectDetections  String?
+  licensePlates     String? // JSON array of locally recognized license plates
   motionRecordingId String?
   motionRecording   MotionRecording? @relation(fields: [motionRecordingId], references: [id], onDelete: SetNull)
 

@@ -532,6 +532,7 @@ async function detectCameraMotion(cam) {
 
     let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
     let detectedObjects = [];
+    let recognizedPlates = [];
     let eventImage = null;
     if ((cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) && objectDetectionEnabled) {
       try {
@@ -561,9 +562,10 @@ async function detectCameraMotion(cam) {
         if (detectedObjects.length) eventMessage = objectDetectionMessage(detectedObjects);
         if (vehicles.length) {
           try {
-            const plates = await readLicensePlates(eventImage, result, vehicles);
-            if (plates.length) {
-              eventMessage += ` · Kennzeichen ${plates.map((entry) => entry.plate).join(', ')}`;
+            const plates = await readLicensePlates(eventImage, result, vehicles, ignoreRegions);
+            recognizedPlates = plates.map((entry) => entry.plate);
+            if (recognizedPlates.length) {
+              eventMessage += ` · Kennzeichen ${recognizedPlates.join(', ')}`;
             }
           } catch (error) {
             const warningKey = `plate:${cam.id}`;
@@ -602,6 +604,7 @@ async function detectCameraMotion(cam) {
             ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
             : null,
           objectDetections: detectedObjects.length ? JSON.stringify(detectedObjects) : null,
+          licensePlates: recognizedPlates.length ? JSON.stringify(recognizedPlates) : null,
         },
       });
       await sendCameraNotification(

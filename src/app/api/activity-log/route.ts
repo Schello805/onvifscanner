@@ -45,6 +45,9 @@ export async function GET(request: Request) {
         cameraIp: alarm.camera.ip,
         timestamp: alarm.timestamp.toISOString(),
         message: alarm.message || "Bewegung erkannt",
+        licensePlates: (() => {
+          try { return JSON.parse(alarm.licensePlates || "[]"); } catch { return []; }
+        })(),
       })),
       ...statusLogs.map((entry) => ({
         id: `status:${entry.id}`,
@@ -54,6 +57,7 @@ export async function GET(request: Request) {
         cameraIp: entry.camera.ip,
         timestamp: entry.timestamp.toISOString(),
         message: entry.status === "offline" ? "Kamera ist offline" : "Kamera ist online",
+        licensePlates: [],
       })),
     ]
       .sort((left, right) => right.timestamp.localeCompare(left.timestamp))

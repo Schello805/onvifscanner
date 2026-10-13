@@ -72,7 +72,7 @@ function runTesseract(image) {
   });
 }
 
-async function vehiclePlateCrop(image, imageWidth, imageHeight, prediction) {
+async function vehiclePlateCrop(image, imageWidth, imageHeight, prediction, ignoreRegions) {
   const [rawX, rawY, rawWidth, rawHeight] = prediction.bbox || [];
   const x = Math.max(0, Math.floor(Number(rawX) || 0));
   const y = Math.max(0, Math.floor((Number(rawY) || 0) + (Number(rawHeight) || 0) * 0.32));
@@ -81,8 +81,36 @@ async function vehiclePlateCrop(image, imageWidth, imageHeight, prediction) {
   const width = right - x;
   const height = bottom - y;
   if (width < 32 || height < 16) return null;
-  return sharp(image, { limitInputPixels: 32_000_000 })
+  const overlays = (ignoreRegions || []).flatMap((region) => {
+    const regionLeft = Math.floor(Number(region.x) * imageWidth);
+    const regionTop = Math.floor(Number(region.y) * imageHeight);
+    const regionRight = Math.ceil((Number(region.x) + Number(region.width)) * imageWidth);
+    const regionBottom = Math.ceil((Number(region.y) + Number(region.height)) * imageHeight);
+    const left = Math.max(x, regionLeft);
+    const top = Math.max(y, regionTop);
+    const overlayWidth = Math.min(right, regionRight) - left;
+    const overlayHeight = Math.min(bottom, regionBottom) - top;
+    if (overlayWidth <= 0 || overlayHeight <= 0) return [];
+    return [{
+      input: {
+        create: {
+          width: overlayWidth,
+          height: overlayHeight,
+          channels: 3,
+          background: { r: 0, g: 0, b: 0 },
+        },
+      },
+      left: left - x,
+      top: top - y,
+    }];
+  });
+  const croppedImage = await sharp(image, { limitInputPixels: 32_000_000 })
     .extract({ left: x, top: y, width, height })
+    .toBuffer();
+  const maskedCrop = overlays.length
+    ? await sharp(croppedImage, { limitInputPixels: 32_000_000 }).composite(overlays).toBuffer()
+    : croppedImage;
+  return sharp(maskedCrop, { limitInputPixels: 32_000_000 })
     .resize({ width: Math.max(900, width * 4), withoutEnlargement: false })
     .greyscale()
     .normalize()
@@ -91,13 +119,13 @@ async function vehiclePlateCrop(image, imageWidth, imageHeight, prediction) {
     .toBuffer();
 }
 
-async function readLicensePlates(image, detectionResult, vehicleDetections) {
+async function readLicensePlates(image, detectionResult, vehicleDetections, ignoreRegions = []) {
   const candidates = [...vehicleDetections]
     .sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
     .slice(0, 2);
   const results = [];
   for (const vehicle of candidates) {
-    const crop = await vehiclePlateCrop(image, detectionResult.width, detectionResult.height, vehicle);
+    const crop = await vehiclePlateCrop(image, detectionResult.width, detectionResult.height, vehicle, ignoreRegions);
     if (!crop) continue;
     const recognized = await runTesseract(crop);
     if (!recognized || results.some((entry) => entry.plate === recognized.plate)) continue;
