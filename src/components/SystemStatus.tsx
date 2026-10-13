@@ -7,6 +7,34 @@ type SystemUsage = {
   ramPercent: number;
 };
 
+function UsageBar({ label, value }: { label: string; value: number }) {
+  const color = value <= 50
+    ? "bg-emerald-400"
+    : value < 80
+      ? "bg-orange-400"
+      : "bg-rose-500";
+
+  return (
+    <div className="grid w-32 grid-cols-[2rem_1fr_2rem] items-center gap-1.5" title={`${label}-Auslastung des Servers: ${value}%`}>
+      <span className="font-semibold text-slate-500">{label}</span>
+      <span
+        className="h-1.5 overflow-hidden rounded-full bg-slate-800 ring-1 ring-white/[0.05]"
+        role="progressbar"
+        aria-label={`${label}-Auslastung`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+      >
+        <span
+          className={`block h-full rounded-full transition-[width,background-color] duration-500 ${color}`}
+          style={{ width: `${value}%` }}
+        />
+      </span>
+      <span className="text-right tabular-nums text-slate-400">{value}%</span>
+    </div>
+  );
+}
+
 export function SystemStatus() {
   const [usage, setUsage] = useState<SystemUsage | null>(null);
 
@@ -42,15 +70,9 @@ export function SystemStatus() {
   if (!usage) return null;
 
   return (
-    <div className="mt-1.5 flex items-center gap-2 text-[10px] font-medium text-slate-500" aria-label="Systemauslastung">
-      <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5" title="CPU-Auslastung des Servers">
-        <span className="h-1.5 w-1.5 rounded-full bg-sky-400/70" />
-        CPU {usage.cpuPercent}%
-      </span>
-      <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.07] bg-white/[0.03] px-2 py-0.5" title="RAM-Auslastung des Servers">
-        <span className="h-1.5 w-1.5 rounded-full bg-violet-400/70" />
-        RAM {usage.ramPercent}%
-      </span>
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-medium" aria-label="Systemauslastung">
+      <UsageBar label="CPU" value={usage.cpuPercent} />
+      <UsageBar label="RAM" value={usage.ramPercent} />
     </div>
   );
 }
