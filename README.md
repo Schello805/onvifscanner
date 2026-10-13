@@ -19,6 +19,9 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Bewegungsmasken pro Kamera**: Beliebig geformte rote Ignorierbereiche lassen sich mit einem Pinsel direkt auf das Kamerabild malen, damit etwa Bäume, Straßen oder Zeitstempel keine Aufnahme auslösen.
+- **Lokale Objekterkennung**: Optional bestätigt ein lokales COCO-SSD-Modell Bewegungen als Person, Fahrzeug oder Tier, ohne Kamerabilder an einen KI-Dienst zu senden.
+- **Zeitprofile pro Kamera**: Wochentage, Start-/Endzeit und eine eigene Empfindlichkeit begrenzen Bewegungserkennung und Aufnahmen auf gewünschte Zeitfenster.
+- **Tageszusammenfassung**: Die Wiedergabe fasst Ereignisse und erkannte Objekte pro Tag und Kamera zusammen.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
 - **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
@@ -67,6 +70,8 @@ Für jede gespeicherte Kamera kann unter `Aufnahmen` oder direkt beim Bearbeiten
 Standardmäßig nutzt die Bewegungsaufnahme 10 Sekunden Vorlauf und 30 Sekunden Nachlauf. Wiederholte Ereignisse verlängern das persistente Aufnahmefenster automatisch. Nach dem Nachlauf verbindet `ffmpeg` alle zugehörigen Ringpuffer-Segmente verlustfrei zu einem Bewegungsclip. Der temporäre Puffer liegt unter `data/motion-buffer`, Arbeitsdateien unter `data/motion-staging`; nur der fertige Clip wird in das gewählte Speicherziel übernommen. Aufnahmefenster und Ereignis-Zuordnung liegen in SQLite und überstehen dadurch einen Neustart der Anwendung.
 
 Im Kamera-Editor können außerdem rote Ignorierbereiche mit einem Pinsel direkt auf das Vorschaubild gemalt und mit dem Radierer wieder entfernt werden. Ein Raster ermöglicht mehrere kleine oder unregelmäßige Masken statt nur eines großen Rechtecks. Die Koordinaten werden proportional gespeichert und funktionieren daher unabhängig von der Analyseauflösung. Sobald eine Kamera eine Maske besitzt, wird ihre Bewegung ausschließlich durch die serverseitige Bildanalyse bewertet, da ONVIF- und Webhook-Ereignisse keine räumlichen Koordinaten für die Maske liefern.
+
+Optional kann pro Kamera die lokale KI-Objekterkennung für Personen, Fahrzeuge und Tiere aktiviert werden. Sie läuft erst nach einer erkannten Bildbewegung in einem separaten Worker und belastet dadurch weder den Webserver noch dauerhaft die CPU. Das Modell wird beim ersten Einsatz geladen; die Auswertung selbst findet vollständig auf dem ONVIFscanner-Server statt. Ist die optionale TensorFlow-Laufzeit nicht verfügbar, fällt die Erkennung sicher auf die normale Bewegungsaufnahme zurück. Zeitprofile erlauben zusätzlich Wochentage, auch über Mitternacht laufende Zeitfenster und eine eigene Empfindlichkeit. In der Wiedergabe zeigt die Tageszusammenfassung die Ereignis- und Objektzahlen je Tag.
 
 Für Smartphones normalisiert ONVIFscanner neue Bewegungsclips in ein kompatibles MP4/H.264-Format. Falls ein älterer oder kontinuierlich aufgezeichneter Clip vom Browser nicht unterstützt wird, erzeugt die Wiedergabeseite automatisch eine zwischengespeicherte H.264-Version unter `data/playback-cache` und versucht die Wiedergabe erneut.
 
@@ -144,6 +149,8 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `MOTION_SOURCE_WIDTH` (default `384`): Breite des frisch geladenen Bildes für die Bewegungserkennung.
 - `MOTION_ANALYSIS_WIDTH` (default `256`): Interne Analysebreite; statt der früheren 96 px bleiben dadurch kleine Bewegungen besser sichtbar.
 - `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
+- `ENABLE_OBJECT_DETECTION` (default `true`): Erlaubt die pro Kamera aktivierbare lokale Person-/Fahrzeug-/Tiererkennung.
+- `OBJECT_DETECTION_MODEL_URL` (optional): Eigene lokale oder erreichbare URL für das COCO-SSD-Modell. Ohne Angabe wird beim ersten Einsatz das Standardmodell geladen; Kamerabilder verlassen den Server nicht.
 - `NTFY_IMAGE_WIDTH` (default `960`) und `NTFY_IMAGE_QUALITY` (default `82`): Qualität des separat geladenen Alarmbildes für Ntfy.
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.

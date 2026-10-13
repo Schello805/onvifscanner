@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.13.4",
+  "version": "0.14.0",
   "private": true,
   "description": "Local-first web app to discover ONVIF/RTSP cameras in your network.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -46,5 +46,9 @@
     "prisma@5.22.0": true,
     "@prisma/client@5.22.0": true,
     "@prisma/engines@5.22.0": true
+  },
+  "optionalDependencies": {
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0"
   }
 }

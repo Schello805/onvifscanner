@@ -24,6 +24,14 @@ export type WallCamera = {
   motionPostRollSeconds?: number;
   motionSensitivity?: number;
   motionIgnoreRegions?: MotionRegion[];
+  objectDetectionEnabled?: boolean;
+  objectDetectionClasses?: string[];
+  objectMinConfidence?: number;
+  motionScheduleEnabled?: boolean;
+  motionScheduleStart?: string;
+  motionScheduleEnd?: string;
+  motionScheduleDays?: number[];
+  motionScheduleSensitivity?: number;
   notificationsEnabled?: boolean;
   storageTargetId?: string | null;
   snapshotUris: string[];
@@ -150,6 +158,14 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         motionPostRollSeconds: existing.motionPostRollSeconds,
         motionSensitivity: existing.motionSensitivity,
         motionIgnoreRegions: existing.motionIgnoreRegions ?? camera.motionIgnoreRegions,
+        objectDetectionEnabled: existing.objectDetectionEnabled ?? camera.objectDetectionEnabled,
+        objectDetectionClasses: existing.objectDetectionClasses ?? camera.objectDetectionClasses,
+        objectMinConfidence: existing.objectMinConfidence ?? camera.objectMinConfidence,
+        motionScheduleEnabled: existing.motionScheduleEnabled ?? camera.motionScheduleEnabled,
+        motionScheduleStart: existing.motionScheduleStart ?? camera.motionScheduleStart,
+        motionScheduleEnd: existing.motionScheduleEnd ?? camera.motionScheduleEnd,
+        motionScheduleDays: existing.motionScheduleDays ?? camera.motionScheduleDays,
+        motionScheduleSensitivity: existing.motionScheduleSensitivity ?? camera.motionScheduleSensitivity,
         notificationsEnabled: existing.notificationsEnabled,
         storageTargetId: existing.storageTargetId,
         snapshotUris: Array.from(new Set([...existing.snapshotUris, ...camera.snapshotUris])),

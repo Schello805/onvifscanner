@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
+import { isMotionScheduleActive } from "@/lib/motionSchedule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,18 +69,27 @@ export async function POST(req: Request) {
     }
 
     if (matchedCamera) {
-      let hasMotionMask = false;
-      try {
-        const regions = JSON.parse(matchedCamera.motionIgnoreRegions || "[]");
-        hasMotionMask = Array.isArray(regions) && regions.length > 0;
-      } catch {}
-      if (hasMotionMask) {
+      if (!isMotionScheduleActive(matchedCamera)) {
         return NextResponse.json({
           ok: true,
           recorded: false,
           cameraId: matchedCamera.id,
           cameraName: matchedCamera.name,
-          note: "Kamera-Ereignis ignoriert; die konfigurierte Bildmaske wird durch die Server-Bildanalyse ausgewertet.",
+          note: "Kamera-Ereignis liegt außerhalb des aktiven Zeitprofils.",
+        });
+      }
+      let hasMotionMask = false;
+      try {
+        const regions = JSON.parse(matchedCamera.motionIgnoreRegions || "[]");
+        hasMotionMask = Array.isArray(regions) && regions.length > 0;
+      } catch {}
+      if (hasMotionMask || matchedCamera.objectDetectionEnabled) {
+        return NextResponse.json({
+          ok: true,
+          recorded: false,
+          cameraId: matchedCamera.id,
+          cameraName: matchedCamera.name,
+          note: "Kamera-Ereignis ignoriert; Bildmaske bzw. lokale Objekterkennung wird durch die Server-Bildanalyse ausgewertet.",
         });
       }
       const eventTime = new Date();

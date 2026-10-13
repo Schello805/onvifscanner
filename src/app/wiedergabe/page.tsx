@@ -122,11 +122,21 @@ type MotionEvent = {
   timeStr: string;
   totalMinutes: number;
   message: string;
+  objectClasses?: string[];
+  objectDetections?: Array<{ className?: string; group?: string; score?: number }>;
   motionRecordingId?: string | null;
   motionRecordingStatus?: string | null;
   motionRecordingError?: string | null;
   clipId?: string | null;
   streamUrl?: string | null;
+};
+
+type DailySummary = {
+  totalEvents: number;
+  counts: { person: number; vehicle: number; animal: number; unclassified: number };
+  cameras: Array<{ cameraId: string; cameraName: string; events: number; objects: number }>;
+  firstEventAt: string | null;
+  lastEventAt: string | null;
 };
 
 type ClipMotionEvent = {
@@ -355,6 +365,7 @@ export default function PlaybackPage() {
 
   // Motion Events & Timeline Scrubber State
   const [motionEvents, setMotionEvents] = useState<MotionEvent[]>([]);
+  const [dailySummary, setDailySummary] = useState<DailySummary | null>(null);
   const [hoverScrubber, setHoverScrubber] = useState<{
     pct: number;
     timeStr: string;
@@ -450,9 +461,12 @@ export default function PlaybackPage() {
       if (camId) params.set("cameraId", camId);
       if (date) params.set("date", date);
 
-      const [resClips, resEvents] = await Promise.all([
+      const [resClips, resEvents, resSummary] = await Promise.all([
         fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" }),
         fetch(`/api/nvr/events?${params.toString()}`, { cache: "no-store" }),
+        date
+          ? fetch(`/api/nvr/daily-summary?${params.toString()}`, { cache: "no-store" })
+          : Promise.resolve(null),
       ]);
 
       const dataClips = await resClips.json();
@@ -469,6 +483,12 @@ export default function PlaybackPage() {
         setMotionEvents(dataEvents.events);
       } else {
         setMotionEvents([]);
+      }
+      if (resSummary) {
+        const summary = await resSummary.json().catch(() => null);
+        setDailySummary(summary?.ok ? summary : null);
+      } else {
+        setDailySummary(null);
       }
     } catch {
       if (!silent) toast.error("Fehler beim Laden der Aufnahmen.");
@@ -2353,6 +2373,48 @@ export default function PlaybackPage() {
     </div>
     )}
 
+      {dailySummary && selectedDate && (
+        <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-950/20 to-slate-950 p-4 sm:p-5 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300">Tageszusammenfassung</p>
+              <h2 className="mt-1 text-base font-bold text-white">{formatGermanDateLong(selectedDate)}</h2>
+            </div>
+            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200">
+              {dailySummary.totalEvents} Ereignisse
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Personen", dailySummary.counts.person, "text-emerald-300"],
+              ["Fahrzeuge", dailySummary.counts.vehicle, "text-sky-300"],
+              ["Tiere", dailySummary.counts.animal, "text-amber-300"],
+              ["Nur Bewegung", dailySummary.counts.unclassified, "text-slate-300"],
+            ].map(([label, value, color]) => (
+              <div key={String(label)} className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                <div className={`text-xl font-bold ${color}`}>{value}</div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+              </div>
+            ))}
+          </div>
+          {dailySummary.cameras.length > 0 && (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {dailySummary.cameras.slice(0, 6).map((camera) => (
+                <button
+                  key={camera.cameraId}
+                  type="button"
+                  onClick={() => setSelectedCameraId(camera.cameraId)}
+                  className="shrink-0 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left hover:border-cyan-500/40"
+                >
+                  <span className="block max-w-36 truncate text-xs font-semibold text-white">{camera.cameraName}</span>
+                  <span className="text-[10px] text-slate-400">{camera.events} Ereignisse · {camera.objects} Objekte</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Modern High-Precision Timeline */}
       <div className="rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 sm:p-5 mb-6 shadow-2xl backdrop-blur-md">
         {/* Timeline Header & Controls */}
@@ -2824,6 +2886,15 @@ export default function PlaybackPage() {
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
                             {ev.cameraName} · {ev.message}
                           </p>
+                          {ev.objectClasses && ev.objectClasses.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {ev.objectClasses.map((group) => (
+                                <span key={group} className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">
+                                  {group === "person" ? "Person" : group === "vehicle" ? "Fahrzeug" : group === "animal" ? "Tier" : group}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {ev.motionRecordingStatus && !["ready", "continuous"].includes(ev.motionRecordingStatus) && (
                             <p className={`mt-0.5 text-[9px] ${["failed", "disabled"].includes(ev.motionRecordingStatus) ? "text-rose-400" : "text-amber-400"}`} title={ev.motionRecordingError || undefined}>
                               {ev.motionRecordingStatus === "failed"

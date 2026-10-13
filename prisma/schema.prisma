@@ -23,22 +23,30 @@ model Camera {
   savedAt         DateTime @default(now())
   sortOrder       Int      @default(0)
 
-  recordEnabled         Boolean        @default(false)
-  recordMode            String         @default("off") // off | motion | continuous
-  recordSegmentMinutes  Int            @default(15)
-  motionPreRollSeconds  Int            @default(10)
-  motionPostRollSeconds Int            @default(30)
-  motionSensitivity    Int            @default(80)
-  motionIgnoreRegions String         @default("[]") // normalized rectangles: [{x,y,width,height}]
-  motionEventState      String         @default("unknown") // unknown | probing | active | unsupported | error
-  motionEventSource     String?
-  motionEventLastSeen   DateTime?
-  motionEventCheckedAt  DateTime?
-  motionEventLastError  String?
-  alarmCooldownSeconds  Int            @default(30)
-  notificationsEnabled Boolean        @default(false)
-  storageTargetId       String?
-  storageTarget         StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
+  recordEnabled             Boolean        @default(false)
+  recordMode                String         @default("off") // off | motion | continuous
+  recordSegmentMinutes      Int            @default(15)
+  motionPreRollSeconds      Int            @default(10)
+  motionPostRollSeconds     Int            @default(30)
+  motionSensitivity         Int            @default(80)
+  motionIgnoreRegions       String         @default("[]") // normalized rectangles: [{x,y,width,height}]
+  objectDetectionEnabled    Boolean        @default(false)
+  objectDetectionClasses    String         @default("[\"person\",\"vehicle\",\"animal\"]")
+  objectMinConfidence       Int            @default(55)
+  motionScheduleEnabled     Boolean        @default(false)
+  motionScheduleStart       String         @default("22:00")
+  motionScheduleEnd         String         @default("06:00")
+  motionScheduleDays        String         @default("[0,1,2,3,4,5,6]")
+  motionScheduleSensitivity Int            @default(90)
+  motionEventState          String         @default("unknown") // unknown | probing | active | unsupported | error
+  motionEventSource         String?
+  motionEventLastSeen       DateTime?
+  motionEventCheckedAt      DateTime?
+  motionEventLastError      String?
+  alarmCooldownSeconds      Int            @default(30)
+  notificationsEnabled      Boolean        @default(false)
+  storageTargetId           String?
+  storageTarget             StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
 
   status           DeviceStatus?
   alarms           AlarmLog[]
@@ -69,13 +77,13 @@ model DeviceStatus {
 }
 
 model Settings {
-  id                           String   @id @default("default")
-  columns                      Int?
-  refresh                      Int?
-  autoCleanup                  Boolean? @default(true)
-  ntfyTopic                    String?
-  ntfyServer                   String?
-  motionSensitivityV3Migrated  Boolean  @default(false)
+  id                          String   @id @default("default")
+  columns                     Int?
+  refresh                     Int?
+  autoCleanup                 Boolean? @default(true)
+  ntfyTopic                   String?
+  ntfyServer                  String?
+  motionSensitivityV3Migrated Boolean  @default(false)
 }
 
 model DiscoveredDevice {
@@ -99,6 +107,8 @@ model AlarmLog {
   timestamp         DateTime         @default(now())
   imageUrl          String? // base64 or path
   message           String?
+  objectClasses     String?
+  objectDetections  String?
   motionRecordingId String?
   motionRecording   MotionRecording? @relation(fields: [motionRecordingId], references: [id], onDelete: SetNull)
 

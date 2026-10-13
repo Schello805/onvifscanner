@@ -37,6 +37,18 @@ export async function GET() {
       motionIgnoreRegions: (() => {
         try { return JSON.parse(c.motionIgnoreRegions || "[]"); } catch { return []; }
       })(),
+      objectDetectionEnabled: c.objectDetectionEnabled,
+      objectDetectionClasses: (() => {
+        try { return JSON.parse(c.objectDetectionClasses || "[]"); } catch { return []; }
+      })(),
+      objectMinConfidence: c.objectMinConfidence,
+      motionScheduleEnabled: c.motionScheduleEnabled,
+      motionScheduleStart: c.motionScheduleStart,
+      motionScheduleEnd: c.motionScheduleEnd,
+      motionScheduleDays: (() => {
+        try { return JSON.parse(c.motionScheduleDays || "[]"); } catch { return []; }
+      })(),
+      motionScheduleSensitivity: c.motionScheduleSensitivity,
       notificationsEnabled: c.notificationsEnabled,
       motionEventState: c.motionEventState,
       motionEventSource: c.motionEventSource,
@@ -113,6 +125,24 @@ export async function PATCH(req: Request) {
           ? [{ x, y, width, height }]
           : [];
       }));
+    }
+    if (body.objectDetectionEnabled !== undefined) updateData.objectDetectionEnabled = Boolean(body.objectDetectionEnabled);
+    if (body.objectDetectionClasses !== undefined) {
+      const classes = Array.isArray(body.objectDetectionClasses) ? body.objectDetectionClasses : [];
+      updateData.objectDetectionClasses = JSON.stringify(Array.from(new Set(classes.filter((entry: unknown): entry is string => typeof entry === "string"))).slice(0, 16));
+    }
+    if (body.objectMinConfidence !== undefined) {
+      updateData.objectMinConfidence = Math.min(95, Math.max(20, Math.round(Number(body.objectMinConfidence) || 55)));
+    }
+    if (body.motionScheduleEnabled !== undefined) updateData.motionScheduleEnabled = Boolean(body.motionScheduleEnabled);
+    if (body.motionScheduleStart !== undefined && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.motionScheduleStart))) updateData.motionScheduleStart = String(body.motionScheduleStart);
+    if (body.motionScheduleEnd !== undefined && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.motionScheduleEnd))) updateData.motionScheduleEnd = String(body.motionScheduleEnd);
+    if (body.motionScheduleDays !== undefined) {
+      const days = Array.isArray(body.motionScheduleDays) ? body.motionScheduleDays : [];
+      updateData.motionScheduleDays = JSON.stringify(Array.from(new Set(days.map(Number).filter((day: number) => Number.isInteger(day) && day >= 0 && day <= 6))).sort());
+    }
+    if (body.motionScheduleSensitivity !== undefined) {
+      updateData.motionScheduleSensitivity = Math.min(100, Math.max(1, Math.round(Number(body.motionScheduleSensitivity) || 90)));
     }
     if (body.notificationsEnabled !== undefined) {
       updateData.notificationsEnabled = Boolean(body.notificationsEnabled);

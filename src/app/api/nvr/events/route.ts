@@ -71,6 +71,12 @@ export async function GET(req: Request) {
         timeStr,
         totalMinutes,
         message: ev.message || "Bewegung erkannt",
+        objectClasses: (() => {
+          try { return JSON.parse(ev.objectClasses || "[]"); } catch { return []; }
+        })(),
+        objectDetections: (() => {
+          try { return JSON.parse(ev.objectDetections || "[]"); } catch { return []; }
+        })(),
         motionRecordingId: ev.motionRecording?.id ?? null,
         motionRecordingStatus: recordingStatus,
         motionRecordingError: ev.motionRecording?.error ?? null,

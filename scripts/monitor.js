@@ -4,13 +4,17 @@ const sharp = require('sharp');
 const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
+const { ObjectDetector } = require('./object-detector');
+const { isMotionScheduleActive } = require('./motion-schedule');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
 const motionRecorder = new MotionRecorder(prisma);
+const objectDetector = new ObjectDetector();
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
 const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
+const objectDetectionEnabled = process.env.ENABLE_OBJECT_DETECTION !== 'false';
 const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 3_000);
 const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 3));
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
@@ -29,6 +33,50 @@ let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
 let motionSensitivityDefaultsMigrated = false;
+
+const objectClassGroups = {
+  person: new Set(['person']),
+  vehicle: new Set(['bicycle', 'car', 'motorcycle', 'bus', 'truck', 'train', 'boat']),
+  animal: new Set(['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe']),
+};
+const objectGroupLabels = { person: 'Person', vehicle: 'Fahrzeug', animal: 'Tier' };
+
+function parseObjectGroups(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed.filter((group) => objectClassGroups[group]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pointIsIgnored(x, y, ignoreRegions) {
+  return ignoreRegions.some((region) =>
+    x >= region.x && x <= region.x + region.width
+    && y >= region.y && y <= region.y + region.height
+  );
+}
+
+function relevantObjectDetections(result, camera, ignoreRegions) {
+  const selectedGroups = new Set(parseObjectGroups(camera.objectDetectionClasses));
+  if (!selectedGroups.size) return [];
+  return (result.predictions || []).flatMap((prediction) => {
+    const group = Object.keys(objectClassGroups).find((key) =>
+      selectedGroups.has(key) && objectClassGroups[key].has(prediction.className)
+    );
+    if (!group) return [];
+    const [x, y, width, height] = prediction.bbox || [];
+    const centerX = (Number(x) + Number(width) / 2) / Math.max(1, result.width);
+    const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
+    if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
+    return [{ ...prediction, group }];
+  });
+}
+
+function objectDetectionMessage(detections) {
+  const groups = Array.from(new Set(detections.map((detection) => detection.group)));
+  return `${groups.map((group) => objectGroupLabels[group]).join(', ')} erkannt (lokale KI)`;
+}
 
 function parseMotionIgnoreRegions(value) {
   try {
@@ -179,7 +227,10 @@ async function runMonitorCycle() {
     // Phase 4: Sync ONVIF Event Pull workers (low resource, event-driven)
     try {
       void onvifEvents.syncCameras(cameras.filter((camera) =>
-        Boolean(camera.ip) && parseMotionIgnoreRegions(camera.motionIgnoreRegions).length === 0
+        Boolean(camera.ip)
+        && parseMotionIgnoreRegions(camera.motionIgnoreRegions).length === 0
+        && !camera.objectDetectionEnabled
+        && isMotionScheduleActive(camera)
       ));
     } catch (e) {
       // quiet
@@ -221,6 +272,10 @@ async function runMotionDetection() {
 
 async function detectCameraMotion(cam) {
   if (cam.status && !cam.status.isOnline) return;
+  if (!isMotionScheduleActive(cam)) {
+    motionFrames.delete(cam.id);
+    return;
+  }
 
   const ignoreRegions = parseMotionIgnoreRegions(cam.motionIgnoreRegions);
   const maskKey = JSON.stringify(ignoreRegions);
@@ -228,7 +283,7 @@ async function detectCameraMotion(cam) {
   const onvifEventIsRecent = cam.motionEventSource === 'onvif'
     && cam.motionEventLastSeen
     && Date.now() - cam.motionEventLastSeen.getTime() < 5 * 60_000;
-  if (onvifEventIsRecent && ignoreRegions.length === 0) return;
+  if (onvifEventIsRecent && ignoreRegions.length === 0 && !cam.objectDetectionEnabled) return;
 
   let snapshotUris = [];
   let streamUris = [];
@@ -275,7 +330,10 @@ async function detectCameraMotion(cam) {
     let differenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
     const activePixelCount = previous.activePixelCount ?? Math.floor(pixels.length / channels);
-    const sensitivity = Math.min(100, Math.max(1, Number(cam.motionSensitivity) || 80));
+    const configuredSensitivity = cam.motionScheduleEnabled
+      ? cam.motionScheduleSensitivity
+      : cam.motionSensitivity;
+    const sensitivity = Math.min(100, Math.max(1, Number(configuredSensitivity) || 80));
     const sensitivityFactor = 1.5 - sensitivity / 100;
     const effectivePixelThreshold = Math.max(8, Math.round(motionPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
@@ -331,6 +389,24 @@ async function detectCameraMotion(cam) {
       return;
     }
 
+    let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
+    let detectedObjects = [];
+    if (cam.objectDetectionEnabled && objectDetectionEnabled) {
+      try {
+        const result = await objectDetector.detect(image, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
+        detectedObjects = relevantObjectDetections(result, cam, ignoreRegions);
+        if (!detectedObjects.length) return;
+        eventMessage = objectDetectionMessage(detectedObjects);
+      } catch (error) {
+        const warningKey = `object:${cam.id}`;
+        const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
+        if (Date.now() - lastLogged > 60_000) {
+          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Rohbewegung wird verwendet.`);
+          motionFailureLogTimes.set(warningKey, Date.now());
+        }
+      }
+    }
+
     const cooldownSeconds = Math.max(5, cam.alarmCooldownSeconds || 30);
     const recentEvent = await prisma.alarmLog.findFirst({
       where: {
@@ -343,12 +419,16 @@ async function detectCameraMotion(cam) {
       await prisma.alarmLog.create({
         data: {
           cameraId: cam.id,
-          message: 'Bewegung erkannt (Server-Bildanalyse)',
+          message: eventMessage,
           timestamp: checkedAt,
+          objectClasses: detectedObjects.length
+            ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
+            : null,
+          objectDetections: detectedObjects.length ? JSON.stringify(detectedObjects) : null,
         },
       });
-      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)');
-      console.log(`[Motion Detection] ${cam.name}: Bewegung erkannt (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
+      await sendCameraNotification(prisma, cam, eventMessage, { imageBuffer: image, contentType: 'image/jpeg' });
+      console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },
@@ -723,6 +803,7 @@ function startMonitor() {
 async function stopMonitor() {
   onvifEvents.stop();
   motionRecorder.stop();
+  await objectDetector.stop();
   for (const timer of monitorTimers) clearTimeout(timer);
   monitorTimers.length = 0;
   isMonitoring = false;

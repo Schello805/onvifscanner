@@ -30,6 +30,14 @@ type CameraEditDraft = {
   motionPostRollSeconds: number;
   motionSensitivity: number;
   motionIgnoreRegions: MotionRegion[];
+  objectDetectionEnabled: boolean;
+  objectDetectionClasses: string[];
+  objectMinConfidence: number;
+  motionScheduleEnabled: boolean;
+  motionScheduleStart: string;
+  motionScheduleEnd: string;
+  motionScheduleDays: number[];
+  motionScheduleSensitivity: number;
   notificationsEnabled: boolean;
   storageTargetId: string;
 };
@@ -488,6 +496,14 @@ export default function CameraWallPage() {
       motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
       motionSensitivity: camera.motionSensitivity ?? 80,
       motionIgnoreRegions: camera.motionIgnoreRegions ?? [],
+      objectDetectionEnabled: Boolean(camera.objectDetectionEnabled),
+      objectDetectionClasses: camera.objectDetectionClasses ?? ["person", "vehicle", "animal"],
+      objectMinConfidence: camera.objectMinConfidence ?? 55,
+      motionScheduleEnabled: Boolean(camera.motionScheduleEnabled),
+      motionScheduleStart: camera.motionScheduleStart ?? "22:00",
+      motionScheduleEnd: camera.motionScheduleEnd ?? "06:00",
+      motionScheduleDays: camera.motionScheduleDays ?? [0, 1, 2, 3, 4, 5, 6],
+      motionScheduleSensitivity: camera.motionScheduleSensitivity ?? 90,
       notificationsEnabled: Boolean(camera.notificationsEnabled),
       storageTargetId: camera.storageTargetId || "",
     });
@@ -603,6 +619,14 @@ export default function CameraWallPage() {
       motionPostRollSeconds: editDraft.motionPostRollSeconds,
       motionSensitivity: editDraft.motionSensitivity,
       motionIgnoreRegions: editDraft.motionIgnoreRegions,
+      objectDetectionEnabled: editDraft.objectDetectionEnabled,
+      objectDetectionClasses: editDraft.objectDetectionClasses,
+      objectMinConfidence: editDraft.objectMinConfidence,
+      motionScheduleEnabled: editDraft.motionScheduleEnabled,
+      motionScheduleStart: editDraft.motionScheduleStart,
+      motionScheduleEnd: editDraft.motionScheduleEnd,
+      motionScheduleDays: editDraft.motionScheduleDays,
+      motionScheduleSensitivity: editDraft.motionScheduleSensitivity,
       notificationsEnabled: editDraft.notificationsEnabled,
       storageTargetId: editDraft.storageTargetId || null,
     } : camera);
@@ -619,6 +643,14 @@ export default function CameraWallPage() {
         motionPostRollSeconds: editDraft.motionPostRollSeconds,
         motionSensitivity: editDraft.motionSensitivity,
         motionIgnoreRegions: editDraft.motionIgnoreRegions,
+        objectDetectionEnabled: editDraft.objectDetectionEnabled,
+        objectDetectionClasses: editDraft.objectDetectionClasses,
+        objectMinConfidence: editDraft.objectMinConfidence,
+        motionScheduleEnabled: editDraft.motionScheduleEnabled,
+        motionScheduleStart: editDraft.motionScheduleStart,
+        motionScheduleEnd: editDraft.motionScheduleEnd,
+        motionScheduleDays: editDraft.motionScheduleDays,
+        motionScheduleSensitivity: editDraft.motionScheduleSensitivity,
         notificationsEnabled: editDraft.notificationsEnabled,
         storageTargetId: editDraft.storageTargetId || null,
       })
@@ -1621,6 +1653,123 @@ export default function CameraWallPage() {
                               regions={editDraft.motionIgnoreRegions}
                               onChange={(motionIgnoreRegions) => setEditDraft({ ...editDraft, motionIgnoreRegions })}
                             />
+                          </div>
+                          <div className="sm:col-span-2 rounded-xl border border-cyan-500/25 bg-cyan-950/15 p-3 space-y-3">
+                            <label className="flex cursor-pointer items-start gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={editDraft.objectDetectionEnabled}
+                                onChange={(event) => setEditDraft({ ...editDraft, objectDetectionEnabled: event.target.checked })}
+                                className="mt-0.5 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
+                              />
+                              <span>
+                                <strong className="block text-xs text-white">Lokale KI-Objekterkennung</strong>
+                                <span className="block text-[10px] leading-relaxed text-slate-400">
+                                  Prüft erkannte Bewegung lokal auf dem Server. Kamerabilder werden nicht an einen KI-Dienst gesendet.
+                                </span>
+                              </span>
+                            </label>
+                            {editDraft.objectDetectionEnabled && (
+                              <div className="space-y-3 border-t border-cyan-500/15 pt-3">
+                                <div className="grid grid-cols-3 gap-2">
+                                  {([
+                                    ["person", "Personen"],
+                                    ["vehicle", "Fahrzeuge"],
+                                    ["animal", "Tiere"],
+                                  ] as const).map(([value, label]) => (
+                                    <label key={value} className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={editDraft.objectDetectionClasses.includes(value)}
+                                        onChange={(event) => setEditDraft({
+                                          ...editDraft,
+                                          objectDetectionClasses: event.target.checked
+                                            ? Array.from(new Set([...editDraft.objectDetectionClasses, value]))
+                                            : editDraft.objectDetectionClasses.filter((entry) => entry !== value),
+                                        })}
+                                        className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
+                                      />
+                                      <span className="truncate text-[10px] text-slate-300">{label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                                <label className="grid gap-1">
+                                  <span className="flex justify-between text-[11px] text-slate-400">
+                                    <span>Mindest-Sicherheit</span>
+                                    <strong className="text-cyan-300">{editDraft.objectMinConfidence}%</strong>
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min={20}
+                                    max={95}
+                                    value={editDraft.objectMinConfidence}
+                                    onInput={(event) => setEditDraft({ ...editDraft, objectMinConfidence: Number(event.currentTarget.value) })}
+                                    className="range range-info range-sm"
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                          <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
+                            <label className="flex cursor-pointer items-start gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={editDraft.motionScheduleEnabled}
+                                onChange={(event) => setEditDraft({ ...editDraft, motionScheduleEnabled: event.target.checked })}
+                                className="mt-0.5 rounded border-slate-700 bg-slate-900 text-violet-500 focus:ring-0"
+                              />
+                              <span>
+                                <strong className="block text-xs text-white">Zeitprofil für Bewegung</strong>
+                                <span className="block text-[10px] leading-relaxed text-slate-400">
+                                  Außerhalb des Zeitfensters werden keine Bewegungsereignisse oder Bewegungsclips erzeugt.
+                                </span>
+                              </span>
+                            </label>
+                            {editDraft.motionScheduleEnabled && (
+                              <div className="space-y-3 border-t border-violet-500/15 pt-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="grid gap-1 text-[10px] text-slate-400">
+                                    Von
+                                    <input type="time" value={editDraft.motionScheduleStart} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleStart: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
+                                  </label>
+                                  <label className="grid gap-1 text-[10px] text-slate-400">
+                                    Bis
+                                    <input type="time" value={editDraft.motionScheduleEnd} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleEnd: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
+                                  </label>
+                                </div>
+                                <div className="grid grid-cols-7 gap-1">
+                                  {["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"].map((label, day) => (
+                                    <button
+                                      key={label}
+                                      type="button"
+                                      onClick={() => setEditDraft({
+                                        ...editDraft,
+                                        motionScheduleDays: editDraft.motionScheduleDays.includes(day)
+                                          ? editDraft.motionScheduleDays.filter((entry) => entry !== day)
+                                          : [...editDraft.motionScheduleDays, day].sort(),
+                                      })}
+                                      className={`rounded-md border px-1 py-1.5 text-[9px] font-semibold ${editDraft.motionScheduleDays.includes(day) ? "border-violet-400 bg-violet-500/25 text-violet-200" : "border-white/10 bg-slate-950/60 text-slate-500"}`}
+                                    >
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <label className="grid gap-1">
+                                  <span className="flex justify-between text-[11px] text-slate-400">
+                                    <span>Empfindlichkeit im Zeitfenster</span>
+                                    <strong className="text-violet-300">{editDraft.motionScheduleSensitivity}%</strong>
+                                  </span>
+                                  <input
+                                    type="range"
+                                    min={1}
+                                    max={100}
+                                    value={editDraft.motionScheduleSensitivity}
+                                    onInput={(event) => setEditDraft({ ...editDraft, motionScheduleSensitivity: Number(event.currentTarget.value) })}
+                                    className="range range-secondary range-sm"
+                                  />
+                                </label>
+                              </div>
+                            )}
                           </div>
                           <label className="grid gap-1">
                             <span className="text-slate-400 text-[11px]">Vorlauf:</span>
