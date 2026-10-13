@@ -330,6 +330,8 @@ export default function PlaybackPage() {
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [filterMotionOnly, setFilterMotionOnly] = useState(false);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
+  const [mobileCalendarOpen, setMobileCalendarOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Timeline Zoom & Event Inspector State
   const [timelineZoom, setTimelineZoom] = useState<24 | 12 | 6 | 2 | 1>(24);
@@ -548,6 +550,14 @@ export default function PlaybackPage() {
 
   const selectedCalendarDay = selectedDate ? calendarDays[selectedDate] : undefined;
   const selectedCamera = cameras.find((camera) => camera.id === selectedCameraId);
+  const activeAdvancedFilterCount = [
+    Boolean(searchQuery.trim()),
+    timePreset !== "all",
+    filterMotionOnly,
+    Boolean(storageFilter),
+    sizeFilter !== "all",
+    sortBy !== "newest",
+  ].filter(Boolean).length;
   const calendarMonthClipCount = useMemo(
     () => Object.values(calendarDays).reduce((sum, day) => sum + day.count, 0),
     [calendarDays]
@@ -1037,35 +1047,37 @@ export default function PlaybackPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-3 sm:space-y-5">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-800 pb-3">
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <Film className="h-5 w-5 text-amber-400" />
-            Wiedergabe & Vorfall-Prüfung
+            <span className="sm:hidden">Wiedergabe</span>
+            <span className="hidden sm:inline">Wiedergabe & Vorfall-Prüfung</span>
           </h1>
           <span className="rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-0.5 text-xs font-semibold text-amber-300">
             {filteredClips.length} {filteredClips.length === 1 ? "Clip" : "Clips"}
           </span>
           {selectedDate && (
-            <span className="rounded-full bg-slate-800/80 border border-slate-700/60 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+            <span className="hidden rounded-full bg-slate-800/80 border border-slate-700/60 px-2.5 py-0.5 text-xs font-medium text-slate-300 sm:inline-flex">
               📅 {formatGermanDateLong(selectedDate)}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <button
             onClick={() => {
               setShowStatsModal(true);
               fetchActivityStats(statsPeriod);
             }}
-            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
+            className="touch-manipulation inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm sm:px-3 sm:py-1.5"
             title="Auswertung der Kamera-Aktivität & Bewegungserkennungen"
           >
             <BarChart3 className="h-3.5 w-3.5 text-amber-400" />
-            <span>Kamera-Auswertung</span>
+            <span className="sm:hidden">Analyse</span>
+            <span className="hidden sm:inline">Kamera-Auswertung</span>
             {activityStats && activityStats.totalEvents > 0 && (
               <span className="rounded-full bg-amber-400/25 px-1.5 py-0.2 text-[10px] font-mono text-amber-200 border border-amber-400/30">
                 {activityStats.totalEvents}⚡
@@ -1075,23 +1087,25 @@ export default function PlaybackPage() {
           <button
             onClick={() => fetchClips(selectedCameraId, selectedDate)}
             disabled={refreshing}
-            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800 active:scale-95 transition-all"
+            className="touch-manipulation inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 active:scale-95 transition-all sm:px-3 sm:py-1.5"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin text-amber-400" : ""}`} />
-            Aktualisieren
+            <span className="sm:hidden">Neu laden</span>
+            <span className="hidden sm:inline">Aktualisieren</span>
           </button>
           <Link
             href="/recordings"
-            className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-500/20 active:scale-95 transition-all"
+            className="touch-manipulation inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-2 text-xs font-medium text-rose-200 hover:bg-rose-500/20 active:scale-95 transition-all sm:px-3 sm:py-1.5"
           >
             <Radio className="h-3.5 w-3.5" />
-            Aufnahmesteuerung
+            <span className="sm:hidden">Aufnahme</span>
+            <span className="hidden sm:inline">Aufnahmesteuerung</span>
           </Link>
         </div>
       </div>
 
       {/* Central recording calendar */}
-      <section className="overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/95 to-slate-950 shadow-xl">
+      <section id="recording-calendar" className="overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-b from-slate-900/95 to-slate-950 shadow-xl sm:rounded-2xl">
         <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-2 text-sky-300">
@@ -1099,7 +1113,7 @@ export default function PlaybackPage() {
             </div>
             <div>
               <h2 className="text-sm font-bold text-white">Aufnahme-Kalender</h2>
-              <p className="text-[11px] text-slate-400">Blaue Markierungen zeigen Tage mit vorhandenen Aufnahmen.</p>
+              <p className="hidden text-[11px] text-slate-400 sm:block">Blaue Markierungen zeigen Tage mit vorhandenen Aufnahmen.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1118,10 +1132,19 @@ export default function PlaybackPage() {
                 Alle Kameras anzeigen
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setMobileCalendarOpen((open) => !open)}
+              className="ml-auto inline-flex touch-manipulation items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-200 sm:hidden"
+              aria-expanded={mobileCalendarOpen}
+            >
+              <span>{mobileCalendarOpen ? "Schließen" : selectedDate ? formatGermanDate(selectedDate) : "Kalender"}</span>
+              {mobileCalendarOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
           </div>
         </div>
 
-        <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className={`${mobileCalendarOpen ? "grid" : "hidden"} gap-4 p-3 sm:grid sm:p-4 lg:grid-cols-[minmax(0,1fr)_260px]`}>
           <div className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-2">
               <button
@@ -1261,11 +1284,56 @@ export default function PlaybackPage() {
 
       {/* Sleek, Modern & Uncluttered Filter Bar */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 shadow-md">
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="space-y-2 sm:hidden">
+          <button
+            type="button"
+            onClick={() => setCameraPickerOpen(true)}
+            className="flex min-h-11 w-full touch-manipulation items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-left text-sm text-white"
+            aria-haspopup="dialog"
+            aria-expanded={cameraPickerOpen}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Video className="h-4 w-4 shrink-0 text-sky-400" />
+              <span className="truncate font-medium">
+                {selectedCamera ? selectedCamera.name : "Alle Kameras"}
+              </span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMobileCalendarOpen(true);
+                requestAnimationFrame(() => document.getElementById("recording-calendar")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+              }}
+              className="flex min-h-10 touch-manipulation items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-medium text-slate-200"
+            >
+              <Calendar className="h-4 w-4 text-sky-400" />
+              <span className="truncate">{selectedDate ? formatGermanDate(selectedDate) : "Alle Tage"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((open) => !open)}
+              className={`flex min-h-10 touch-manipulation items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold ${
+                mobileFiltersOpen || activeAdvancedFilterCount > 0
+                  ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                  : "border-slate-700 bg-slate-950 text-slate-200"
+              }`}
+              aria-expanded={mobileFiltersOpen}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              <span>Filter{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ""}</span>
+              {mobileFiltersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        <div className={`${mobileFiltersOpen ? "mt-3 flex" : "hidden"} flex-wrap items-center justify-between gap-2.5 border-t border-slate-800 pt-3 sm:flex sm:border-0 sm:pt-0`}>
           {/* Left Group: Search & Core Filters */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {/* Search Input */}
-            <div className="relative min-w-[160px] sm:min-w-[200px]">
+            <div className="relative w-full min-w-[160px] sm:w-auto sm:min-w-[200px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
@@ -1288,24 +1356,12 @@ export default function PlaybackPage() {
             </div>
 
             {/* Camera Dropdown */}
-            <div className="flex w-full items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs sm:w-auto">
+            <div className="hidden items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs sm:flex">
               <Video className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-              <button
-                type="button"
-                onClick={() => setCameraPickerOpen(true)}
-                className="flex min-w-0 flex-1 touch-manipulation items-center justify-between gap-2 py-0.5 text-left text-white sm:hidden"
-                aria-haspopup="dialog"
-                aria-expanded={cameraPickerOpen}
-              >
-                <span className="truncate">
-                  {selectedCamera ? `${selectedCamera.recordEnabled ? "🔴 " : ""}${selectedCamera.name}${selectedCamera.recordEnabled ? " (REC)" : ""}` : "Alle Kameras"}
-                </span>
-                <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
               <select
                 value={selectedCameraId}
                 onChange={(event) => selectCameraFilter(event.target.value)}
-                className="hidden max-w-[150px] cursor-pointer truncate bg-transparent text-xs text-white focus:outline-none sm:block"
+                className="max-w-[150px] cursor-pointer truncate bg-transparent text-xs text-white focus:outline-none"
                 aria-label="Kamera auswählen"
               >
                 <option value="">Alle Kameras</option>
@@ -1318,7 +1374,7 @@ export default function PlaybackPage() {
             </div>
 
             {/* Date selected in the central calendar */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200">
+            <div className="hidden items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 sm:flex">
               <Calendar className="h-3.5 w-3.5 shrink-0 text-sky-400" />
               <span>{selectedDate ? formatGermanDateLong(selectedDate) : "Alle Tage"}</span>
               {selectedDate ? (
@@ -1441,7 +1497,7 @@ export default function PlaybackPage() {
           </div>
 
           {/* Right Group: Sort, View Switcher & Counter */}
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             {/* Sort Dropdown */}
             <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs">
               <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
