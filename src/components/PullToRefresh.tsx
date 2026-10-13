@@ -13,6 +13,12 @@ export function PullToRefresh({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined" || !("ontouchstart" in window)) return;
 
     const handleTouchStart = (e: TouchEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest('[data-pull-to-refresh-ignore="true"]')) {
+        setIsPulling(false);
+        setPullDistance(0);
+        return;
+      }
       // Nur wenn wir ganz oben sind
       if (window.scrollY <= 0) {
         setStartY(e.touches[0].clientY);

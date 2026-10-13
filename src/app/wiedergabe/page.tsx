@@ -3285,13 +3285,14 @@ export default function PlaybackPage() {
           onClick={() => setCameraPickerOpen(false)}
         >
           <div
-            className="max-h-[72dvh] w-full overflow-hidden rounded-t-2xl border-x border-t border-slate-700 bg-slate-950 shadow-2xl"
+            className="flex h-[72dvh] max-h-[calc(100dvh-env(safe-area-inset-top)-1rem)] w-full min-h-0 flex-col overflow-hidden rounded-t-2xl border-x border-t border-slate-700 bg-slate-950 shadow-2xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="camera-picker-title"
             onClick={(event) => event.stopPropagation()}
+            data-pull-to-refresh-ignore="true"
           >
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-3">
               <div>
                 <h2 id="camera-picker-title" className="font-semibold text-white">Kamera auswählen</h2>
                 <p className="mt-0.5 text-xs text-slate-400">Aufnahmen nach Kamera filtern</p>
@@ -3305,7 +3306,12 @@ export default function PlaybackPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="max-h-[calc(72dvh-4.5rem)] touch-pan-y space-y-1 overflow-y-auto overscroll-contain p-3 pb-6 [-webkit-overflow-scrolling:touch]">
+            <div
+              className="min-h-0 flex-1 touch-pan-y space-y-1 overflow-y-scroll overscroll-contain p-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+              style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+              onTouchMove={(event) => event.stopPropagation()}
+              data-pull-to-refresh-ignore="true"
+            >
               <button
                 type="button"
                 onClick={() => selectCameraFilter("")}
