@@ -208,6 +208,30 @@ export default function RecordingsConfigPage() {
     }
   };
 
+  const handleBatchSetMotionSensitivity = async (value: number, forAll: boolean) => {
+    const idsToUpdate = forAll ? cameras.map((camera) => camera.id) : Array.from(selectedCamIds);
+    if (idsToUpdate.length === 0) return;
+    const motionSensitivity = Math.min(100, Math.max(1, Math.round(value)));
+    setBatchLoading(true);
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: idsToUpdate, motionSensitivity }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen");
+      setCameras((prev) => prev.map((camera) => idsToUpdate.includes(camera.id)
+        ? { ...camera, motionSensitivity }
+        : camera));
+      toast.success(`Empfindlichkeit für ${idsToUpdate.length} Kamera(s) auf ${motionSensitivity} % gesetzt.`);
+    } catch (error: any) {
+      toast.error(error.message || "Bewegungsempfindlichkeit konnte nicht gespeichert werden.");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
   // Batch Set Camera Storage
   const handleBatchSetCameraStorage = async (storageTargetId: string, forAll: boolean = false) => {
     const idsToUpdate = forAll ? cameras.map((c) => c.id) : Array.from(selectedCamIds);
@@ -387,7 +411,22 @@ export default function RecordingsConfigPage() {
           <span className="font-bold text-emerald-400">➔</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <select
+            onChange={(event) => {
+              if (event.target.value) void handleBatchSetMotionSensitivity(Number(event.target.value), true);
+              event.currentTarget.value = "";
+            }}
+            defaultValue=""
+            disabled={batchLoading || cameras.length === 0}
+            className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 focus:outline-none disabled:opacity-50"
+            title="Bewegungsempfindlichkeit aller Kameras gleichzeitig ändern"
+          >
+            <option value="" disabled>Empfindlichkeit alle…</option>
+            {[20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
+              <option key={value} value={value}>{value} %</option>
+            ))}
+          </select>
           <button
             onClick={() => handleBatchToggleRecord(true, true)}
             disabled={batchLoading}
@@ -553,6 +592,21 @@ export default function RecordingsConfigPage() {
                 <option value="15">15 Minuten</option>
                 <option value="30">30 Minuten</option>
                 <option value="60">60 Minuten</option>
+              </select>
+
+              <select
+                onChange={(event) => {
+                  if (event.target.value) void handleBatchSetMotionSensitivity(Number(event.target.value), false);
+                  event.currentTarget.value = "";
+                }}
+                defaultValue=""
+                disabled={batchLoading}
+                className="rounded border border-amber-600/60 bg-slate-950 px-2 py-1 text-xs text-amber-200 focus:outline-none"
+              >
+                <option value="" disabled>Empfindlichkeit setzen…</option>
+                {[20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
+                  <option key={value} value={value}>{value} %</option>
+                ))}
               </select>
 
               <button
