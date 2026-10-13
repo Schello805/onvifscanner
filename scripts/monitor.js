@@ -19,6 +19,7 @@ const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MO
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
 const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
+const motionConfirmationFrames = Math.max(1, Math.min(4, Number(process.env.MOTION_CONFIRMATION_FRAMES) || 2));
 const motionSourceWidth = Math.max(256, Math.min(960, Number(process.env.MOTION_SOURCE_WIDTH) || 640));
 const motionAnalysisWidth = Math.max(160, Math.min(512, Number(process.env.MOTION_ANALYSIS_WIDTH) || 192));
 const motionAnalysisHeight = Math.round(motionAnalysisWidth * 9 / 16);
@@ -56,7 +57,25 @@ function pointIsIgnored(x, y, ignoreRegions) {
   );
 }
 
-function relevantObjectDetections(result, camera, ignoreRegions) {
+function detectionOverlapsMotion(prediction, result, motionEvidence) {
+  if (!motionEvidence?.changedPixels?.length) return true;
+  const [x, y, width, height] = prediction.bbox || [];
+  const left = Math.max(0, Math.floor((Number(x) / Math.max(1, result.width)) * motionEvidence.width));
+  const right = Math.min(motionEvidence.width, Math.ceil(((Number(x) + Number(width)) / Math.max(1, result.width)) * motionEvidence.width));
+  const top = Math.max(0, Math.floor((Number(y) / Math.max(1, result.height)) * motionEvidence.height));
+  const bottom = Math.min(motionEvidence.height, Math.ceil(((Number(y) + Number(height)) / Math.max(1, result.height)) * motionEvidence.height));
+  let boxPixels = 0;
+  let changedPixels = 0;
+  for (let row = top; row < bottom; row += 1) {
+    for (let column = left; column < right; column += 1) {
+      boxPixels += 1;
+      if (motionEvidence.changedPixels[row * motionEvidence.width + column]) changedPixels += 1;
+    }
+  }
+  return changedPixels >= Math.max(4, Math.ceil(boxPixels * 0.01));
+}
+
+function relevantObjectDetections(result, camera, ignoreRegions, motionEvidence) {
   const selectedGroups = new Set(parseObjectGroups(camera.objectDetectionClasses));
   if (!selectedGroups.size) return [];
   return (result.predictions || []).flatMap((prediction) => {
@@ -68,6 +87,7 @@ function relevantObjectDetections(result, camera, ignoreRegions) {
     const centerX = (Number(x) + Number(width) / 2) / Math.max(1, result.width);
     const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
     if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
+    if (!detectionOverlapsMotion(prediction, result, motionEvidence)) return [];
     return [{ ...prediction, group }];
   });
 }
@@ -403,10 +423,18 @@ async function detectCameraMotion(cam) {
       return;
     }
 
-    let changedPixels = 0;
-    let differenceSum = 0;
+    let signedDifferenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
     const activePixelCount = previous.activePixelCount ?? Math.floor(pixels.length / channels);
+    for (let index = 0; index < pixels.length; index += channels) {
+      const pixelIndex = Math.floor(index / channels);
+      if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
+      signedDifferenceSum += pixels[index] - previous.pixels[index];
+    }
+    const globalBrightnessShift = activePixelCount > 0 ? signedDifferenceSum / activePixelCount : 0;
+    let changedPixels = 0;
+    let differenceSum = 0;
+    const changedPixelMap = new Uint8Array(info.width * info.height);
     const configuredSensitivity = cam.motionScheduleEnabled
       ? cam.motionScheduleSensitivity
       : cam.motionSensitivity;
@@ -416,9 +444,12 @@ async function detectCameraMotion(cam) {
     for (let index = 0; index < pixels.length; index += channels) {
       const pixelIndex = Math.floor(index / channels);
       if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
-      const difference = Math.abs(pixels[index] - previous.pixels[index]);
+      const difference = Math.abs((pixels[index] - previous.pixels[index]) - globalBrightnessShift);
       differenceSum += difference;
-      if (difference >= effectivePixelThreshold) changedPixels += 1;
+      if (difference >= effectivePixelThreshold) {
+        changedPixels += 1;
+        changedPixelMap[pixelIndex] = 1;
+      }
     }
     if (activePixelCount === 0) {
       motionFrames.set(cam.id, {
@@ -428,6 +459,7 @@ async function detectCameraMotion(cam) {
         maskKey,
         activeMask: previous.activeMask,
         activePixelCount,
+        confirmationCount: 0,
       });
       return;
     }
@@ -437,17 +469,17 @@ async function detectCameraMotion(cam) {
     const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4) * sensitivityFactor;
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
 
-    motionFrames.set(cam.id, {
-      pixels,
-      noiseArea: movementDetected ? previous.noiseArea : previous.noiseArea * 0.85 + changedArea * 0.15,
-      noiseMean: movementDetected ? previous.noiseMean : previous.noiseMean * 0.85 + meanDifference * 0.15,
-      maskKey,
-      activeMask: previous.activeMask,
-      activePixelCount,
-    });
-
     const checkedAt = new Date();
     if (!movementDetected) {
+      motionFrames.set(cam.id, {
+        pixels,
+        noiseArea: previous.noiseArea * 0.85 + changedArea * 0.15,
+        noiseMean: previous.noiseMean * 0.85 + meanDifference * 0.15,
+        maskKey,
+        activeMask: previous.activeMask,
+        activePixelCount,
+        confirmationCount: 0,
+      });
       const healthUpdateDue = cam.motionEventSource !== 'snapshot'
         || cam.motionEventState !== 'active'
         || !cam.motionEventCheckedAt
@@ -466,6 +498,24 @@ async function detectCameraMotion(cam) {
       return;
     }
 
+    const confirmationCount = (previous.confirmationCount || 0) + 1;
+    if (confirmationCount < motionConfirmationFrames) {
+      motionFrames.set(cam.id, {
+        ...previous,
+        confirmationCount,
+      });
+      return;
+    }
+    motionFrames.set(cam.id, {
+      pixels,
+      noiseArea: previous.noiseArea,
+      noiseMean: previous.noiseMean,
+      maskKey,
+      activeMask: previous.activeMask,
+      activePixelCount,
+      confirmationCount: 0,
+    });
+
     let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
     let detectedObjects = [];
     let eventImage = null;
@@ -474,7 +524,11 @@ async function detectCameraMotion(cam) {
         eventImage = await fetchMotionEventImage(cam, uris);
         if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
         const result = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
-        detectedObjects = relevantObjectDetections(result, cam, ignoreRegions);
+        detectedObjects = relevantObjectDetections(result, cam, ignoreRegions, {
+          width: info.width,
+          height: info.height,
+          changedPixels: changedPixelMap,
+        });
         if (!detectedObjects.length) return;
         eventMessage = objectDetectionMessage(detectedObjects);
       } catch (error) {

@@ -76,6 +76,7 @@ Wichtige Werte:
 - `ENABLE_MOTION_DETECTION` (default `true`): serverseitige Bewegungserkennung für Kameras ohne gesunde ONVIF-Ereignisquelle
 - `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der Bildanalyse
 - `MOTION_DETECTION_CONCURRENCY` (default `2`): parallel analysierte Kamerabilder
+- `MOTION_CONFIRMATION_FRAMES` (default `2`): bestätigt Änderungen über mehrere Bilder und reduziert Fehlalarme
 - `MOTION_ANALYSIS_WIDTH` (default `192`): Auflösung der laufenden Graustufenanalyse
 - `MOTION_SOURCE_WIDTH` (default `640`): Detailbild-Auflösung, die erst bei erkannter Bewegung geladen wird
 - `NTFY_IMAGE_WIDTH` (default `960`) / `NTFY_IMAGE_QUALITY` (default `82`): Qualität der Alarmbilder in Ntfy

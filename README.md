@@ -154,6 +154,7 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `ENABLE_MOTION_DETECTION` (default `true`): Aktiviert die serverseitige Bildanalyse für Kameras ohne gesunde ONVIF-Ereignisquelle.
 - `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der serverseitigen Bildanalyse; laufende Zyklen überlappen sich nicht.
 - `MOTION_DETECTION_CONCURRENCY` (default `2`): Maximal parallel analysierte Kamerabilder; kleinere Werte begrenzen CPU-Spitzen.
+- `MOTION_CONFIRMATION_FRAMES` (default `2`): Anzahl aufeinanderfolgender Bilder, in denen eine Änderung bestehen muss; reduziert kurze Bildfehler und Fehlalarme.
 - `MOTION_ANALYSIS_WIDTH` (default `192`): Breite der CPU-schonenden Graustufen-Bewegungsanalyse.
 - `MOTION_SOURCE_WIDTH` (default `640`): Breite des nur bei erkannter Bewegung nachgeladenen Detailbildes für Objekterkennung und Benachrichtigung.
 - `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
