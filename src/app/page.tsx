@@ -15,6 +15,16 @@ type CameraImageState = {
   updatedAt?: Date;
 };
 
+type ActivityEvent = {
+  id: string;
+  type: "motion" | "online" | "offline";
+  cameraId: string;
+  cameraName: string;
+  cameraIp: string;
+  timestamp: string;
+  message: string;
+};
+
 type CameraEditDraft = {
   name: string;
   snapshotUris: string;
@@ -228,8 +238,13 @@ export default function CameraWallPage() {
   const [storageTargets, setStorageTargets] = useState<Array<{ id: string; name: string; path: string; isDefault: boolean }>>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityType, setActivityType] = useState<"all" | "motion" | "online" | "offline">("all");
+  const [activityCameraId, setActivityCameraId] = useState("");
   const [mounted, setMounted] = useState(false);
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode));
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen));
 
   useEffect(() => {
     setMounted(true);
@@ -242,6 +257,29 @@ export default function CameraWallPage() {
       })
       .catch(() => {});
   }, []);
+
+  const loadActivityLog = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const params = new URLSearchParams({ type: activityType, limit: "250" });
+      if (activityCameraId) params.set("cameraId", activityCameraId);
+      const response = await fetch(`/api/activity-log?${params.toString()}`, { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Aktivitätsprotokoll konnte nicht geladen werden.");
+      setActivityEvents(Array.isArray(data.events) ? data.events : []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Aktivitätsprotokoll konnte nicht geladen werden.");
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [activityCameraId, activityType, toast]);
+
+  useEffect(() => {
+    if (!activityLogOpen) return;
+    void loadActivityLog();
+    const timer = window.setInterval(() => void loadActivityLog(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [activityLogOpen, loadActivityLog]);
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
   const runningRef = useRef<Set<string>>(new Set());
@@ -973,6 +1011,16 @@ export default function CameraWallPage() {
               )}
             </button>
 
+            <button
+              type="button"
+              onClick={() => setActivityLogOpen(true)}
+              className="touch-manipulation rounded-lg border border-violet-500/35 bg-violet-500/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20"
+              title="Bewegungen und Online-/Offline-Wechsel anzeigen"
+            >
+              ◷ <span className="hidden sm:inline">Protokoll</span>
+              <span className="sm:hidden">Log</span>
+            </button>
+
             <div className="flex sm:hidden items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1 text-xs text-slate-300">
               <button
                 type="button"
@@ -1408,6 +1456,90 @@ export default function CameraWallPage() {
           ))}
         </div>
       )}
+
+      {activityLogOpen && mounted ? createPortal(
+        <div
+          data-pull-to-refresh-ignore="true"
+          className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="activity-log-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setActivityLogOpen(false);
+          }}
+        >
+          <section className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-900/80 px-4 py-3.5 sm:px-5">
+              <div>
+                <h2 id="activity-log-title" className="text-base font-bold text-white sm:text-lg">Kamera-Protokoll</h2>
+                <p className="text-[11px] text-slate-400">Bewegungen sowie Online- und Offline-Wechsel</p>
+              </div>
+              <button type="button" onClick={() => setActivityLogOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Protokoll schließen">✕</button>
+            </header>
+
+            <div className="grid shrink-0 grid-cols-1 gap-2 border-b border-white/10 px-4 py-3 sm:grid-cols-[1fr_1fr_auto] sm:px-5">
+              <select
+                value={activityCameraId}
+                onChange={(event) => setActivityCameraId(event.target.value)}
+                className="glass-input rounded-lg bg-slate-900 px-3 py-2 text-xs text-white"
+                aria-label="Kamera im Protokoll filtern"
+              >
+                <option value="">Alle Kameras</option>
+                {[...cameras].sort((left, right) => left.name.localeCompare(right.name, "de", { numeric: true })).map((camera) => (
+                  <option key={camera.id} value={camera.id}>{camera.name} · {camera.ip}</option>
+                ))}
+              </select>
+              <select
+                value={activityType}
+                onChange={(event) => setActivityType(event.target.value as typeof activityType)}
+                className="glass-input rounded-lg bg-slate-900 px-3 py-2 text-xs text-white"
+                aria-label="Ereignistyp im Protokoll filtern"
+              >
+                <option value="all">Alle Ereignisse</option>
+                <option value="motion">Nur Bewegungen</option>
+                <option value="offline">Nur Offline</option>
+                <option value="online">Nur Online</option>
+              </select>
+              <button type="button" onClick={() => void loadActivityLog()} disabled={activityLoading} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10 disabled:opacity-50">
+                {activityLoading ? "Lädt…" : "↻ Aktualisieren"}
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-3 sm:p-5">
+              {activityEvents.length === 0 && !activityLoading ? (
+                <div className="rounded-xl border border-dashed border-white/15 px-5 py-10 text-center text-sm text-slate-400">
+                  Für diesen Filter sind noch keine Ereignisse gespeichert.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activityEvents.map((event) => {
+                    const appearance = event.type === "motion"
+                      ? { icon: "⚡", label: "Bewegung", color: "border-amber-500/25 bg-amber-500/10 text-amber-300" }
+                      : event.type === "offline"
+                        ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
+                        : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+                    return (
+                      <article key={event.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                        <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold ${appearance.color}`}>
+                          {appearance.icon} {appearance.label}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-white">{event.cameraName}</div>
+                          <div className="truncate text-[11px] text-slate-400">{event.cameraIp} · {event.message}</div>
+                        </div>
+                        <time className="whitespace-nowrap font-mono text-[11px] text-slate-400" dateTime={event.timestamp}>
+                          {new Date(event.timestamp).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "medium" })}
+                        </time>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>,
+        document.body
+      ) : null}
 
       {editingCameraId && editDraft && mounted ? createPortal(
         <div

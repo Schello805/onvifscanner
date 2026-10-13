@@ -205,20 +205,50 @@ async function runMonitorCycle() {
       
       const newStatus = isOnline || failures < 3; // Consider offline after 3 consecutive failures
 
-      await prisma.deviceStatus.upsert({
-        where: { cameraId: cam.id },
-        update: {
-          isOnline: newStatus,
-          lastSeen: isOnline ? new Date() : undefined,
-          pingFailures: failures,
-        },
-        create: {
-          cameraId: cam.id,
-          isOnline: newStatus,
-          lastSeen: isOnline ? new Date() : new Date(0),
-          pingFailures: failures,
+      const statusChanged = Boolean(status && status.isOnline !== newStatus);
+      const initialOnlineStatus = !status && isOnline;
+      const statusTimestamp = new Date();
+      const operations = [
+        prisma.deviceStatus.upsert({
+          where: { cameraId: cam.id },
+          update: {
+            isOnline: newStatus,
+            lastSeen: isOnline ? statusTimestamp : undefined,
+            pingFailures: failures,
+          },
+          create: {
+            cameraId: cam.id,
+            isOnline: newStatus,
+            lastSeen: isOnline ? statusTimestamp : new Date(0),
+            pingFailures: failures,
+          }
+        }),
+      ];
+      if (statusChanged || initialOnlineStatus) {
+        operations.push(prisma.cameraStatusLog.create({
+          data: {
+            cameraId: cam.id,
+            status: newStatus ? 'online' : 'offline',
+            timestamp: statusTimestamp,
+          },
+        }));
+      }
+      await prisma.$transaction(operations);
+
+      if (statusChanged) {
+        console.log(`[Camera Status] ${cam.name}: ${newStatus ? 'wieder online' : 'offline'}.`);
+      }
+      if (statusChanged || initialOnlineStatus) {
+        const oldStatusLogs = await prisma.cameraStatusLog.findMany({
+          where: { cameraId: cam.id },
+          orderBy: { timestamp: 'desc' },
+          skip: 500,
+          select: { id: true },
+        });
+        if (oldStatusLogs.length) {
+          await prisma.cameraStatusLog.deleteMany({ where: { id: { in: oldStatusLogs.map((entry) => entry.id) } } });
         }
-      });
+      }
     }
 
     // Phase 3: Sync to MediaMTX

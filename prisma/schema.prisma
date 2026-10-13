@@ -49,6 +49,7 @@ model Camera {
   storageTarget             StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
 
   status           DeviceStatus?
+  statusLogs       CameraStatusLog[]
   alarms           AlarmLog[]
   motionRecordings MotionRecording[]
 }
@@ -74,6 +75,17 @@ model DeviceStatus {
   isOnline     Boolean  @default(true)
   lastSeen     DateTime @default(now())
   pingFailures Int      @default(0)
+}
+
+model CameraStatusLog {
+  id        String   @id @default(cuid())
+  cameraId  String
+  camera    Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  status    String // online | offline
+  timestamp DateTime @default(now())
+
+  @@index([cameraId, timestamp])
+  @@index([timestamp])
 }
 
 model Settings {
