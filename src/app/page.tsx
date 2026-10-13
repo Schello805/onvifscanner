@@ -568,6 +568,13 @@ export default function CameraWallPage() {
     }
   }
 
+  async function openMobileLive(cameraId: string) {
+    openExpanded(cameraId);
+    if (!liveCamerasRef.current.has(cameraId)) {
+      await toggleLive(cameraId);
+    }
+  }
+
   return (
     <div
       ref={wallRef}
@@ -667,9 +674,12 @@ export default function CameraWallPage() {
               }`}
             >
               {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? (
-                <>■ <span className="hidden sm:inline">Alle stoppen</span></>
+                <>■ <span>Live stoppen</span></>
               ) : (
-                <>▶ <span className="hidden sm:inline">Alle Live</span></>
+                <>
+                  ▶ <span className="hidden sm:inline">Alle Live</span>
+                  <span className="sm:hidden">{liveCameras.size > 0 ? `Live ${liveCameras.size}/4` : "Live"}</span>
+                </>
               )}
             </button>
 
@@ -828,6 +838,23 @@ export default function CameraWallPage() {
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
                       <button
                         type="button"
+                        disabled={liveLoading.has(camera.id)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void toggleLive(camera.id);
+                        }}
+                        className={`flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition-colors disabled:opacity-60 ${
+                          isLive ? "bg-sky-600/90 active:bg-sky-500" : "bg-black/65 active:bg-black/90"
+                        }`}
+                        title={isLive ? "Live-Stream beenden" : "Live-Stream starten"}
+                        aria-label={isLive ? "Live-Stream beenden" : "Live-Stream starten"}
+                      >
+                        <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
+                        <span>{liveLoading.has(camera.id) ? "Laden" : isLive ? "Live" : "Live"}</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -865,7 +892,7 @@ export default function CameraWallPage() {
                         event.stopPropagation();
                         openExpanded(camera.id);
                       }}
-                      className="absolute right-1 top-1 z-10 flex h-9 w-9 items-center justify-center rounded-lg bg-black/60 text-white opacity-0 backdrop-blur-md transition-all hover:scale-110 hover:bg-black/80 group-hover:opacity-100"
+                      className="absolute right-1 top-1 z-10 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg bg-black/60 text-white opacity-100 backdrop-blur-md transition-all active:bg-black/90 sm:opacity-0 sm:hover:scale-110 sm:hover:bg-black/80 sm:group-hover:opacity-100"
                       title="Vollbild öffnen"
                       aria-label="Vollbild öffnen"
                     >
@@ -877,7 +904,7 @@ export default function CameraWallPage() {
                         src={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
                         className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
-                        allow="autoplay; fullscreen"
+                        allow="autoplay; fullscreen; picture-in-picture"
                      />
                   ) : image?.src ? (
                     <>
@@ -923,6 +950,28 @@ export default function CameraWallPage() {
                       )}
                     </div>
                   )}
+
+                  {expandedCameraId !== camera.id ? (
+                    <button
+                      type="button"
+                      disabled={liveLoading.has(camera.id)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void openMobileLive(camera.id);
+                      }}
+                      className={`absolute bottom-1 right-1 z-20 flex h-9 min-w-9 touch-manipulation items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-semibold text-white shadow-lg backdrop-blur-md sm:hidden ${
+                        isLive
+                          ? "border-sky-400/60 bg-sky-600/85"
+                          : "border-white/15 bg-black/65 active:bg-black/90"
+                      } disabled:opacity-60`}
+                      aria-label={isLive ? `${camera.name} live groß öffnen` : `Live-Stream für ${camera.name} starten`}
+                      title={isLive ? "Live groß öffnen" : "Live-Stream starten"}
+                    >
+                      <span>{liveLoading.has(camera.id) ? "…" : "▶"}</span>
+                      <span>{liveLoading.has(camera.id) ? "Lädt" : "Live"}</span>
+                    </button>
+                  ) : null}
 
                   {image?.src && camera.overlayPosition && (
                     <div className={`camera-card-overlay absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
