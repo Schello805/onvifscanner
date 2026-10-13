@@ -34,6 +34,7 @@ model Camera {
   motionEventCheckedAt  DateTime?
   motionEventLastError  String?
   alarmCooldownSeconds  Int            @default(30)
+  notificationsEnabled Boolean        @default(false)
   storageTargetId       String?
   storageTarget         StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
 

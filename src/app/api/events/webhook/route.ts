@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { sendNtfyMessage } from "@/lib/ntfy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,26 +99,18 @@ export async function POST(req: Request) {
           },
         });
 
-        // Send push notification via ntfy if configured
-        try {
-          const settings = await prisma.settings.findUnique({ where: { id: "default" } });
-          if (settings?.ntfyTopic) {
-            let server = (settings.ntfyServer || "").trim().replace(/\/+$/, "");
-            if (!server) server = "https://ntfy.sh";
-            else if (!/^https?:\/\//i.test(server)) server = `https://${server}`;
-            const ntfyUrl = `${server}/${encodeURIComponent(settings.ntfyTopic)}`;
-            await fetch(ntfyUrl, {
-              method: "POST",
-              body: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
-              headers: {
-                Title: "🚨 ONVIFscanner Alarm",
-                Priority: "high",
-                Tags: "rotating_light,video_camera",
-              },
+        if (matchedCamera.notificationsEnabled) {
+          try {
+            const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+            await sendNtfyMessage({
+              server: settings?.ntfyServer,
+              topic: settings?.ntfyTopic,
+              title: "ONVIFscanner Alarm",
+              message: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
             });
+          } catch (pushErr) {
+            console.error(`ntfy notification for ${matchedCamera.name} failed:`, pushErr);
           }
-        } catch (pushErr) {
-          console.error("Fehler beim Senden der ntfy Push-Benachrichtigung:", pushErr);
         }
       }
 

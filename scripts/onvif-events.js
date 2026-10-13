@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { sendCameraNotification } = require('./ntfy');
 
 function escapeXml(value) {
   if (!value) return '';
@@ -375,6 +376,8 @@ class OnvifEventManager {
           timestamp,
         }
       });
+      const currentCamera = await this.prisma.camera.findUnique({ where: { id: cam.id } });
+      await sendCameraNotification(this.prisma, currentCamera || cam, 'Bewegung erkannt (ONVIF)');
       await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, timestamp);
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },

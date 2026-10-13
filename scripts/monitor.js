@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const net = require('net');
 const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
+const { sendCameraNotification } = require('./ntfy');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
@@ -162,6 +163,7 @@ async function runMotionDetection(cameras) {
                   message: "Bewegung erkannt"
                }
             });
+            await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Bildvergleich)');
             await prisma.camera.update({
               where: { id: cam.id },
               data: {

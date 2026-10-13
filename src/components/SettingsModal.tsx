@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { X, Settings2, Bell, Save } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { X, Settings2, Bell, Save, Send } from "lucide-react";
 import { useToast } from "./ToastProvider";
 
 type SettingsData = {
@@ -25,14 +25,9 @@ export function SettingsModal({
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTestingNotification, setIsTestingNotification] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadSettings();
-    }
-  }, [isOpen]);
-
-  async function loadSettings() {
+  const loadSettings = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch("/api/settings");
@@ -48,7 +43,13 @@ export function SettingsModal({
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [toast]);
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadSettings();
+    }
+  }, [isOpen, loadSettings]);
 
   async function handleSave() {
     setIsSaving(true);
@@ -70,6 +71,31 @@ export function SettingsModal({
       toast.error("Fehler beim Speichern.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleTestNotification() {
+    if (!data.ntfyTopic?.trim()) {
+      toast.error("Bitte zuerst ein ntfy-Topic eingeben.");
+      return;
+    }
+    setIsTestingNotification(true);
+    try {
+      const res = await fetch("/api/settings/test-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ntfyTopic: data.ntfyTopic.trim(),
+          ntfyServer: data.ntfyServer?.trim() || null,
+        }),
+      });
+      const response = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(response.error || "Testnachricht konnte nicht gesendet werden.");
+      toast.success("Testnachricht wurde erfolgreich gesendet.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Testnachricht konnte nicht gesendet werden.");
+    } finally {
+      setIsTestingNotification(false);
     }
   }
 
@@ -117,7 +143,7 @@ export function SettingsModal({
                   <span>Push-Benachrichtigungen (ntfy)</span>
                 </div>
                 <div className="text-sm text-slate-400 mb-2 leading-relaxed">
-                  Trage deinen ntfy-Server und das Topic ein, um bei Bewegungserkennung sofort eine Push-Nachricht auf dein Smartphone zu erhalten. Ohne Server wird ntfy.sh verwendet.
+                  Trage deinen ntfy-Server und das Topic ein. Push wird anschließend für jede gewünschte Kamera einzeln in deren Bearbeiten-Dialog aktiviert. Ohne Server wird ntfy.sh verwendet.
                 </div>
                 <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
                   <span className="text-slate-500 select-none">Server</span>
@@ -139,6 +165,19 @@ export function SettingsModal({
                     onChange={(e) => setData({ ...data, ntfyTopic: e.target.value })}
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={handleTestNotification}
+                  disabled={isTestingNotification || !data.ntfyTopic?.trim()}
+                  className="btn btn-sm border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"
+                >
+                  {isTestingNotification ? (
+                    <span className="loading loading-spinner loading-xs" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  Testnachricht senden
+                </button>
               </div>
 
               <hr className="border-slate-800" />

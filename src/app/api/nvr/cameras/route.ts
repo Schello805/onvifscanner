@@ -33,6 +33,7 @@ export async function GET() {
       recordSegmentMinutes: c.recordSegmentMinutes,
       motionPreRollSeconds: c.motionPreRollSeconds,
       motionPostRollSeconds: c.motionPostRollSeconds,
+      notificationsEnabled: c.notificationsEnabled,
       motionEventState: c.motionEventState,
       motionEventSource: c.motionEventSource,
       motionEventLastSeen: c.motionEventLastSeen?.toISOString() ?? null,
@@ -91,6 +92,9 @@ export async function PATCH(req: Request) {
     }
     if (body.motionPostRollSeconds !== undefined) {
       updateData.motionPostRollSeconds = Math.min(300, Math.max(5, Number(body.motionPostRollSeconds) || 30));
+    }
+    if (body.notificationsEnabled !== undefined) {
+      updateData.notificationsEnabled = Boolean(body.notificationsEnabled);
     }
     if (body.storageTargetId !== undefined) {
       updateData.storageTargetId = body.storageTargetId ? String(body.storageTargetId).trim() : null;

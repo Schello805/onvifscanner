@@ -27,6 +27,7 @@ type CameraEditDraft = {
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
+  notificationsEnabled: boolean;
   storageTargetId: string;
 };
 
@@ -318,6 +319,7 @@ export default function CameraWallPage() {
       recordSegmentMinutes: camera.recordSegmentMinutes || 15,
       motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
       motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
+      notificationsEnabled: Boolean(camera.notificationsEnabled),
       storageTargetId: camera.storageTargetId || "",
     });
     setShowPassword(false);
@@ -430,6 +432,7 @@ export default function CameraWallPage() {
       recordSegmentMinutes: editDraft.recordSegmentMinutes,
       motionPreRollSeconds: editDraft.motionPreRollSeconds,
       motionPostRollSeconds: editDraft.motionPostRollSeconds,
+      notificationsEnabled: editDraft.notificationsEnabled,
       storageTargetId: editDraft.storageTargetId || null,
     } : camera);
 
@@ -443,6 +446,7 @@ export default function CameraWallPage() {
         recordSegmentMinutes: editDraft.recordSegmentMinutes,
         motionPreRollSeconds: editDraft.motionPreRollSeconds,
         motionPostRollSeconds: editDraft.motionPostRollSeconds,
+        notificationsEnabled: editDraft.notificationsEnabled,
         storageTargetId: editDraft.storageTargetId || null,
       })
     });
@@ -1268,6 +1272,22 @@ export default function CameraWallPage() {
                     </div>
                   )}
                 </div>
+
+                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3">
+                  <div className="min-w-0">
+                    <span className="block text-xs font-semibold text-white">Push-Benachrichtigung</span>
+                    <span className="block text-[10px] leading-relaxed text-slate-400">
+                      Meldet Bewegungen dieser Kamera über das global konfigurierte ntfy-Topic.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editDraft.notificationsEnabled}
+                    onChange={(event) => setEditDraft({ ...editDraft, notificationsEnabled: event.target.checked })}
+                    className="toggle toggle-success toggle-sm shrink-0"
+                    aria-label="Push-Benachrichtigungen für diese Kamera aktivieren"
+                  />
+                </label>
               </div>
 
 
