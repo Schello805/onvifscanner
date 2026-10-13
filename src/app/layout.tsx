@@ -8,6 +8,7 @@ import { ConnectionWatcher } from "@/components/ConnectionWatcher";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { ToastProvider } from "@/components/ToastProvider";
 import { Navigation } from "@/components/Navigation";
+import { SystemStatus } from "@/components/SystemStatus";
 
 export const metadata: Metadata = {
   title: "ONVIFscanner",
@@ -35,6 +36,7 @@ function Footer() {
           <div className="text-xs text-slate-400">
             Local-first Scan von ONVIF & RTSP Kameras im LAN mit NVR-Aufzeichnung.
           </div>
+          <SystemStatus />
         </div>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
           <Link href="/" className="text-slate-400 hover:text-white transition-colors">
