@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
+const sharp = require('sharp');
 const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
@@ -9,12 +10,19 @@ const onvifEvents = new OnvifEventManager(prisma);
 const motionRecorder = new MotionRecorder(prisma);
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
-const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION === 'true';
+const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
+const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 3_000);
+const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 3));
+const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
+const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
+const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
 const autoDiscoveryEnabled = process.env.ENABLE_AUTO_DISCOVERY === 'true';
 const monitorIntervalMs = Math.max(30_000, Number(process.env.MONITOR_INTERVAL_MS) || 60_000);
 let isMonitoring = false;
 let cycleRunning = false;
-let lastFrames = {};
+const motionFrames = new Map();
+const motionFailureLogTimes = new Map();
+let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
 
@@ -112,7 +120,6 @@ async function runMonitorCycle() {
       // quiet
     }
 
-    if (motionDetectionEnabled) await runMotionDetection(cameras);
   } catch (e) {
     console.error("Monitor Cycle Error:", e);
   } finally {
@@ -120,75 +127,182 @@ async function runMonitorCycle() {
   }
 }
 
-async function runMotionDetection(cameras) {
-  const { Jimp } = require('jimp');
-  for (const cam of cameras) {
-     const status = await prisma.deviceStatus.findUnique({ where: { cameraId: cam.id } });
-     if (!status || !status.isOnline) continue;
-     
-     let uris = [];
-     try { uris = JSON.parse(cam.snapshotUris).concat(JSON.parse(cam.streamUris)); } catch(e) {}
-     if (!uris.length) continue;
-     
-     try {
-       const controller = new AbortController();
-       const timer = setTimeout(() => controller.abort(), 8_000);
-       // Wir nutzen unsere interne Thumbnail-API für einen zuverlässigen Snapshot
-       const res = await fetch(`${appBaseUrl}/api/thumbnail`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            urls: uris,
-            size: 256,
-            timeoutMs: 3000,
-            fastAuth: true,
-            credentials: cam.username ? { username: cam.username, password: cam.password } : undefined
-          }),
-          signal: controller.signal
-       }).finally(() => clearTimeout(timer));
-       
-       if (!res.ok) continue;
-       const buffer = await res.arrayBuffer();
-       
-       const img = await Jimp.read(Buffer.from(buffer));
-       img.resize(32, 32).greyscale();
-       
-       if (lastFrames[cam.id]) {
-         const distance = img.distance(lastFrames[cam.id]);
-         if (distance > 0.12) { // 12% pixel difference
-            // Motion detected!
-            await prisma.alarmLog.create({
-               data: {
-                  cameraId: cam.id,
-                  message: "Bewegung erkannt"
-               }
-            });
-            await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Bildvergleich)');
-            await prisma.camera.update({
-              where: { id: cam.id },
-              data: {
-                motionEventState: 'active',
-                motionEventSource: 'snapshot',
-                motionEventLastSeen: new Date(),
-                motionEventCheckedAt: new Date(),
-                motionEventLastError: null,
-              },
-            });
-            const oldEvents = await prisma.alarmLog.findMany({
-              where: { cameraId: cam.id },
-              orderBy: { timestamp: 'desc' },
-              skip: 500,
-              select: { id: true }
-            });
-            if (oldEvents.length) {
-              await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
-            }
-         }
-       }
-       lastFrames[cam.id] = img;
-     } catch(e) {
-        // ignore errors (timeout etc)
-     }
+async function runMotionDetection() {
+  if (!motionDetectionEnabled || motionDetectionCycleRunning) return;
+  motionDetectionCycleRunning = true;
+  try {
+    const cameras = await prisma.camera.findMany({
+      where: {
+        OR: [
+          { recordMode: { in: ['motion', 'continuous'] } },
+          { notificationsEnabled: true },
+        ],
+      },
+      include: { status: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    await mapWithConcurrency(cameras, motionDetectionConcurrency, detectCameraMotion);
+    const activeIds = new Set(cameras.map((camera) => camera.id));
+    for (const cameraId of motionFrames.keys()) {
+      if (!activeIds.has(cameraId)) motionFrames.delete(cameraId);
+    }
+  } catch (error) {
+    console.error('[Motion Detection] Zyklus fehlgeschlagen:', error);
+  } finally {
+    motionDetectionCycleRunning = false;
+  }
+}
+
+async function detectCameraMotion(cam) {
+  if (cam.status && !cam.status.isOnline) return;
+
+  const onvifEventIsRecent = cam.motionEventSource === 'onvif'
+    && cam.motionEventLastSeen
+    && Date.now() - cam.motionEventLastSeen.getTime() < 5 * 60_000;
+  if (onvifEventIsRecent) return;
+
+  let snapshotUris = [];
+  let streamUris = [];
+  try { snapshotUris = JSON.parse(cam.snapshotUris); } catch {}
+  try { streamUris = JSON.parse(cam.streamUris); } catch {}
+  const uris = [...snapshotUris, ...streamUris].filter((uri) => typeof uri === 'string' && uri);
+  if (!uris.length) return;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5_000);
+    const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urls: uris,
+        size: 128,
+        timeoutMs: 2_500,
+        fastAuth: true,
+        fresh: true,
+        credentials: cam.username ? { username: cam.username, password: cam.password } : undefined,
+      }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+    if (!response.ok) throw new Error(`Snapshot HTTP ${response.status}`);
+
+    const image = Buffer.from(await response.arrayBuffer());
+    const { data: pixels, info } = await sharp(image, { limitInputPixels: 32_000_000 })
+      .resize(96, 54, { fit: 'fill' })
+      .greyscale()
+      .blur(1)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const previous = motionFrames.get(cam.id);
+    if (!previous || previous.pixels.length !== pixels.length) {
+      motionFrames.set(cam.id, { pixels, noiseArea: 0, noiseMean: 0 });
+      return;
+    }
+
+    let changedPixels = 0;
+    let differenceSum = 0;
+    const channels = Math.max(1, info.channels || 1);
+    const pixelCount = Math.floor(pixels.length / channels);
+    for (let index = 0; index < pixels.length; index += channels) {
+      const difference = Math.abs(pixels[index] - previous.pixels[index]);
+      differenceSum += difference;
+      if (difference >= motionPixelThreshold) changedPixels += 1;
+    }
+    const changedArea = pixelCount ? changedPixels / pixelCount : 0;
+    const meanDifference = pixelCount ? differenceSum / pixelCount : 0;
+    const requiredArea = Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.004);
+    const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4);
+    const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
+
+    motionFrames.set(cam.id, {
+      pixels,
+      noiseArea: movementDetected ? previous.noiseArea : previous.noiseArea * 0.85 + changedArea * 0.15,
+      noiseMean: movementDetected ? previous.noiseMean : previous.noiseMean * 0.85 + meanDifference * 0.15,
+    });
+
+    const checkedAt = new Date();
+    if (!movementDetected) {
+      const healthUpdateDue = cam.motionEventSource !== 'snapshot'
+        || cam.motionEventState !== 'active'
+        || !cam.motionEventCheckedAt
+        || checkedAt.getTime() - cam.motionEventCheckedAt.getTime() >= 60_000;
+      if (healthUpdateDue) {
+        await prisma.camera.update({
+          where: { id: cam.id },
+          data: {
+            motionEventState: 'active',
+            motionEventSource: 'snapshot',
+            motionEventCheckedAt: checkedAt,
+            motionEventLastError: null,
+          },
+        });
+      }
+      return;
+    }
+
+    const cooldownSeconds = Math.max(5, cam.alarmCooldownSeconds || 30);
+    const recentEvent = await prisma.alarmLog.findFirst({
+      where: {
+        cameraId: cam.id,
+        timestamp: { gte: new Date(checkedAt.getTime() - cooldownSeconds * 1000) },
+      },
+      select: { id: true },
+    });
+    if (!recentEvent) {
+      await prisma.alarmLog.create({
+        data: {
+          cameraId: cam.id,
+          message: 'Bewegung erkannt (Server-Bildanalyse)',
+          timestamp: checkedAt,
+        },
+      });
+      await sendCameraNotification(prisma, cam, 'Bewegung erkannt (Server-Bildanalyse)');
+      console.log(`[Motion Detection] ${cam.name}: Bewegung erkannt (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
+      const oldEvents = await prisma.alarmLog.findMany({
+        where: { cameraId: cam.id },
+        orderBy: { timestamp: 'desc' },
+        skip: 500,
+        select: { id: true },
+      });
+      if (oldEvents.length) {
+        await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
+      }
+    }
+    await prisma.camera.update({
+      where: { id: cam.id },
+      data: {
+        motionEventState: 'active',
+        motionEventSource: 'snapshot',
+        motionEventLastSeen: checkedAt,
+        motionEventCheckedAt: checkedAt,
+        motionEventLastError: null,
+      },
+    });
+  } catch (error) {
+    const now = Date.now();
+    const lastLogged = motionFailureLogTimes.get(cam.id) || 0;
+    if (now - lastLogged > 60_000) {
+      console.warn(`[Motion Detection] ${cam.name}: ${error?.message || error}`);
+      motionFailureLogTimes.set(cam.id, now);
+    }
+    const errorMessage = String(error?.message || error).slice(0, 500);
+    const errorUpdateDue = cam.motionEventState !== 'error'
+      || cam.motionEventLastError !== errorMessage
+      || !cam.motionEventCheckedAt
+      || now - cam.motionEventCheckedAt.getTime() >= 60_000;
+    if (errorUpdateDue) {
+      await prisma.camera.update({
+        where: { id: cam.id },
+        data: {
+          motionEventState: 'error',
+          motionEventSource: 'snapshot',
+          motionEventCheckedAt: new Date(),
+          motionEventLastError: errorMessage,
+        },
+      }).catch(() => undefined);
+    }
   }
 }
 
@@ -488,11 +602,20 @@ function startMonitor() {
   isMonitoring = true;
   
   console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
-  if (!motionDetectionEnabled) console.log('Legacy Jimp snapshot motion detection is disabled.');
+  if (motionDetectionEnabled) {
+    console.log(`🎯 Server motion detection enabled (${motionDetectionIntervalMs}ms, concurrency ${motionDetectionConcurrency}).`);
+  } else {
+    console.log('Server motion detection is disabled.');
+  }
   
   // Start ONVIF event listener
   onvifEvents.start();
   motionRecorder.start();
+
+  if (motionDetectionEnabled) {
+    monitorTimers.push(setTimeout(() => void runMotionDetection(), 2_500));
+    monitorTimers.push(setInterval(() => void runMotionDetection(), motionDetectionIntervalMs));
+  }
 
   // Run immediately, then every 60 seconds
   void runMonitorCycle();

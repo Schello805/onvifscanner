@@ -73,6 +73,9 @@ Wichtige Werte:
 - `HOST` / `PORT` (Bind-Adresse/Port)
 - `ALLOW_PUBLIC_SCAN` (default `false`)
 - `ENABLE_THUMBNAILS` (default `true`)
+- `ENABLE_MOTION_DETECTION` (default `true`): serverseitige Bewegungserkennung für Kameras ohne zuverlässige ONVIF-Ereignisse
+- `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der Bildanalyse
+- `MOTION_DETECTION_CONCURRENCY` (default `3`): parallel analysierte Kamerabilder
 
 Service neu starten:
 

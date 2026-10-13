@@ -27,6 +27,7 @@ FORCE_SYSTEM_PACKAGES="${FORCE_SYSTEM_PACKAGES:-false}"
 FORCE_REBUILD="${FORCE_REBUILD:-false}"
 SOURCE_CHANGED=true
 DEPENDENCIES_CHANGED=false
+ENV_CHANGED=false
 PREVIOUS_COMMIT=""
 CURRENT_COMMIT=""
 
@@ -235,13 +236,31 @@ THUMBNAIL_CACHE_TTL_MS=10000
 # Lightweight background health monitor
 MONITOR_INTERVAL_MS=60000
 ENABLE_AUTO_DISCOVERY=false
-ENABLE_MOTION_DETECTION=false
+ENABLE_MOTION_DETECTION=true
+MOTION_DETECTION_INTERVAL_MS=3000
+MOTION_DETECTION_CONCURRENCY=3
+# MOTION_DETECTION_V2_DEFAULT_APPLIED=true
 
 # Motion recording ring buffer
 MOTION_BUFFER_SEGMENT_SECONDS=5
 EOF
     chmod 0640 "$ENV_FILE"
     chown root:"$APP_USER" "$ENV_FILE"
+  fi
+
+  if ! grep -q '^# MOTION_DETECTION_V2_DEFAULT_APPLIED=true$' "$ENV_FILE"; then
+    if grep -q '^ENABLE_MOTION_DETECTION=false$' "$ENV_FILE"; then
+      sed -i 's/^ENABLE_MOTION_DETECTION=false$/ENABLE_MOTION_DETECTION=true/' "$ENV_FILE"
+    elif ! grep -q '^ENABLE_MOTION_DETECTION=' "$ENV_FILE"; then
+      printf '\nENABLE_MOTION_DETECTION=true\n' >>"$ENV_FILE"
+    fi
+    grep -q '^MOTION_DETECTION_INTERVAL_MS=' "$ENV_FILE" || printf 'MOTION_DETECTION_INTERVAL_MS=3000\n' >>"$ENV_FILE"
+    grep -q '^MOTION_DETECTION_CONCURRENCY=' "$ENV_FILE" || printf 'MOTION_DETECTION_CONCURRENCY=3\n' >>"$ENV_FILE"
+    printf '# MOTION_DETECTION_V2_DEFAULT_APPLIED=true\n' >>"$ENV_FILE"
+    chmod 0640 "$ENV_FILE"
+    chown root:"$APP_USER" "$ENV_FILE"
+    ENV_CHANGED=true
+    echo "Enabled efficient server-side motion detection in $ENV_FILE."
   fi
 }
 
@@ -259,6 +278,7 @@ build_app() {
 
 deployment_is_current() {
   [[ "$SOURCE_CHANGED" == "false" ]] &&
+    [[ "$ENV_CHANGED" == "false" ]] &&
     [[ "$FORCE_REBUILD" != "true" ]] &&
     [[ -f "$APP_DIR/.next/BUILD_ID" ]] &&
     [[ -x "$APP_DIR/mediamtx" ]] &&

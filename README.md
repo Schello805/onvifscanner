@@ -69,7 +69,7 @@ Für Smartphones normalisiert ONVIFscanner neue Bewegungsclips in ein kompatible
 
 Unter `Aufnahmen` zeigt jede Kamera außerdem den Zustand ihrer Bewegungsquelle an: aktive ONVIF-PullPoint-Verbindung, Webhook, Snapshot-Fallback, laufende Prüfung oder einen konkreten Fehler. In der Wiedergabe ist jedes Bewegungsereignis direkt mit dem daraus erzeugten Clip verknüpft; die bisherige zeitbasierte Zuordnung bleibt als Fallback für ältere Aufnahmen erhalten.
 
-Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der ressourcenschonende Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. ONVIF-Bewegungsereignisse und Kamera-Webhooks werden unabhängig davon verarbeitet. Automatische Netzwerksuche und die ältere, CPU-intensivere Snapshot-Bildanalyse sind standardmäßig deaktiviert und können in `/etc/onvifscanner/onvifscanner.env` mit `ENABLE_AUTO_DISCOVERY=true` beziehungsweise `ENABLE_MOTION_DETECTION=true` aktiviert werden.
+Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. ONVIF-Bewegungsereignisse und Kamera-Webhooks werden unabhängig davon verarbeitet. Für Kameras ohne zuverlässige ONVIF-Ereignisse ist zusätzlich die ressourcenschonende serverseitige Bildanalyse standardmäßig aktiv. Die automatische Netzwerksuche bleibt standardmäßig deaktiviert.
 
 ## Woher kommen die Streaming-URLs?
 
@@ -133,6 +133,10 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `MOTION_BUFFER_SEGMENT_SECONDS` (default `5`): Länge der temporären Ringpuffer-Segmente für Bewegungsaufnahmen.
 - `MOTION_BUFFER_DIR` (default `data/motion-buffer`): Lokales Verzeichnis für den temporären Ringpuffer.
 - `MOTION_STAGING_DIR` (default `data/motion-staging`): Arbeitsverzeichnis zum Zusammenführen eines Bewegungsclips.
+- `ENABLE_MOTION_DETECTION` (default `true`): Aktiviert die serverseitige Bildanalyse für Kameras ohne kürzlich empfangenes ONVIF-Bewegungsereignis.
+- `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der serverseitigen Bildanalyse; laufende Zyklen überlappen sich nicht.
+- `MOTION_DETECTION_CONCURRENCY` (default `3`): Maximal parallel analysierte Kamerabilder.
+- `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
 
 Hinweis: Thumbnails werden separat nach dem Scan geladen. Wenn kein Bild abrufbar ist, bleibt die Kamera trotzdem in der Ergebnisliste und der Grund steht im Kamera-Log.
 
