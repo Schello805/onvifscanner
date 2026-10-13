@@ -1,15 +1,21 @@
 {
-  "name": "OnvifScanner",
-  "short_name": "Scanner",
-  "description": "ONVIF Camera Scanner and NVR",
+  "name": "ONVIFscanner NVR",
+  "short_name": "ONVIF NVR",
+  "description": "Lokale Kameraüberwachung, Aufzeichnung und ONVIF/RTSP-Erkennung",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0ea5e9",
   "icons": [
     {
-      "src": "/apple-icon.png",
-      "sizes": "180x180",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]

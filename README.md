@@ -1,4 +1,8 @@
-# ONVIFscanner
+<p align="center">
+  <img src="public/logo.png" alt="ONVIFscanner NVR" width="240">
+</p>
+
+# ONVIFscanner NVR
 
 Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-Kameras im eigenen Netzwerk.
 

@@ -148,7 +148,7 @@ export function Navigation({
             <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-slate-700/60 bg-slate-900 shadow-md shadow-black/40 ring-1 ring-white/10 group-hover:border-indigo-500/50 transition-colors">
               <Image
                 src="/logo.png"
-                alt="ONVIFscanner"
+                alt="ONVIFscanner NVR"
                 fill
                 className="object-cover"
                 sizes="36px"
@@ -158,14 +158,14 @@ export function Navigation({
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-sm font-bold tracking-tight text-white sm:text-base">
-                  ONVIFscanner
+                  ONVIFscanner NVR
                 </span>
                 <span className="hidden sm:inline-flex items-center rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">
                   PRO
                 </span>
               </div>
               <div className="hidden truncate text-xs text-slate-400 min-[430px]:block">
-                Kamera-Manager & NVR
+                Lokale Kameraüberwachung
               </div>
             </div>
           </Link>

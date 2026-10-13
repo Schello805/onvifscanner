@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     await sendNtfyMessage({
       server: body?.ntfyServer,
       topic: body?.ntfyTopic,
-      title: "ONVIFscanner Test",
+      title: "ONVIFscanner NVR Test",
       message: "Die Push-Benachrichtigungen funktionieren.",
       priority: "default",
       tags: "white_check_mark,video_camera",

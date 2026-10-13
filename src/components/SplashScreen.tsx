@@ -29,7 +29,7 @@ export function SplashScreen() {
       <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-pulse">
         <Image
           src="/logo.png"
-          alt="ONVIFscanner"
+          alt="ONVIFscanner NVR"
           fill
           className="object-cover"
           sizes="112px"
@@ -37,7 +37,7 @@ export function SplashScreen() {
         />
       </div>
       <h1 className="text-3xl font-bold tracking-tight text-white">
-        ONVIF<span className="text-indigo-500">scanner</span>
+        ONVIF<span className="text-cyan-400">scanner</span> NVR
       </h1>
       <p className="mt-3 text-sm text-slate-400">System wird geladen...</p>
       

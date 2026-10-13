@@ -11,12 +11,12 @@ import { Navigation } from "@/components/Navigation";
 import { SystemStatus } from "@/components/SystemStatus";
 
 export const metadata: Metadata = {
-  title: "ONVIFscanner",
-  description: "Lokaler ONVIF/RTSP Scanner für dein Netzwerk.",
+  title: "ONVIFscanner NVR",
+  description: "Lokale Kameraüberwachung, Aufzeichnung und ONVIF/RTSP-Erkennung.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "Scanner",
+    title: "ONVIFscanner NVR",
     statusBarStyle: "black-translucent"
   },
 };
@@ -30,11 +30,11 @@ function Footer() {
       <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 sm:w-[94%] sm:flex-row sm:items-center sm:justify-between sm:px-5 lg:w-[90%]">
         <div className="flex flex-col gap-1">
           <div className="font-semibold text-slate-200 flex items-center gap-2">
-            <span>ONVIFscanner</span>
+            <span>ONVIFscanner NVR</span>
             <VersionStatus currentVersion={pkg.version} />
           </div>
           <div className="text-xs text-slate-400">
-            Local-first Scan von ONVIF & RTSP Kameras im LAN mit NVR-Aufzeichnung.
+            Lokale Kameraüberwachung, Erkennung und NVR-Aufzeichnung.
           </div>
           <SystemStatus />
         </div>

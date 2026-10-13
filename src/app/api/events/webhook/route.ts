@@ -157,7 +157,7 @@ export async function POST(req: Request) {
             await sendNtfyMessage({
               server: settings?.ntfyServer,
               topic: settings?.ntfyTopic,
-              title: "ONVIFscanner Alarm",
+              title: "ONVIFscanner NVR Alarm",
               message: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
               attachment,
             });
@@ -195,7 +195,7 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    service: "ONVIFscanner Motion & Alarm Webhook",
+    service: "ONVIFscanner NVR Motion & Alarm Webhook",
     status: "active",
     instructions:
       "Send POST requests from Hikvision Alarm Server / Webhook with XML or JSON payload.",

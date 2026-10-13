@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Update läuft - ONVIFscanner</title>
+  <title>Update läuft - ONVIFscanner NVR</title>
   <style>
     body {
       margin: 0;
@@ -29,6 +29,14 @@
       animation: rotation 1s linear infinite;
       margin-bottom: 2rem;
     }
+    .logo {
+      width: 112px;
+      height: 112px;
+      object-fit: cover;
+      border-radius: 20px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
     @keyframes rotation {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
@@ -46,9 +54,10 @@
   </style>
 </head>
 <body>
+  <img class="logo" src="/logo.png" alt="ONVIFscanner NVR">
   <span class="loader"></span>
   <h1>Wartungsarbeiten / Update läuft</h1>
-  <p>ONVIFscanner wird gerade aktualisiert oder neu gestartet. Bitte habe einen Moment Geduld.</p>
+  <p>ONVIFscanner NVR wird gerade aktualisiert oder neu gestartet. Bitte habe einen Moment Geduld.</p>
   <p style="font-size: 0.875rem; margin-top: 1rem;">Diese Seite prüft automatisch im Hintergrund, ob das System wieder erreichbar ist.</p>
 
   <script>

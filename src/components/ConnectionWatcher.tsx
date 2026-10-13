@@ -53,7 +53,7 @@ export function ConnectionWatcher() {
         Verbindung verloren
       </h1>
       <p className="text-sm text-slate-400 max-w-md text-center">
-        Der Server (ONVIFscanner) wird gerade neu gestartet oder ist offline. <br/>
+        Der Server (ONVIFscanner NVR) wird gerade neu gestartet oder ist offline. <br/>
         Bitte habe einen Moment Geduld, diese Seite lädt automatisch neu, sobald das System wieder erreichbar ist.
       </p>
       <style jsx>{`
