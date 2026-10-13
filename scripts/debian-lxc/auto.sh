@@ -55,6 +55,7 @@ ensure_packages() {
     command -v g++ >/dev/null 2>&1 &&
     command -v pkg-config >/dev/null 2>&1 &&
     command -v ffmpeg >/dev/null 2>&1 &&
+    command -v tesseract >/dev/null 2>&1 &&
     command -v mount.cifs >/dev/null 2>&1 &&
     command -v mount.nfs >/dev/null 2>&1 &&
     command -v sudo >/dev/null 2>&1 &&
@@ -69,7 +70,7 @@ ensure_packages() {
     ca-certificates curl git gnupg \
     build-essential python3 make g++ pkg-config \
     libvips libvips-dev \
-    libc6 ffmpeg cifs-utils nfs-common sudo
+    libc6 ffmpeg tesseract-ocr cifs-utils nfs-common sudo
 }
 
 install_node20() {

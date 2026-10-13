@@ -80,6 +80,7 @@ Wichtige Werte:
 - `MOTION_ANALYSIS_WIDTH` (default `192`): Auflösung der laufenden Graustufenanalyse
 - `MOTION_SOURCE_WIDTH` (default `640`): Detailbild-Auflösung, die erst bei erkannter Bewegung geladen wird
 - `NTFY_IMAGE_WIDTH` (default `960`) / `NTFY_IMAGE_QUALITY` (default `82`): Qualität der Alarmbilder in Ntfy
+- `tesseract-ocr`: Wird vom Installer für die optionale lokale Kennzeichenerkennung installiert.
 
 Service neu starten:
 

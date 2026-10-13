@@ -43,6 +43,7 @@ type CameraEditDraft = {
   objectDetectionEnabled: boolean;
   objectDetectionClasses: string[];
   objectMinConfidence: number;
+  licensePlateRecognitionEnabled: boolean;
   motionScheduleEnabled: boolean;
   motionScheduleStart: string;
   motionScheduleEnd: string;
@@ -559,6 +560,7 @@ export default function CameraWallPage() {
       objectDetectionEnabled: Boolean(camera.objectDetectionEnabled),
       objectDetectionClasses: camera.objectDetectionClasses ?? ["person", "vehicle", "animal"],
       objectMinConfidence: camera.objectMinConfidence ?? 55,
+      licensePlateRecognitionEnabled: Boolean(camera.licensePlateRecognitionEnabled),
       motionScheduleEnabled: Boolean(camera.motionScheduleEnabled),
       motionScheduleStart: camera.motionScheduleStart ?? "22:00",
       motionScheduleEnd: camera.motionScheduleEnd ?? "06:00",
@@ -682,6 +684,7 @@ export default function CameraWallPage() {
       objectDetectionEnabled: editDraft.objectDetectionEnabled,
       objectDetectionClasses: editDraft.objectDetectionClasses,
       objectMinConfidence: editDraft.objectMinConfidence,
+      licensePlateRecognitionEnabled: editDraft.licensePlateRecognitionEnabled,
       motionScheduleEnabled: editDraft.motionScheduleEnabled,
       motionScheduleStart: editDraft.motionScheduleStart,
       motionScheduleEnd: editDraft.motionScheduleEnd,
@@ -706,6 +709,7 @@ export default function CameraWallPage() {
         objectDetectionEnabled: editDraft.objectDetectionEnabled,
         objectDetectionClasses: editDraft.objectDetectionClasses,
         objectMinConfidence: editDraft.objectMinConfidence,
+        licensePlateRecognitionEnabled: editDraft.licensePlateRecognitionEnabled,
         motionScheduleEnabled: editDraft.motionScheduleEnabled,
         motionScheduleStart: editDraft.motionScheduleStart,
         motionScheduleEnd: editDraft.motionScheduleEnd,
@@ -1792,6 +1796,22 @@ export default function CameraWallPage() {
                                 </label>
                               </div>
                             )}
+                          </div>
+                          <div className="sm:col-span-2 rounded-xl border border-amber-500/25 bg-amber-950/15 p-3">
+                            <label className="flex cursor-pointer items-start gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={editDraft.licensePlateRecognitionEnabled}
+                                onChange={(event) => setEditDraft({ ...editDraft, licensePlateRecognitionEnabled: event.target.checked })}
+                                className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0"
+                              />
+                              <span>
+                                <strong className="block text-xs text-white">Fahrzeuge und Kennzeichen lokal erkennen</strong>
+                                <span className="block text-[10px] leading-relaxed text-slate-400">
+                                  Prüft bestätigte Bewegungen auf Fahrzeuge und liest sichtbare Kennzeichen lokal per OCR aus. Nur für diese Kamera und nur bei Bewegung.
+                                </span>
+                              </span>
+                            </label>
                           </div>
                           <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
                             <label className="flex cursor-pointer items-start gap-2.5">

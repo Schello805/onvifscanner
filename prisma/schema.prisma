@@ -33,6 +33,7 @@ model Camera {
   objectDetectionEnabled    Boolean        @default(false)
   objectDetectionClasses    String         @default("[\"person\",\"vehicle\",\"animal\"]")
   objectMinConfidence       Int            @default(55)
+  licensePlateRecognitionEnabled Boolean   @default(false)
   motionScheduleEnabled     Boolean        @default(false)
   motionScheduleStart       String         @default("22:00")
   motionScheduleEnd         String         @default("06:00")

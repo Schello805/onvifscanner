@@ -25,6 +25,7 @@ if [[ "$FORCE_SYSTEM_PACKAGES" == "true" ]] ||
   ! command -v g++ >/dev/null 2>&1 ||
   ! command -v pkg-config >/dev/null 2>&1 ||
   ! command -v ffmpeg >/dev/null 2>&1 ||
+  ! command -v tesseract >/dev/null 2>&1 ||
   ! command -v mount.cifs >/dev/null 2>&1 ||
   ! command -v mount.nfs >/dev/null 2>&1 ||
   ! command -v sudo >/dev/null 2>&1 ||
@@ -35,7 +36,7 @@ if [[ "$FORCE_SYSTEM_PACKAGES" == "true" ]] ||
     ca-certificates curl git gnupg \
     build-essential python3 make g++ pkg-config \
     libvips libvips-dev \
-    libc6 ffmpeg \
+    libc6 ffmpeg tesseract-ocr \
     cifs-utils nfs-common sudo
 else
   echo "System requirements already installed; skipping apt."

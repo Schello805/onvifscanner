@@ -4,6 +4,7 @@ const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
+const { readLicensePlates } = require('./license-plate-reader');
 const { isMotionScheduleActive } = require('./motion-schedule');
 
 const prisma = new PrismaClient();
@@ -89,6 +90,18 @@ function relevantObjectDetections(result, camera, ignoreRegions, motionEvidence)
     if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
     if (!detectionOverlapsMotion(prediction, result, motionEvidence)) return [];
     return [{ ...prediction, group }];
+  });
+}
+
+function relevantVehicleDetections(result, ignoreRegions, motionEvidence) {
+  return (result.predictions || []).flatMap((prediction) => {
+    if (!objectClassGroups.vehicle.has(prediction.className)) return [];
+    const [x, y, width, height] = prediction.bbox || [];
+    const centerX = (Number(x) + Number(width) / 2) / Math.max(1, result.width);
+    const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
+    if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
+    if (!detectionOverlapsMotion(prediction, result, motionEvidence)) return [];
+    return [{ ...prediction, group: 'vehicle' }];
   });
 }
 
@@ -292,6 +305,7 @@ async function runMonitorCycle() {
         Boolean(camera.ip)
         && parseMotionIgnoreRegions(camera.motionIgnoreRegions).length === 0
         && !camera.objectDetectionEnabled
+        && !camera.licensePlateRecognitionEnabled
         && isMotionScheduleActive(camera)
       ));
     } catch (e) {
@@ -374,7 +388,7 @@ async function detectCameraMotion(cam) {
     && cam.motionEventState === 'active'
     && cam.motionEventCheckedAt
     && Date.now() - cam.motionEventCheckedAt.getTime() < 90_000;
-  if (onvifEventIsHealthy && ignoreRegions.length === 0 && !cam.objectDetectionEnabled) {
+  if (onvifEventIsHealthy && ignoreRegions.length === 0 && !cam.objectDetectionEnabled && !cam.licensePlateRecognitionEnabled) {
     motionFrames.delete(cam.id);
     return;
   }
@@ -519,18 +533,47 @@ async function detectCameraMotion(cam) {
     let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
     let detectedObjects = [];
     let eventImage = null;
-    if (cam.objectDetectionEnabled && objectDetectionEnabled) {
+    if ((cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) && objectDetectionEnabled) {
       try {
         eventImage = await fetchMotionEventImage(cam, uris);
         if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
         const result = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
-        detectedObjects = relevantObjectDetections(result, cam, ignoreRegions, {
+        const motionEvidence = {
           width: info.width,
           height: info.height,
           changedPixels: changedPixelMap,
-        });
-        if (!detectedObjects.length) return;
-        eventMessage = objectDetectionMessage(detectedObjects);
+        };
+        const selectedObjects = cam.objectDetectionEnabled
+          ? relevantObjectDetections(result, cam, ignoreRegions, motionEvidence)
+          : [];
+        const vehicles = cam.licensePlateRecognitionEnabled
+          ? relevantVehicleDetections(result, ignoreRegions, motionEvidence)
+          : [];
+        if (cam.objectDetectionEnabled && !selectedObjects.length && !vehicles.length) return;
+        detectedObjects = [...selectedObjects];
+        for (const vehicle of vehicles) {
+          const duplicate = detectedObjects.some((detection) =>
+            detection.className === vehicle.className
+            && JSON.stringify(detection.bbox) === JSON.stringify(vehicle.bbox)
+          );
+          if (!duplicate) detectedObjects.push(vehicle);
+        }
+        if (detectedObjects.length) eventMessage = objectDetectionMessage(detectedObjects);
+        if (vehicles.length) {
+          try {
+            const plates = await readLicensePlates(eventImage, result, vehicles);
+            if (plates.length) {
+              eventMessage += ` · Kennzeichen ${plates.map((entry) => entry.plate).join(', ')}`;
+            }
+          } catch (error) {
+            const warningKey = `plate:${cam.id}`;
+            const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
+            if (Date.now() - lastLogged > 60_000) {
+              console.warn(`[Kennzeichen-OCR] ${cam.name}: ${error?.message || error}`);
+              motionFailureLogTimes.set(warningKey, Date.now());
+            }
+          }
+        }
       } catch (error) {
         const warningKey = `object:${cam.id}`;
         const lastLogged = motionFailureLogTimes.get(warningKey) || 0;

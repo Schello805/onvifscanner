@@ -27,6 +27,7 @@ export type WallCamera = {
   objectDetectionEnabled?: boolean;
   objectDetectionClasses?: string[];
   objectMinConfidence?: number;
+  licensePlateRecognitionEnabled?: boolean;
   motionScheduleEnabled?: boolean;
   motionScheduleStart?: string;
   motionScheduleEnd?: string;
@@ -161,6 +162,7 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         objectDetectionEnabled: existing.objectDetectionEnabled ?? camera.objectDetectionEnabled,
         objectDetectionClasses: existing.objectDetectionClasses ?? camera.objectDetectionClasses,
         objectMinConfidence: existing.objectMinConfidence ?? camera.objectMinConfidence,
+        licensePlateRecognitionEnabled: existing.licensePlateRecognitionEnabled ?? camera.licensePlateRecognitionEnabled,
         motionScheduleEnabled: existing.motionScheduleEnabled ?? camera.motionScheduleEnabled,
         motionScheduleStart: existing.motionScheduleStart ?? camera.motionScheduleStart,
         motionScheduleEnd: existing.motionScheduleEnd ?? camera.motionScheduleEnd,

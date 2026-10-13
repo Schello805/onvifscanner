@@ -23,7 +23,7 @@ ensure_packages() {
     ca-certificates curl git gnupg \
     build-essential python3 make g++ pkg-config \
     libvips libvips-dev \
-    libc6 ffmpeg cifs-utils nfs-common sudo
+    libc6 ffmpeg tesseract-ocr cifs-utils nfs-common sudo
 }
 
 install_node20() {

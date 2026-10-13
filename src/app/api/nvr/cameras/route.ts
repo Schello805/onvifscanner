@@ -42,6 +42,7 @@ export async function GET() {
         try { return JSON.parse(c.objectDetectionClasses || "[]"); } catch { return []; }
       })(),
       objectMinConfidence: c.objectMinConfidence,
+      licensePlateRecognitionEnabled: c.licensePlateRecognitionEnabled,
       motionScheduleEnabled: c.motionScheduleEnabled,
       motionScheduleStart: c.motionScheduleStart,
       motionScheduleEnd: c.motionScheduleEnd,
@@ -133,6 +134,9 @@ export async function PATCH(req: Request) {
     }
     if (body.objectMinConfidence !== undefined) {
       updateData.objectMinConfidence = Math.min(95, Math.max(20, Math.round(Number(body.objectMinConfidence) || 55)));
+    }
+    if (body.licensePlateRecognitionEnabled !== undefined) {
+      updateData.licensePlateRecognitionEnabled = Boolean(body.licensePlateRecognitionEnabled);
     }
     if (body.motionScheduleEnabled !== undefined) updateData.motionScheduleEnabled = Boolean(body.motionScheduleEnabled);
     if (body.motionScheduleStart !== undefined && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.motionScheduleStart))) updateData.motionScheduleStart = String(body.motionScheduleStart);
