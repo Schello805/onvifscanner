@@ -367,6 +367,11 @@ export default function PlaybackPage() {
   const [autoPlayNext, setAutoPlayNext] = useState(true);
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [videoCurrentTime, setVideoCurrentTime] = useState<number>(0);
+  const [compatiblePlayback, setCompatiblePlayback] = useState(false);
+  const [playerPreparing, setPlayerPreparing] = useState(false);
+  const [playerError, setPlayerError] = useState("");
+  const [playerNeedsStart, setPlayerNeedsStart] = useState(false);
+  const [playbackAttempt, setPlaybackAttempt] = useState(0);
   const pendingSeekRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -703,6 +708,11 @@ export default function PlaybackPage() {
     setVideoDuration(0);
     setVideoCurrentTime(0);
     pendingSeekRef.current = null;
+    setCompatiblePlayback(false);
+    setPlayerPreparing(false);
+    setPlayerError("");
+    setPlayerNeedsStart(false);
+    setPlaybackAttempt(0);
     setActiveClip(clip);
     setIsPlaying(true);
   };
@@ -711,6 +721,11 @@ export default function PlaybackPage() {
     setVideoDuration(0);
     setVideoCurrentTime(0);
     pendingSeekRef.current = offsetSec > 0 ? offsetSec : null;
+    setCompatiblePlayback(false);
+    setPlayerPreparing(false);
+    setPlayerError("");
+    setPlayerNeedsStart(false);
+    setPlaybackAttempt(0);
     setActiveClip(clip);
     setIsPlaying(true);
   };
@@ -967,6 +982,12 @@ export default function PlaybackPage() {
     if (!activeClip) return -1;
     return filteredClips.findIndex((c) => c.id === activeClip.id);
   }, [activeClip, filteredClips]);
+
+  const activePlaybackUrl = activeClip
+    ? compatiblePlayback
+      ? `${activeClip.streamUrl}${activeClip.streamUrl.includes("?") ? "&" : "?"}compatible=1`
+      : activeClip.streamUrl
+    : "";
 
   const playPreviousClip = () => {
     if (activeClipIndex > 0) {
@@ -1965,15 +1986,38 @@ export default function PlaybackPage() {
               <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[38vh] sm:max-h-[44vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
-                  key={activeClip.id}
-                  src={activeClip.streamUrl}
+                  key={`${activeClip.id}-${compatiblePlayback ? "compatible" : "original"}-${playbackAttempt}`}
+                  src={activePlaybackUrl}
                   controls={!playerFullscreen}
                   autoPlay
                   playsInline
                   className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[38vh] sm:max-h-[44vh]'}`}
-                  onPlay={() => setIsPlaying(true)}
+                  onPlay={() => {
+                    setIsPlaying(true);
+                    setPlayerNeedsStart(false);
+                  }}
                   onPause={() => setIsPlaying(false)}
+                  onLoadStart={() => {
+                    if (compatiblePlayback) setPlayerPreparing(true);
+                  }}
+                  onCanPlay={(event) => {
+                    setPlayerPreparing(false);
+                    setPlayerError("");
+                    void event.currentTarget.play().then(() => setPlayerNeedsStart(false)).catch(() => setPlayerNeedsStart(true));
+                  }}
+                  onError={() => {
+                    if (!compatiblePlayback) {
+                      setCompatiblePlayback(true);
+                      setPlayerPreparing(true);
+                      setPlayerError("");
+                      return;
+                    }
+                    setPlayerPreparing(false);
+                    setPlayerError("Das Video konnte auch im Smartphone-Modus nicht geladen werden.");
+                  }}
                 onLoadedMetadata={(e) => {
+                  setPlayerPreparing(false);
+                  setPlayerError("");
                   const dur = e.currentTarget.duration || 0;
                   setVideoDuration(dur);
                   if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
@@ -1990,6 +2034,48 @@ export default function PlaybackPage() {
                   }
                 }}
               />
+              {(playerPreparing || playerError || playerNeedsStart) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-5 text-center">
+                  <div className="max-w-xs rounded-xl border border-slate-700 bg-slate-950/95 px-4 py-3 shadow-xl">
+                    {playerPreparing ? (
+                      <>
+                        <RefreshCw className="mx-auto h-6 w-6 animate-spin text-amber-400" />
+                        <p className="mt-2 text-sm font-semibold text-white">Smartphone-Video wird vorbereitet</p>
+                        <p className="mt-1 text-xs text-slate-400">Der Clip wird einmalig in ein kompatibles Format umgewandelt.</p>
+                      </>
+                    ) : playerNeedsStart ? (
+                      <>
+                        <Play className="mx-auto h-7 w-7 text-amber-400" />
+                        <p className="mt-2 text-sm font-semibold text-white">Video ist bereit</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void videoRef.current?.play().then(() => setPlayerNeedsStart(false));
+                          }}
+                          className="mt-3 rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950"
+                        >
+                          Video starten
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-rose-200">{playerError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPlayerError("");
+                            setPlayerPreparing(true);
+                            setPlaybackAttempt((attempt) => attempt + 1);
+                          }}
+                          className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950"
+                        >
+                          Erneut versuchen
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Combined Footer for Fullscreen / Normal */}

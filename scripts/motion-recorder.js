@@ -192,18 +192,41 @@ class MotionRecorder {
     const partial = path.join(finalDir, `.${filename}.partial.mp4`);
 
     try {
+      let videoCodec = '';
+      try {
+        const probe = await execFileAsync('ffprobe', [
+          '-v', 'error', '-select_streams', 'v:0',
+          '-show_entries', 'stream=codec_name',
+          '-of', 'default=noprint_wrappers=1:nokey=1',
+          segments[0],
+        ], { timeout: 15_000, maxBuffer: 256 * 1024 });
+        videoCodec = String(probe.stdout || '').trim().toLowerCase();
+      } catch (error) {
+        console.warn(`[Motion Recorder] Codec von ${camera.name} konnte nicht ermittelt werden; H.264-Konvertierung wird verwendet.`, error?.message || error);
+      }
+
+      const ffmpegArgs = ['-y', '-hide_banner', '-loglevel', 'error'];
       if (segments.length === 1) {
-        await fsp.copyFile(segments[0], partial);
+        ffmpegArgs.push('-i', segments[0]);
       } else {
         const listFile = path.join(stageDir, 'segments.txt');
         const list = segments.map((segment) => `file '${segment.replaceAll("'", "'\\''")}'`).join('\n');
         await fsp.writeFile(listFile, `${list}\n`, 'utf8');
-        await execFileAsync('ffmpeg', [
-          '-y', '-hide_banner', '-loglevel', 'error',
-          '-f', 'concat', '-safe', '0', '-i', listFile,
-          '-c', 'copy', '-movflags', '+faststart', partial,
-        ], { timeout: 120_000, maxBuffer: 2 * 1024 * 1024 });
+        ffmpegArgs.push('-f', 'concat', '-safe', '0', '-i', listFile);
       }
+
+      ffmpegArgs.push('-map', '0:v:0', '-map', '0:a:0?');
+      if (videoCodec === 'h264') {
+        ffmpegArgs.push('-c:v', 'copy');
+      } else {
+        ffmpegArgs.push(
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24',
+          '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level', '4.0',
+          '-threads', '2',
+        );
+      }
+      ffmpegArgs.push('-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', partial);
+      await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 });
 
       const stat = await fsp.stat(partial);
       if (!stat.isFile() || stat.size === 0) throw new Error('FFmpeg hat keine gültige Ausgabedatei erzeugt.');
@@ -213,7 +236,7 @@ class MotionRecorder {
         data: { status: 'ready', filePath: output, segmentCount: segments.length, error: null },
       });
       await fsp.rm(stageDir, { recursive: true, force: true });
-      console.log(`[Motion Recorder] ${camera.name}: ${segments.length} Segment(e) zu ${filename} zusammengeführt.`);
+      console.log(`[Motion Recorder] ${camera.name}: ${segments.length} Segment(e) zu ${filename} zusammengeführt (${videoCodec === 'h264' ? 'H.264 übernommen' : `${videoCodec || 'unbekannt'} → H.264`}).`);
     } catch (error) {
       await fsp.unlink(partial).catch(() => undefined);
       await this.prisma.motionRecording.update({
