@@ -227,7 +227,8 @@ export default function CameraWallPage() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mobileFocusMode, setMobileFocusMode] = useState(false);
-  const [mobileControlsVisible, setMobileControlsVisible] = useState(false);
+  const [activeCameraControlsId, setActiveCameraControlsId] = useState<string | null>(null);
+  const [cameraMenuId, setCameraMenuId] = useState<string | null>(null);
   const [mediaTransform, setMediaTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
   const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
@@ -290,6 +291,20 @@ export default function CameraWallPage() {
   const mediaTransformRef = useRef(mediaTransform);
   const mediaPointersRef = useRef(new Map<number, { x: number; y: number }>());
   const mediaGestureRef = useRef({ distance: 0, centerX: 0, centerY: 0, moved: false });
+  const cameraControlsTimerRef = useRef<number | null>(null);
+
+  const revealCameraControls = useCallback((cameraId: string) => {
+    if (cameraControlsTimerRef.current !== null) window.clearTimeout(cameraControlsTimerRef.current);
+    setActiveCameraControlsId(cameraId);
+    cameraControlsTimerRef.current = window.setTimeout(() => {
+      setActiveCameraControlsId((current) => current === cameraId ? null : current);
+      cameraControlsTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  useEffect(() => () => {
+    if (cameraControlsTimerRef.current !== null) window.clearTimeout(cameraControlsTimerRef.current);
+  }, []);
 
   useEffect(() => {
     liveCamerasRef.current = liveCameras;
@@ -709,7 +724,6 @@ export default function CameraWallPage() {
 
   async function enterMonitorMode() {
     if (window.matchMedia("(max-width: 639px)").matches) {
-      setMobileControlsVisible(false);
       setControlsVisible(false);
       setMobileFocusMode(true);
       return;
@@ -814,13 +828,6 @@ export default function CameraWallPage() {
     }
   }
 
-  async function openMobileLive(cameraId: string) {
-    openExpanded(cameraId);
-    if (!liveCamerasRef.current.has(cameraId)) {
-      await toggleLive(cameraId);
-    }
-  }
-
   function applyMediaTransform(next: { scale: number; x: number; y: number }, element?: HTMLElement) {
     const scale = Math.min(4, Math.max(1, next.scale));
     const rect = element?.getBoundingClientRect();
@@ -906,7 +913,7 @@ export default function CameraWallPage() {
   return (
     <div
       ref={wallRef}
-      className={`camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6 ${mobileFocusMode ? "mobile-monitor-mode" : ""} ${mobileControlsVisible || (mobileFocusMode && controlsVisible) ? "mobile-controls-visible" : ""}`}
+      className={`camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6 ${mobileFocusMode ? "mobile-monitor-mode" : ""}`}
     >
       <div className={`camera-wall-toolbar mb-4 sm:mb-6 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
@@ -1030,15 +1037,6 @@ export default function CameraWallPage() {
                 aria-label={`Aktuell ${mobileColumns} Spalten. Raster wechseln.`}
               >
                 {mobileColumns === 1 ? "▭" : "▦"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobileControlsVisible((visible) => !visible)}
-                className={`touch-manipulation rounded px-2 py-1 font-semibold ${mobileControlsVisible ? "bg-indigo-500/25 text-indigo-200" : "hover:bg-white/10"}`}
-                title={mobileControlsVisible ? "Kamera-Bedienung ausblenden" : "Kamera-Bedienung einblenden"}
-                aria-pressed={mobileControlsVisible}
-              >
-                {mobileControlsVisible ? "◉" : "◎"}
               </button>
             </div>
 
@@ -1164,6 +1162,8 @@ export default function CameraWallPage() {
                       mediaGestureRef.current.moved = false;
                       return;
                     }
+                    setCameraMenuId(null);
+                    revealCameraControls(camera.id);
                     const now = Date.now();
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
@@ -1305,28 +1305,6 @@ export default function CameraWallPage() {
                   )}
                   </div>
 
-                  {expandedCameraId !== camera.id ? (
-                    <button
-                      type="button"
-                      disabled={liveLoading.has(camera.id)}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void openMobileLive(camera.id);
-                      }}
-                      className={`absolute bottom-1 right-1 z-20 flex h-9 min-w-9 touch-manipulation items-center justify-center gap-1 rounded-md border px-2 text-[11px] font-semibold text-white shadow-lg backdrop-blur-md sm:hidden ${
-                        isLive
-                          ? "border-sky-400/60 bg-sky-600/85"
-                          : "border-white/15 bg-black/65 active:bg-black/90"
-                      } disabled:opacity-60`}
-                      aria-label={isLive ? `${camera.name} live groß öffnen` : `Live-Stream für ${camera.name} starten`}
-                      title={isLive ? "Live groß öffnen" : "Live-Stream starten"}
-                    >
-                      <span>{liveLoading.has(camera.id) ? "…" : "▶"}</span>
-                      <span>{liveLoading.has(camera.id) ? "Lädt" : "Live"}</span>
-                    </button>
-                  ) : null}
-
                   {image?.src && camera.overlayPosition && (
                     <div className={`camera-card-overlay absolute m-1 sm:m-1.5 px-1.5 sm:px-2 py-0.5 text-[11px] sm:text-xs font-medium text-white bg-black/75 rounded backdrop-blur-md border border-white/10 shadow-md inline-flex items-center gap-1 sm:gap-1.5 pointer-events-none select-none max-w-[90%] truncate
                       ${camera.overlayPosition === "top-left" ? "top-0 left-0" : ""}
@@ -1350,101 +1328,57 @@ export default function CameraWallPage() {
                   )}
                 </div>
 
-                {(!isFullscreen && !mobileFocusMode) || controlsVisible ? (
-                  <div className="camera-card-controls bg-slate-950 px-2 py-1.5 flex items-center justify-between border-t border-white/10 text-xs shrink-0 select-none gap-1 overflow-hidden">
-                    <div className="flex items-center gap-1 min-w-0 shrink flex-nowrap">
-                      {/* Live Stream Button */}
-                      <button
-                        type="button"
-                        disabled={liveLoading.has(camera.id)}
-                        onClick={() => void toggleLive(camera.id)}
-                        className={`touch-manipulation rounded px-2 py-1 text-xs font-medium transition-colors shrink-0 flex items-center gap-1 disabled:cursor-wait disabled:opacity-60 ${
-                          isLive 
-                            ? 'bg-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]' 
-                            : 'bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
-                        }`}
-                        title="Live-Stream an/aus"
-                      >
-                        <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
-                        <span className="camera-card-control-label hidden sm:inline">{liveLoading.has(camera.id) ? "Laden…" : isLive ? "Stop" : "Live"}</span>
-                      </button>
-
-                      {/* 1-Click Recording Button */}
-                      <button
-                        type="button"
-                        disabled={recordLoading.has(camera.id)}
-                        onClick={() => void toggleRecord(camera)}
-                        className={`touch-manipulation rounded px-2 py-1 text-xs font-bold transition-all shrink-0 flex items-center gap-1 disabled:cursor-wait disabled:opacity-60 ${
-                          camera.recordEnabled
-                            ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.5)] border border-rose-400/50'
-                            : 'bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-300 hover:border-rose-500/30 border border-white/10'
-                        }`}
-                        title={camera.recordEnabled ? `Aufnahme für "${camera.name}" beenden` : `Bewegungsaufnahme für "${camera.name}" starten`}
-                      >
-                        <span className={camera.recordEnabled ? "animate-pulse text-white" : "text-rose-400"}>
-                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "⏹" : "⏺"}
-                        </span>
-                        <span className="camera-card-control-label hidden sm:inline">
-                          {recordLoading.has(camera.id) ? "…" : camera.recordEnabled ? "Stop" : "Aufnahme"}
-                        </span>
-                      </button>
-
-                      {/* Quick jump to archive if recording - compact icon button */}
-                      {camera.recordEnabled && (
-                        <Link
-                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
-                          className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-slate-300 hover:text-white transition shrink-0"
-                          title="Gespeicherte Aufnahmen dieser Kamera im Archiv ansehen"
-                        >
-                          🎞️
-                        </Link>
-                      )}
-
-                      {liveErrors[camera.id] ? (
-                        <span className="truncate text-[10px] text-red-300 max-w-[80px]" title={liveErrors[camera.id]}>
-                          Fehler
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => openEditor(camera)}
-                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-indigo-950/60 border border-indigo-800/40 text-indigo-200 hover:bg-indigo-900/80 hover:text-white"
-                        title="Kamera bearbeiten"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        onClick={() => moveCamera(index, -1)}
-                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-20"
-                        title="Nach vorne"
-                      >
-                        ←
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === cameras.length - 1}
-                        onClick={() => moveCamera(index, 1)}
-                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-20"
-                        title="Nach hinten"
-                      >
-                        →
-                      </button>
+                {expandedCameraId !== camera.id ? (
+                  <div
+                    className={`camera-card-actions absolute bottom-1 right-1 z-30 flex items-center gap-1 ${activeCameraControlsId === camera.id || cameraMenuId === camera.id ? "is-visible" : ""}`}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {liveErrors[camera.id] ? (
+                      <span className="rounded-md bg-red-950/90 px-2 py-1 text-[10px] font-semibold text-red-200" title={liveErrors[camera.id]}>Live-Fehler</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={liveLoading.has(camera.id)}
+                      onClick={() => {
+                        revealCameraControls(camera.id);
+                        void toggleLive(camera.id);
+                      }}
+                      className={`flex h-9 touch-manipulation items-center gap-1 rounded-md border px-2 text-[11px] font-semibold text-white shadow-lg backdrop-blur-md disabled:opacity-60 ${isLive ? "border-sky-400/60 bg-sky-600/90" : "border-white/15 bg-black/75"}`}
+                      title={isLive ? "Live-Stream stoppen" : "Live-Stream starten"}
+                    >
+                      <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
+                      <span>{liveLoading.has(camera.id) ? "Lädt" : "Live"}</span>
+                    </button>
+                    <div className="relative">
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
-                            removeCamera(camera.id);
-                          }
+                          const closing = cameraMenuId === camera.id;
+                          if (cameraControlsTimerRef.current !== null) window.clearTimeout(cameraControlsTimerRef.current);
+                          setCameraMenuId(closing ? null : camera.id);
+                          setActiveCameraControlsId(camera.id);
+                          if (closing) revealCameraControls(camera.id);
                         }}
-                        className="touch-manipulation h-7 w-7 flex items-center justify-center rounded bg-red-950/40 border border-red-900/40 text-red-400 hover:bg-red-900/70 hover:text-red-200"
-                        title="Kamera von den Monitoren entfernen"
+                        className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-md border border-white/15 bg-black/75 text-lg font-bold text-white shadow-lg backdrop-blur-md"
+                        aria-label={`Aktionen für ${camera.name}`}
+                        aria-expanded={cameraMenuId === camera.id}
                       >
-                        ✕
+                        ⋯
                       </button>
+                      {cameraMenuId === camera.id ? (
+                        <div className="absolute bottom-11 right-0 z-50 w-52 overflow-hidden rounded-xl border border-white/15 bg-slate-950/95 p-1.5 text-xs text-slate-200 shadow-2xl backdrop-blur-xl">
+                          <button type="button" disabled={recordLoading.has(camera.id)} onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); void toggleRecord(camera); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10 disabled:opacity-50">
+                            <span>{camera.recordEnabled ? "⏹" : "⏺"}</span><span>{camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}</span>
+                          </button>
+                          {camera.recordEnabled ? <Link href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-white/10"><span>🎞️</span><span>Aufnahmen öffnen</span></Link> : null}
+                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); openEditor(camera); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10"><span>✎</span><span>Bearbeiten</span></button>
+                          <div className="grid grid-cols-2 gap-1 border-y border-white/10 py-1">
+                            <button type="button" disabled={index === 0} onClick={() => { moveCamera(index, -1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="rounded-lg px-2 py-2 hover:bg-white/10 disabled:opacity-30">← Vor</button>
+                            <button type="button" disabled={index === cameras.length - 1} onClick={() => { moveCamera(index, 1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="rounded-lg px-2 py-2 hover:bg-white/10 disabled:opacity-30">Zurück →</button>
+                          </div>
+                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) removeCamera(camera.id); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-300 hover:bg-red-500/15"><span>✕</span><span>Von Monitoren entfernen</span></button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

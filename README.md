@@ -20,6 +20,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Vorschaubilder**: Lädt Snapshot-Bilder über einen Thumbnail-Proxy mit Basic/Digest-Unterstützung und begrenzter Parallelität.
 - **Kamera-Wall**: Speichert Scan-Ergebnisse lokal auf dem ONVIFscanner-Server und zeigt die Kameras in einem konfigurierbaren Raster mit Vollbildmodus und automatischer Aktualisierung.
 - **Mobile Fokusansicht**: Nutzt auf Smartphones die gesamte verfügbare Fläche, blendet Bedienelemente standardmäßig aus und zeigt Kameranamen als dezentes Overlay.
+- **Kontextbezogene Kamerasteuerung**: Zeigt Live- und Aktionsschaltflächen nur beim Antippen beziehungsweise per Desktop-Hover; seltene Aktionen liegen platzsparend im Drei-Punkte-Menü.
 - **Live-Ansicht**: Wandelt gespeicherte RTSP-Streams über MediaMTX in browserfähiges WebRTC um; ohne Live-Modus bleibt die robuste Snapshot-Aktualisierung aktiv.
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Bewegungsmasken pro Kamera**: Beliebig geformte rote Ignorierbereiche lassen sich mit einem Pinsel direkt auf das Kamerabild malen, damit etwa Bäume, Straßen oder Zeitstempel keine Aufnahme auslösen.
@@ -29,6 +30,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Kamera-Protokoll**: Zeigt mit Zeitstempel, welche Kamera eine Bewegung gemeldet hat oder offline beziehungsweise wieder online gegangen ist.
 - **Optionale Status-Pushs**: Meldet Kamera-Wechsel zwischen online und offline auf Wunsch zusätzlich über das konfigurierte ntfy-Topic.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
+- **Gestengesteuerte Wiedergabe**: Doppeltippen links oder rechts springt zehn Sekunden, längeres Halten spult schnell; weitere Player-Funktionen bleiben in einem kompakten Optionsbereich verborgen.
 - **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.
 - **Heimnetz-Gating**: Standardmäßig nur private IP-Ranges (RFC1918) scanbar.

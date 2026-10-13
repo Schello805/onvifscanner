@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import {
   Film,
@@ -16,8 +16,6 @@ import {
   X,
   Maximize2,
   Minimize2,
-  RotateCcw,
-  RotateCw,
   Search,
   List,
   LayoutGrid,
@@ -387,9 +385,20 @@ export default function PlaybackPage() {
   const [playerError, setPlayerError] = useState("");
   const [playerNeedsStart, setPlayerNeedsStart] = useState(false);
   const [playbackAttempt, setPlaybackAttempt] = useState(0);
+  const [seekFeedback, setSeekFeedback] = useState("");
+  const [playerOptionsOpen, setPlayerOptionsOpen] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
+  const seekFeedbackTimerRef = useRef<number | null>(null);
+  const lastPlayerTapRef = useRef<{ side: "left" | "right"; at: number } | null>(null);
+  const playerGestureRef = useRef<{
+    pointerId: number | null;
+    side: "left" | "right";
+    held: boolean;
+    holdTimer: number | null;
+    repeatTimer: number | null;
+  }>({ pointerId: null, side: "left", held: false, holdTimer: null, repeatTimer: null });
 
   // Motion Activity Stats & Ranking State
   const [showStatsModal, setShowStatsModal] = useState(false);
@@ -753,6 +762,7 @@ export default function PlaybackPage() {
     setPlayerError("");
     setPlayerNeedsStart(false);
     setPlaybackAttempt(0);
+    setPlayerOptionsOpen(false);
     setActiveClip(clip);
     setIsPlaying(true);
   };
@@ -766,6 +776,7 @@ export default function PlaybackPage() {
     setPlayerError("");
     setPlayerNeedsStart(false);
     setPlaybackAttempt(0);
+    setPlayerOptionsOpen(false);
     setActiveClip(clip);
     setIsPlaying(true);
   };
@@ -853,6 +864,69 @@ export default function PlaybackPage() {
       videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime + seconds);
     }
   };
+
+  const showSeekFeedback = (label: string) => {
+    if (seekFeedbackTimerRef.current !== null) window.clearTimeout(seekFeedbackTimerRef.current);
+    setSeekFeedback(label);
+    seekFeedbackTimerRef.current = window.setTimeout(() => {
+      setSeekFeedback("");
+      seekFeedbackTimerRef.current = null;
+    }, 700);
+  };
+
+  const clearPlayerGesture = useCallback(() => {
+    const gesture = playerGestureRef.current;
+    if (gesture.holdTimer !== null) window.clearTimeout(gesture.holdTimer);
+    if (gesture.repeatTimer !== null) window.clearInterval(gesture.repeatTimer);
+    gesture.pointerId = null;
+    gesture.holdTimer = null;
+    gesture.repeatTimer = null;
+  }, []);
+
+  const handlePlayerPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const side = event.clientX < bounds.left + bounds.width / 2 ? "left" : "right";
+    const direction = side === "left" ? -1 : 1;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    clearPlayerGesture();
+    playerGestureRef.current.pointerId = event.pointerId;
+    playerGestureRef.current.side = side;
+    playerGestureRef.current.held = false;
+    playerGestureRef.current.holdTimer = window.setTimeout(() => {
+      playerGestureRef.current.held = true;
+      seekRelative(direction * 2);
+      showSeekFeedback(direction < 0 ? "◀ Schnell zurück" : "Schnell vor ▶");
+      playerGestureRef.current.repeatTimer = window.setInterval(() => seekRelative(direction * 2), 220);
+    }, 450);
+  };
+
+  const handlePlayerPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = playerGestureRef.current;
+    if (gesture.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const wasHeld = gesture.held;
+    const side = gesture.side;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    clearPlayerGesture();
+    if (wasHeld) return;
+    const now = Date.now();
+    const previous = lastPlayerTapRef.current;
+    if (previous?.side === side && now - previous.at < 330) {
+      const seconds = side === "left" ? -10 : 10;
+      seekRelative(seconds);
+      showSeekFeedback(seconds < 0 ? "−10 Sekunden" : "+10 Sekunden");
+      lastPlayerTapRef.current = null;
+    } else {
+      lastPlayerTapRef.current = { side, at: now };
+    }
+  };
+
+  useEffect(() => () => {
+    clearPlayerGesture();
+    if (seekFeedbackTimerRef.current !== null) window.clearTimeout(seekFeedbackTimerRef.current);
+  }, [clearPlayerGesture]);
 
   const seekToOffset = (seconds: number) => {
     if (videoRef.current) {
@@ -2036,7 +2110,6 @@ export default function PlaybackPage() {
                   ref={videoRef}
                   key={`${activeClip.id}-${compatiblePlayback ? "compatible" : "original"}-${playbackAttempt}`}
                   src={activePlaybackUrl}
-                  controls={!playerFullscreen}
                   autoPlay
                   playsInline
                   className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[38vh] sm:max-h-[44vh]'}`}
@@ -2082,8 +2155,36 @@ export default function PlaybackPage() {
                   }
                 }}
               />
+              <div
+                data-pull-to-refresh-ignore="true"
+                className="absolute inset-0 z-10 touch-manipulation select-none"
+                onPointerDown={handlePlayerPointerDown}
+                onPointerUp={handlePlayerPointerEnd}
+                onPointerCancel={(event) => {
+                  if (playerGestureRef.current.pointerId === event.pointerId) clearPlayerGesture();
+                }}
+                aria-label="Videogesten: links oder rechts doppeltippen für zehn Sekunden, gedrückt halten zum schnellen Spulen"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!videoRef.current) return;
+                  if (videoRef.current.paused) void videoRef.current.play();
+                  else videoRef.current.pause();
+                }}
+                className="absolute bottom-3 left-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-xl backdrop-blur-md transition hover:bg-black/85"
+                aria-label={isPlaying ? "Pause" : "Abspielen"}
+                title={isPlaying ? "Pause" : "Abspielen"}
+              >
+                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
+              </button>
+              {seekFeedback ? (
+                <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+                  <span className="rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md">{seekFeedback}</span>
+                </div>
+              ) : null}
               {(playerPreparing || playerError || playerNeedsStart) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-5 text-center">
+                <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-5 text-center">
                   <div className="max-w-xs rounded-xl border border-slate-700 bg-slate-950/95 px-4 py-3 shadow-xl">
                     {playerPreparing ? (
                       <>
@@ -2237,11 +2338,26 @@ export default function PlaybackPage() {
                   })}
                 </div>
               )}
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <p className="text-[10px] text-slate-500 sm:hidden">
+                  Doppeltippen links/rechts: 10 Sek. · Halten: schnell spulen
+                </p>
+                <span className="hidden sm:block" />
+                <button
+                  type="button"
+                  onClick={() => setPlayerOptionsOpen((open) => !open)}
+                  className={`ml-auto rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${playerOptionsOpen ? "border-amber-500/40 bg-amber-500/15 text-amber-200" : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}
+                  aria-expanded={playerOptionsOpen}
+                >
+                  ⋯ Optionen
+                </button>
+              </div>
               </div>
 
-              {/* Advanced NVR Toolbar - Generous Spacing & Uncramped Layout */}
+              {/* Compact playback toolbar */}
+              {playerOptionsOpen ? (
               <div className="p-4 sm:p-5 pb-6 border-t border-slate-800/50 flex flex-col gap-3.5 text-xs shrink-0">
-              {/* Row 1: Playback Navigation & Skip Buttons */}
+              {/* Clip and motion navigation */}
               <div className="flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
@@ -2252,35 +2368,6 @@ export default function PlaybackPage() {
                   >
                     <SkipBack className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Vorheriger</span>
-                  </button>
-
-                  <button
-                    onClick={() => seekRelative(-60)}
-                    className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
-                    title="-60 Sekunden"
-                  >
-                    -60s
-                  </button>
-                  <button
-                    onClick={() => seekRelative(-10)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
-                    title="-10 Sekunden (Taste J)"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> -10s
-                  </button>
-                  <button
-                    onClick={() => seekRelative(10)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
-                    title="+10 Sekunden (Taste L)"
-                  >
-                    <RotateCw className="h-3.5 w-3.5" /> +10s
-                  </button>
-                  <button
-                    onClick={() => seekRelative(60)}
-                    className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-slate-300 hover:bg-slate-800 transition-colors"
-                    title="+60 Sekunden"
-                  >
-                    +60s
                   </button>
 
                   {/* Direct Jump to Motion Buttons */}
@@ -2367,6 +2454,7 @@ export default function PlaybackPage() {
 
               </div>
             </div>
+              ) : null}
           </div>
         </div>
       </div>

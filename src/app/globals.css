@@ -38,6 +38,21 @@
   container-type: inline-size;
 }
 
+.camera-card-actions {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.25rem);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.camera-card:hover .camera-card-actions,
+.camera-card:focus-within .camera-card-actions,
+.camera-card-actions.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 @container (max-width: 360px) {
   .camera-card .camera-card-control-label {
     display: none;
@@ -85,12 +100,9 @@
     border-radius: 3px;
   }
 
-  .camera-wall .camera-card-controls {
-    display: none;
-  }
-
-  .camera-wall.mobile-controls-visible .camera-card-controls {
-    display: flex;
+  .camera-card:hover .camera-card-actions:not(.is-visible) {
+    opacity: 0;
+    pointer-events: none;
   }
 
   .camera-card .camera-card-overlay {
