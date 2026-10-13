@@ -155,6 +155,13 @@ function MotionMaskEditor({
         ref={surfaceRef}
         data-pull-to-refresh-ignore="true"
         className="relative aspect-video w-full touch-none select-none overflow-hidden rounded-lg border border-white/10 bg-slate-900 cursor-crosshair overscroll-none"
+        onWheel={(event) => {
+          const scrollContainer = event.currentTarget.closest<HTMLElement>("[data-camera-editor-scroll]");
+          if (!scrollContainer || event.deltaY === 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          scrollContainer.scrollTop += event.deltaY;
+        }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           const cell = cellFromEvent(event);
@@ -1533,7 +1540,7 @@ export default function CameraWallPage() {
             </div>
 
             {/* Scrollable Body */}
-            <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 py-4 space-y-4 text-xs">
+            <div data-camera-editor-scroll="true" className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 py-4 space-y-4 text-xs">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="grid gap-1.5">
                   <span className="font-semibold text-slate-300">Anzeigename</span>
