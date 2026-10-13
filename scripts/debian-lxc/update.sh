@@ -81,6 +81,7 @@ install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR/data/playback-cache"
 install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$NPM_CACHE_DIR"
 state_dir="$APP_DIR/data/.update-state"
 install -d -o "$APP_USER" -g "$APP_USER" "$state_dir"
+ENV_CHANGED=false
 
 if [[ -f "$ENV_FILE" ]] && ! grep -q '^# MOTION_DETECTION_V2_DEFAULT_APPLIED=true$' "$ENV_FILE"; then
   if grep -q '^ENABLE_MOTION_DETECTION=false$' "$ENV_FILE"; then
@@ -93,10 +94,25 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q '^# MOTION_DETECTION_V2_DEFAULT_APPLIED=tru
   printf '# MOTION_DETECTION_V2_DEFAULT_APPLIED=true\n' >>"$ENV_FILE"
   chmod 0640 "$ENV_FILE"
   chown root:"$APP_USER" "$ENV_FILE"
+  ENV_CHANGED=true
   echo "Enabled efficient server-side motion detection in $ENV_FILE."
 fi
 
-if [[ -n "$previous_commit" && "$previous_commit" == "$current_commit" && "$FORCE_REBUILD" != "true" && -f "$APP_DIR/.next/BUILD_ID" && -x "$APP_DIR/mediamtx" ]] && systemctl is-active --quiet onvifscanner.service; then
+if [[ -f "$ENV_FILE" ]] && ! grep -q '^# MOTION_CPU_OPTIMIZATION_V1_APPLIED=true$' "$ENV_FILE"; then
+  sed -i 's/^MOTION_DETECTION_CONCURRENCY=3$/MOTION_DETECTION_CONCURRENCY=2/' "$ENV_FILE"
+  sed -i 's/^MOTION_ANALYSIS_WIDTH=256$/MOTION_ANALYSIS_WIDTH=192/' "$ENV_FILE"
+  sed -i 's/^MOTION_SOURCE_WIDTH=384$/MOTION_SOURCE_WIDTH=640/' "$ENV_FILE"
+  grep -q '^MOTION_DETECTION_CONCURRENCY=' "$ENV_FILE" || printf 'MOTION_DETECTION_CONCURRENCY=2\n' >>"$ENV_FILE"
+  grep -q '^MOTION_ANALYSIS_WIDTH=' "$ENV_FILE" || printf 'MOTION_ANALYSIS_WIDTH=192\n' >>"$ENV_FILE"
+  grep -q '^MOTION_SOURCE_WIDTH=' "$ENV_FILE" || printf 'MOTION_SOURCE_WIDTH=640\n' >>"$ENV_FILE"
+  printf '# MOTION_CPU_OPTIMIZATION_V1_APPLIED=true\n' >>"$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+  chown root:"$APP_USER" "$ENV_FILE"
+  ENV_CHANGED=true
+  echo "Applied CPU-optimized motion detection defaults in $ENV_FILE."
+fi
+
+if [[ -n "$previous_commit" && "$previous_commit" == "$current_commit" && "$FORCE_REBUILD" != "true" && "$ENV_CHANGED" != "true" && -f "$APP_DIR/.next/BUILD_ID" && -x "$APP_DIR/mediamtx" ]] && systemctl is-active --quiet onvifscanner.service; then
   echo "ONVIFscanner is already current; skipping dependencies, build and restart."
   exit 0
 fi

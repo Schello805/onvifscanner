@@ -151,11 +151,11 @@ FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubuserc
 - `MOTION_BUFFER_SEGMENT_SECONDS` (default `5`): Länge der temporären Ringpuffer-Segmente für Bewegungsaufnahmen.
 - `MOTION_BUFFER_DIR` (default `data/motion-buffer`): Lokales Verzeichnis für den temporären Ringpuffer.
 - `MOTION_STAGING_DIR` (default `data/motion-staging`): Arbeitsverzeichnis zum Zusammenführen eines Bewegungsclips.
-- `ENABLE_MOTION_DETECTION` (default `true`): Aktiviert die serverseitige Bildanalyse für Kameras ohne kürzlich empfangenes ONVIF-Bewegungsereignis.
+- `ENABLE_MOTION_DETECTION` (default `true`): Aktiviert die serverseitige Bildanalyse für Kameras ohne gesunde ONVIF-Ereignisquelle.
 - `MOTION_DETECTION_INTERVAL_MS` (default `3000`): Zielintervall der serverseitigen Bildanalyse; laufende Zyklen überlappen sich nicht.
-- `MOTION_DETECTION_CONCURRENCY` (default `3`): Maximal parallel analysierte Kamerabilder.
-- `MOTION_SOURCE_WIDTH` (default `384`): Breite des frisch geladenen Bildes für die Bewegungserkennung.
-- `MOTION_ANALYSIS_WIDTH` (default `256`): Interne Analysebreite; statt der früheren 96 px bleiben dadurch kleine Bewegungen besser sichtbar.
+- `MOTION_DETECTION_CONCURRENCY` (default `2`): Maximal parallel analysierte Kamerabilder; kleinere Werte begrenzen CPU-Spitzen.
+- `MOTION_ANALYSIS_WIDTH` (default `192`): Breite der CPU-schonenden Graustufen-Bewegungsanalyse.
+- `MOTION_SOURCE_WIDTH` (default `640`): Breite des nur bei erkannter Bewegung nachgeladenen Detailbildes für Objekterkennung und Benachrichtigung.
 - `MOTION_PIXEL_THRESHOLD`, `MOTION_AREA_THRESHOLD`, `MOTION_MEAN_THRESHOLD`: Optionale Feineinstellung für Pixel-, Flächen- und mittlere Differenzschwelle.
 - `ENABLE_OBJECT_DETECTION` (default `true`): Erlaubt die pro Kamera aktivierbare lokale Person-/Fahrzeug-/Tiererkennung.
 - `OBJECT_DETECTION_MODEL_URL` (optional): Eigene lokale oder erreichbare URL für das COCO-SSD-Modell. Ohne Angabe wird beim ersten Einsatz das Standardmodell geladen; Kamerabilder verlassen den Server nicht.

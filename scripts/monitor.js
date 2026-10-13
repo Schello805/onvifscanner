@@ -1,6 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
-const sharp = require('sharp');
 const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
@@ -16,12 +15,12 @@ const appBaseUrl = `http://127.0.0.1:${appPort}`;
 const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
 const objectDetectionEnabled = process.env.ENABLE_OBJECT_DETECTION !== 'false';
 const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 3_000);
-const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 3));
+const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 2));
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
 const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
-const motionSourceWidth = Math.max(256, Math.min(768, Number(process.env.MOTION_SOURCE_WIDTH) || 384));
-const motionAnalysisWidth = Math.max(160, Math.min(512, Number(process.env.MOTION_ANALYSIS_WIDTH) || 256));
+const motionSourceWidth = Math.max(256, Math.min(960, Number(process.env.MOTION_SOURCE_WIDTH) || 640));
+const motionAnalysisWidth = Math.max(160, Math.min(512, Number(process.env.MOTION_ANALYSIS_WIDTH) || 192));
 const motionAnalysisHeight = Math.round(motionAnalysisWidth * 9 / 16);
 const autoDiscoveryEnabled = process.env.ENABLE_AUTO_DISCOVERY === 'true';
 const monitorIntervalMs = Math.max(30_000, Number(process.env.MONITOR_INTERVAL_MS) || 60_000);
@@ -313,6 +312,34 @@ async function runMotionDetection() {
   }
 }
 
+async function fetchMotionEventImage(cam, uris) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        urls: uris,
+        size: motionSourceWidth,
+        quality: 82,
+        timeoutMs: 3_500,
+        fastAuth: true,
+        fresh: true,
+        credentials: cam.username ? { username: cam.username, password: cam.password } : undefined,
+      }),
+      signal: controller.signal,
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.toLowerCase().startsWith('image/')) return null;
+    return Buffer.from(await response.arrayBuffer());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function detectCameraMotion(cam) {
   if (cam.status && !cam.status.isOnline) return;
   if (!isMotionScheduleActive(cam)) {
@@ -323,10 +350,14 @@ async function detectCameraMotion(cam) {
   const ignoreRegions = parseMotionIgnoreRegions(cam.motionIgnoreRegions);
   const maskKey = JSON.stringify(ignoreRegions);
 
-  const onvifEventIsRecent = cam.motionEventSource === 'onvif'
-    && cam.motionEventLastSeen
-    && Date.now() - cam.motionEventLastSeen.getTime() < 5 * 60_000;
-  if (onvifEventIsRecent && ignoreRegions.length === 0 && !cam.objectDetectionEnabled) return;
+  const onvifEventIsHealthy = cam.motionEventSource === 'onvif'
+    && cam.motionEventState === 'active'
+    && cam.motionEventCheckedAt
+    && Date.now() - cam.motionEventCheckedAt.getTime() < 90_000;
+  if (onvifEventIsHealthy && ignoreRegions.length === 0 && !cam.objectDetectionEnabled) {
+    motionFrames.delete(cam.id);
+    return;
+  }
 
   let snapshotUris = [];
   let streamUris = [];
@@ -343,8 +374,9 @@ async function detectCameraMotion(cam) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         urls: uris,
-        size: motionSourceWidth,
-        quality: 75,
+        size: motionAnalysisWidth,
+        height: motionAnalysisHeight,
+        output: 'gray',
         timeoutMs: 2_500,
         fastAuth: true,
         fresh: true,
@@ -354,13 +386,15 @@ async function detectCameraMotion(cam) {
     }).finally(() => clearTimeout(timer));
     if (!response.ok) throw new Error(`Snapshot HTTP ${response.status}`);
 
-    const image = Buffer.from(await response.arrayBuffer());
-    const { data: pixels, info } = await sharp(image, { limitInputPixels: 32_000_000 })
-      .resize(motionAnalysisWidth, motionAnalysisHeight, { fit: 'fill' })
-      .greyscale()
-      .blur(0.5)
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const pixels = Buffer.from(await response.arrayBuffer());
+    const info = {
+      width: Number(response.headers.get('x-image-width')) || motionAnalysisWidth,
+      height: Number(response.headers.get('x-image-height')) || motionAnalysisHeight,
+      channels: 1,
+    };
+    if (pixels.length !== info.width * info.height) {
+      throw new Error(`Ungültiges Analysebild (${pixels.length} statt ${info.width * info.height} Bytes)`);
+    }
 
     const previous = motionFrames.get(cam.id);
     if (!previous || previous.pixels.length !== pixels.length || previous.maskKey !== maskKey) {
@@ -434,9 +468,12 @@ async function detectCameraMotion(cam) {
 
     let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
     let detectedObjects = [];
+    let eventImage = null;
     if (cam.objectDetectionEnabled && objectDetectionEnabled) {
       try {
-        const result = await objectDetector.detect(image, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
+        eventImage = await fetchMotionEventImage(cam, uris);
+        if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
+        const result = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
         detectedObjects = relevantObjectDetections(result, cam, ignoreRegions);
         if (!detectedObjects.length) return;
         eventMessage = objectDetectionMessage(detectedObjects);
@@ -470,7 +507,12 @@ async function detectCameraMotion(cam) {
           objectDetections: detectedObjects.length ? JSON.stringify(detectedObjects) : null,
         },
       });
-      await sendCameraNotification(prisma, cam, eventMessage, { imageBuffer: image, contentType: 'image/jpeg' });
+      await sendCameraNotification(
+        prisma,
+        cam,
+        eventMessage,
+        eventImage ? { imageBuffer: eventImage, contentType: 'image/jpeg' } : {},
+      );
       console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({
         where: { cameraId: cam.id },

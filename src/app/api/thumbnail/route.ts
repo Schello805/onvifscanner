@@ -13,7 +13,9 @@ type Body = {
   url?: string;
   urls?: string[];
   size?: number;
+  height?: number;
   quality?: number;
+  output?: "jpeg" | "gray";
   timeoutMs?: number;
   fastAuth?: boolean;
   fresh?: boolean;
@@ -140,7 +142,9 @@ export async function POST(req: Request) {
   }
 
   const size = clampInt(body.size ?? 200, 64, 1280);
+  const outputHeight = body.height === undefined ? undefined : clampInt(body.height, 36, 1280);
   const quality = clampInt(body.quality ?? 65, 45, 90);
+  const outputMode = body.output === "gray" ? "gray" : "jpeg";
   const timeoutMs = clampInt(body.timeoutMs ?? 1500, 300, 8000);
   const fastAuth = body.fastAuth !== false;
 
@@ -171,7 +175,7 @@ export async function POST(req: Request) {
     acquired = true;
 
     for (const url of parsedCandidates) {
-      const cacheKey = `${url.toString()}|s=${size}|q=${quality}|u=${body.credentials?.username ?? ""}`;
+      const cacheKey = `${url.toString()}|s=${size}|h=${outputHeight ?? 0}|q=${quality}|o=${outputMode}|u=${body.credentials?.username ?? ""}`;
       const cached = cache.get(cacheKey);
       if (!body.fresh && cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
         return new NextResponse(cached.bytes as unknown as BodyInit, {
@@ -288,18 +292,28 @@ export async function POST(req: Request) {
         // ignore
       }
 
-      const output = await sharp(input, { limitInputPixels: 32_000_000 })
-        .rotate()
-        .resize({ width: size })
-        .jpeg({ quality, mozjpeg: true })
-        .toBuffer();
+      const pipeline = sharp(input, { limitInputPixels: 32_000_000 }).rotate();
+      const { data: output, info: outputInfo } = outputMode === "gray"
+        ? await pipeline
+            .resize({ width: size, height: outputHeight, fit: outputHeight ? "fill" : "inside" })
+            .greyscale()
+            .blur(0.5)
+            .raw()
+            .toBuffer({ resolveWithObject: true })
+        : await pipeline
+            .resize({ width: size })
+            .jpeg({ quality })
+            .toBuffer({ resolveWithObject: true });
+      const outputContentType = outputMode === "gray" ? "application/octet-stream" : "image/jpeg";
+      const responseWidth = outputInfo.width;
+      const responseHeight = outputInfo.height;
 
       cache.set(cacheKey, {
         ts: Date.now(),
         bytes: output,
-        contentType: "image/jpeg",
-        width: origWidth,
-        height: origHeight
+        contentType: outputContentType,
+        width: responseWidth,
+        height: responseHeight
       });
       if (CACHE_MAX_ENTRIES > 0 && cache.size > CACHE_MAX_ENTRIES) {
         // Drop the oldest entry (in insertion order) to keep memory bounded.
@@ -310,11 +324,11 @@ export async function POST(req: Request) {
       return new NextResponse(output as unknown as BodyInit, {
         status: 200,
         headers: {
-          "content-type": "image/jpeg",
+          "content-type": outputContentType,
           "cache-control": "no-store",
           "x-thumbnail-source": url.toString(),
-          "x-image-width": String(origWidth),
-          "x-image-height": String(origHeight)
+          "x-image-width": String(responseWidth),
+          "x-image-height": String(responseHeight)
         }
       });
     }
