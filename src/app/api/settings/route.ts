@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     const updateData: any = {};
     if (body.ntfyTopic !== undefined) updateData.ntfyTopic = body.ntfyTopic || null;
     if (body.ntfyServer !== undefined) updateData.ntfyServer = body.ntfyServer || null;
+    if (body.ntfyCameraStatusEnabled !== undefined) updateData.ntfyCameraStatusEnabled = Boolean(body.ntfyCameraStatusEnabled);
     if (body.columns !== undefined) updateData.columns = body.columns;
     if (body.autoCleanup !== undefined) updateData.autoCleanup = body.autoCleanup;
 

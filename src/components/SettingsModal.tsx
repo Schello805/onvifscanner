@@ -8,6 +8,7 @@ import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 type SettingsData = {
   ntfyTopic: string | null;
   ntfyServer: string | null;
+  ntfyCameraStatusEnabled: boolean;
   autoCleanup: boolean;
 };
 
@@ -22,6 +23,7 @@ export function SettingsModal({
   const [data, setData] = useState<SettingsData>({
     ntfyTopic: "",
     ntfyServer: "",
+    ntfyCameraStatusEnabled: false,
     autoCleanup: true,
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +40,7 @@ export function SettingsModal({
       setData({
         ntfyTopic: json.ntfyTopic || "",
         ntfyServer: json.ntfyServer || "",
+        ntfyCameraStatusEnabled: Boolean(json.ntfyCameraStatusEnabled),
         autoCleanup: json.autoCleanup ?? true,
       });
     } catch (e) {
@@ -62,6 +65,7 @@ export function SettingsModal({
         body: JSON.stringify({
           ntfyTopic: data.ntfyTopic?.trim() || null,
           ntfyServer: data.ntfyServer?.trim() || null,
+          ntfyCameraStatusEnabled: data.ntfyCameraStatusEnabled,
           autoCleanup: data.autoCleanup,
         }),
       });
@@ -180,6 +184,20 @@ export function SettingsModal({
                   )}
                   Testnachricht senden
                 </button>
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-slate-950/60 p-3.5">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-success toggle-sm mt-0.5 shrink-0"
+                    checked={data.ntfyCameraStatusEnabled}
+                    onChange={(event) => setData({ ...data, ntfyCameraStatusEnabled: event.target.checked })}
+                  />
+                  <span>
+                    <strong className="block text-sm font-medium text-slate-200">Online-/Offline-Meldungen</strong>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                      Sendet über ntfy eine Nachricht, wenn eine Kamera offline oder wieder online geht. Gilt für alle gespeicherten Kameras.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               <hr className="border-slate-800" />

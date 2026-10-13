@@ -58,14 +58,14 @@ async function fetchCameraImage(camera) {
   }
 }
 
-async function publishNtfy(url, notification, attachment) {
+async function publishNtfy(url, notification, attachment, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8_000);
   try {
     const headers = {
-      Title: encodeHeaderValue('ONVIFscanner Alarm'),
-      Priority: 'high',
-      Tags: 'rotating_light,video_camera',
+      Title: encodeHeaderValue(options.title || 'ONVIFscanner Alarm'),
+      Priority: options.priority || 'high',
+      Tags: options.tags || 'rotating_light,video_camera',
     };
     if (attachment?.data?.length) {
       headers.Message = encodeHeaderValue(notification);
@@ -84,9 +84,12 @@ async function publishNtfy(url, notification, attachment) {
 }
 
 async function sendCameraNotification(prisma, camera, message, options = {}) {
-  if (!camera?.notificationsEnabled) return { sent: false, reason: 'disabled' };
+  if (!camera?.notificationsEnabled && !options.force) return { sent: false, reason: 'disabled' };
 
   const settings = await prisma.settings.findUnique({ where: { id: 'default' } });
+  if (options.statusNotification && !settings?.ntfyCameraStatusEnabled) {
+    return { sent: false, reason: 'status-notifications-disabled' };
+  }
   const topic = String(settings?.ntfyTopic || '').trim();
   if (!topic) {
     console.warn(`🔕 Push for ${camera.name} skipped: no ntfy topic configured.`);
@@ -96,14 +99,16 @@ async function sendCameraNotification(prisma, camera, message, options = {}) {
   const notification = `Kamera: ${camera.name}\nEreignis: ${message}`;
   const ntfyUrl = `${normalizeNtfyServer(settings?.ntfyServer)}/${encodeURIComponent(topic)}`;
   try {
-    const fetchedImage = options.imageBuffer?.length
+    const fetchedImage = options.includeImage === false
+      ? null
+      : options.imageBuffer?.length
       ? { data: options.imageBuffer, contentType: options.contentType || 'image/jpeg' }
       : await fetchCameraImage(camera);
     let imageAttached = Boolean(fetchedImage);
-    let response = await publishNtfy(ntfyUrl, notification, fetchedImage ? { ...fetchedImage, camera } : null);
+    let response = await publishNtfy(ntfyUrl, notification, fetchedImage ? { ...fetchedImage, camera } : null, options);
     if (!response.ok && fetchedImage) {
       console.warn(`🔕 Image push for ${camera.name} returned HTTP ${response.status}; retrying without image.`);
-      response = await publishNtfy(ntfyUrl, notification, null);
+      response = await publishNtfy(ntfyUrl, notification, null, options);
       imageAttached = false;
     }
     if (!response.ok) {

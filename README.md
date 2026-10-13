@@ -23,6 +23,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Zeitprofile pro Kamera**: Wochentage, Start-/Endzeit und eine eigene Empfindlichkeit begrenzen Bewegungserkennung und Aufnahmen auf gewünschte Zeitfenster.
 - **Tageszusammenfassung**: Die Wiedergabe fasst Ereignisse und erkannte Objekte pro Tag und Kamera zusammen.
 - **Kamera-Protokoll**: Zeigt mit Zeitstempel, welche Kamera eine Bewegung gemeldet hat oder offline beziehungsweise wieder online gegangen ist.
+- **Optionale Status-Pushs**: Meldet Kamera-Wechsel zwischen online und offline auf Wunsch zusätzlich über das konfigurierte ntfy-Topic.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
 - **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.
 - **Verständliche Logs**: Pro Kamera gibt es einen Kurzstatus plus optionales technisches Log zur URL-/Auth-Erkennung.

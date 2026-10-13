@@ -237,6 +237,19 @@ async function runMonitorCycle() {
 
       if (statusChanged) {
         console.log(`[Camera Status] ${cam.name}: ${newStatus ? 'wieder online' : 'offline'}.`);
+        void sendCameraNotification(
+          prisma,
+          cam,
+          newStatus ? 'Kamera ist wieder online' : 'Kamera ist offline',
+          {
+            force: true,
+            statusNotification: true,
+            includeImage: false,
+            title: newStatus ? 'ONVIFscanner: Kamera online' : 'ONVIFscanner: Kamera offline',
+            priority: newStatus ? 'default' : 'high',
+            tags: newStatus ? 'white_check_mark,video_camera' : 'warning,video_camera',
+          },
+        );
       }
       if (statusChanged || initialOnlineStatus) {
         const oldStatusLogs = await prisma.cameraStatusLog.findMany({

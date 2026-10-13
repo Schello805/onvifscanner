@@ -95,6 +95,7 @@ model Settings {
   autoCleanup                 Boolean? @default(true)
   ntfyTopic                   String?
   ntfyServer                  String?
+  ntfyCameraStatusEnabled     Boolean  @default(false)
   motionSensitivityV3Migrated Boolean  @default(false)
 }
 
