@@ -47,15 +47,20 @@ export async function GET(req: Request) {
 
     const clips: RecordingClip[] = [];
     const calendarDays = new Map<string, { count: number; cameras: Map<string, number> }>();
+    const unavailableStorageTargets: string[] = [];
 
     for (const target of storageTargets) {
-      if (!fs.existsSync(target.path)) continue;
+      if (!fs.existsSync(target.path)) {
+        unavailableStorageTargets.push(target.name);
+        continue;
+      }
 
       let cameraDirs: string[] = [];
       try {
         const entries = await fsp.readdir(target.path, { withFileTypes: true });
         cameraDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
       } catch {
+        unavailableStorageTargets.push(target.name);
         continue;
       }
 
@@ -166,6 +171,8 @@ export async function GET(req: Request) {
         month: calendarMonth,
         days,
         totalCount: days.reduce((sum, day) => sum + day.count, 0),
+        partial: unavailableStorageTargets.length > 0,
+        unavailableStorageTargets,
       });
     }
 
@@ -175,6 +182,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       clips,
       totalCount: clips.length,
+      partial: unavailableStorageTargets.length > 0,
+      unavailableStorageTargets,
     });
   } catch (error: any) {
     console.error("GET /api/nvr/recordings error:", error);

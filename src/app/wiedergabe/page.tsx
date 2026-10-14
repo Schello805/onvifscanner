@@ -325,6 +325,10 @@ export default function PlaybackPage() {
   const [clips, setClips] = useState<RecordingClip[]>([]);
   const [loadingClips, setLoadingClips] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const clipsRequestIdRef = useRef(0);
+  const clipRequestsInFlightRef = useRef(0);
+  const clipsQueryKeyRef = useRef("");
+  const calendarRequestIdRef = useRef(0);
 
   // Filters & Search
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
@@ -464,6 +468,10 @@ export default function PlaybackPage() {
   };
 
   const fetchClips = useCallback(async (camId: string, date: string, silent = false) => {
+    if (silent && clipRequestsInFlightRef.current > 0) return;
+    const requestId = ++clipsRequestIdRef.current;
+    const queryKey = `${camId}\u0000${date}`;
+    clipRequestsInFlightRef.current += 1;
     try {
       if (!silent) setRefreshing(true);
       const params = new URLSearchParams();
@@ -478,36 +486,58 @@ export default function PlaybackPage() {
           : Promise.resolve(null),
       ]);
 
+      if (!resClips.ok) throw new Error(`Aufnahmen: HTTP ${resClips.status}`);
       const dataClips = await resClips.json();
-      if (dataClips.clips) {
-        setClips(dataClips.clips);
+      if (requestId !== clipsRequestIdRef.current) return;
+      if (Array.isArray(dataClips.clips)) {
+        const unavailableTargets = Array.isArray(dataClips.unavailableStorageTargets)
+          ? dataClips.unavailableStorageTargets.filter((entry: unknown): entry is string => typeof entry === "string")
+          : [];
+        setClips((current) => {
+          const canRetainUnavailable = clipsQueryKeyRef.current === queryKey;
+          clipsQueryKeyRef.current = queryKey;
+          if (!unavailableTargets.length || !canRetainUnavailable) return dataClips.clips;
+          const incomingIds = new Set<string>(dataClips.clips.map((clip: RecordingClip) => clip.id));
+          const retained = current.filter((clip) =>
+            unavailableTargets.includes(clip.storageTargetName) && !incomingIds.has(clip.id)
+          );
+          return [...dataClips.clips, ...retained];
+        });
         if (!silent) {
           setSelectedClipIds(new Set());
           setCurrentPage(1);
         }
       }
 
-      const dataEvents = await resEvents.json().catch(() => ({ events: [] }));
-      if (dataEvents.events) {
-        setMotionEvents(dataEvents.events);
-      } else {
-        setMotionEvents([]);
+      if (resEvents.ok) {
+        const dataEvents = await resEvents.json().catch(() => null);
+        if (requestId === clipsRequestIdRef.current && Array.isArray(dataEvents?.events)) {
+          setMotionEvents(dataEvents.events);
+        }
       }
       if (resSummary) {
-        const summary = await resSummary.json().catch(() => null);
-        setDailySummary(summary?.ok ? summary : null);
-      } else {
+        if (resSummary.ok) {
+          const summary = await resSummary.json().catch(() => null);
+          if (requestId === clipsRequestIdRef.current && summary?.ok) setDailySummary(summary);
+        }
+      } else if (requestId === clipsRequestIdRef.current) {
         setDailySummary(null);
       }
     } catch {
-      if (!silent) toast.error("Fehler beim Laden der Aufnahmen.");
+      if (!silent && requestId === clipsRequestIdRef.current) {
+        toast.error("Fehler beim Laden der Aufnahmen. Vorhandene Inhalte bleiben sichtbar.");
+      }
     } finally {
-      setLoadingClips(false);
-      if (!silent) setRefreshing(false);
+      clipRequestsInFlightRef.current = Math.max(0, clipRequestsInFlightRef.current - 1);
+      if (requestId === clipsRequestIdRef.current) {
+        setLoadingClips(false);
+        if (!silent) setRefreshing(false);
+      }
     }
   }, [toast]);
 
   const fetchCalendar = useCallback(async (month: string, cameraId: string) => {
+    const requestId = ++calendarRequestIdRef.current;
     try {
       setLoadingCalendar(true);
       const params = new URLSearchParams({ calendarMonth: month });
@@ -515,13 +545,15 @@ export default function PlaybackPage() {
       const response = await fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Kalender konnte nicht geladen werden.");
+      if (requestId !== calendarRequestIdRef.current) return;
+      if (result.partial) return;
       const indexed: Record<string, RecordingCalendarDay> = {};
       for (const day of result.days ?? []) indexed[day.date] = day;
       setCalendarDays(indexed);
     } catch {
-      setCalendarDays({});
+      // Bei kurzzeitig nicht erreichbaren Speicherzielen den letzten stabilen Kalender behalten.
     } finally {
-      setLoadingCalendar(false);
+      if (requestId === calendarRequestIdRef.current) setLoadingCalendar(false);
     }
   }, []);
 
