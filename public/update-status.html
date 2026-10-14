@@ -58,21 +58,35 @@
   <span class="loader"></span>
   <h1>Wartungsarbeiten / Update läuft</h1>
   <p>ONVIFscanner NVR wird gerade aktualisiert oder neu gestartet. Bitte habe einen Moment Geduld.</p>
-  <p style="font-size: 0.875rem; margin-top: 1rem;">Diese Seite prüft automatisch im Hintergrund, ob das System wieder erreichbar ist.</p>
+  <p id="status" style="font-size: 0.875rem; margin-top: 1rem;">Diese Seite prüft automatisch im Hintergrund, ob das System wieder erreichbar ist.</p>
 
   <script>
-    // Alle 3 Sekunden prüfen, ob die API wieder antwortet
-    setInterval(() => {
-      fetch('/api/version', { cache: 'no-store' })
-        .then(res => {
-          if (res.ok) {
-            window.location.href = '/';
-          }
-        })
-        .catch(err => {
-          // Weiter warten
+    let successfulChecks = 0;
+    const status = document.getElementById('status');
+
+    async function checkServer() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      try {
+        const response = await fetch('/api/version?update=' + Date.now(), {
+          cache: 'no-store',
+          headers: { 'cache-control': 'no-cache' },
+          signal: controller.signal
         });
-    }, 3000);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        successfulChecks += 1;
+        status.textContent = 'Dienst ist wieder erreichbar. Oberfläche wird geladen…';
+        if (successfulChecks >= 2) window.location.replace('/?updated=' + Date.now());
+      } catch (error) {
+        successfulChecks = 0;
+        status.textContent = 'Update läuft. Der automatische Neustart wird abgewartet…';
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    setInterval(checkServer, 3000);
+    checkServer();
   </script>
 </body>
 </html>

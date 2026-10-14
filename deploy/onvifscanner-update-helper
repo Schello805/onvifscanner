@@ -30,6 +30,6 @@ systemd-run \
   --no-block \
   --property=Type=exec \
   --property=WorkingDirectory="$APP_DIR" \
-  /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+  /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
 
 echo '{"success":true,"message":"Update wurde als Hintergrunddienst gestartet."}'

@@ -11,11 +11,11 @@ const execFileAsync = promisify(execFile);
 
 export async function POST() {
   try {
+    const helperPath = "/usr/local/bin/onvifscanner-update-helper";
     const isSystemInstallation = fs.existsSync("/etc/systemd/system/onvifscanner.service")
-      && process.cwd() === "/opt/onvifscanner";
+      || fs.existsSync(helperPath);
 
     if (isSystemInstallation) {
-      const helperPath = "/usr/local/bin/onvifscanner-update-helper";
       if (!fs.existsSync(helperPath)) {
         return NextResponse.json({
           success: false,
@@ -26,7 +26,7 @@ export async function POST() {
 
       try {
         const { stdout } = await execFileAsync("sudo", ["-n", helperPath], {
-          timeout: 5_000,
+          timeout: 10_000,
           maxBuffer: 64 * 1024,
         });
         let helperResult: Record<string, unknown> = {};
@@ -35,7 +35,7 @@ export async function POST() {
           success: true,
           message: helperResult.message || "Update gestartet. App wird in Kürze neu geladen.",
           alreadyRunning: Boolean(helperResult.alreadyRunning),
-        });
+        }, { headers: { "cache-control": "no-store" } });
       } catch (error) {
         const detail = error && typeof error === "object" && "stderr" in error
           ? String(error.stderr).trim()
@@ -57,7 +57,10 @@ export async function POST() {
 
     child.unref();
 
-    return NextResponse.json({ success: true, message: "Update gestartet. App wird in Kürze neu geladen." });
+    return NextResponse.json(
+      { success: true, message: "Update gestartet. App wird in Kürze neu geladen." },
+      { headers: { "cache-control": "no-store" } },
+    );
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Update fehlgeschlagen" },

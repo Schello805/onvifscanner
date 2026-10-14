@@ -22,6 +22,7 @@ export function VersionStatus(props: { currentVersion: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
+  const updateMonitorRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +90,8 @@ export function VersionStatus(props: { currentVersion: string }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => () => updateMonitorRef.current?.abort(), []);
+
   const updateAvailable = Boolean(info?.updateAvailable);
   const checkFailed = Boolean(info?.error && !info.latestVersion);
   const latestVersion = info?.latestVersion;
@@ -99,18 +102,83 @@ export function VersionStatus(props: { currentVersion: string }) {
   const [updating, setUpdating] = useState(false);
   const [updateMessage, setUpdateMessage] = useState("");
 
+  async function waitForUpdatedServer(controller: AbortController) {
+    const deadline = Date.now() + 10 * 60 * 1000;
+    let serverWasOffline = false;
+    let consecutiveSuccessfulChecks = 0;
+
+    while (!controller.signal.aborted && Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+      if (controller.signal.aborted) return;
+
+      const requestController = new AbortController();
+      const abortRequest = () => requestController.abort();
+      controller.signal.addEventListener("abort", abortRequest, { once: true });
+      const requestTimeout = window.setTimeout(() => requestController.abort(), 4_000);
+
+      try {
+        const response = await fetch(`/api/version?update=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "cache-control": "no-cache" },
+          signal: requestController.signal,
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const version = (await response.json()) as VersionInfo;
+        const versionChanged = version.currentVersion !== props.currentVersion;
+
+        if (versionChanged) {
+          setUpdateMessage(`Version ${version.currentVersion} ist bereit. Seite wird geladen…`);
+          window.setTimeout(() => window.location.reload(), 700);
+          return;
+        }
+
+        if (serverWasOffline) {
+          consecutiveSuccessfulChecks += 1;
+          setUpdateMessage("Dienst ist wieder erreichbar. Version wird geprüft…");
+          if (consecutiveSuccessfulChecks >= 3) {
+            window.location.reload();
+            return;
+          }
+        } else {
+          setUpdateMessage("Update wird vorbereitet und gebaut…");
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          serverWasOffline = true;
+          consecutiveSuccessfulChecks = 0;
+          setUpdateMessage("App wird aktualisiert und neu gestartet…");
+        }
+      } finally {
+        window.clearTimeout(requestTimeout);
+        controller.signal.removeEventListener("abort", abortRequest);
+      }
+    }
+
+    if (!controller.signal.aborted) {
+      setUpdating(false);
+      setOpen(true);
+      setUpdateMessage("Das Update dauert ungewöhnlich lange. Bitte Status oder Terminal-Log prüfen.");
+    }
+  }
+
   async function handleUpdate(e: React.MouseEvent) {
     e.stopPropagation();
     setUpdating(true);
     setUpdateMessage("Update startet...");
     try {
-      const res = await fetch("/api/update", { method: "POST" });
+      const res = await fetch("/api/update", {
+        method: "POST",
+        cache: "no-store",
+        keepalive: true,
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         setUpdateMessage(data.alreadyRunning ? "Update läuft bereits…" : "Update gestartet…");
-        window.setTimeout(() => {
-          window.location.href = "/update-status.html";
-        }, 500);
+        setOpen(false);
+        updateMonitorRef.current?.abort();
+        const controller = new AbortController();
+        updateMonitorRef.current = controller;
+        void waitForUpdatedServer(controller);
       } else {
         setUpdateMessage(data.error || `Update konnte nicht gestartet werden (HTTP ${res.status}).`);
         setUpdating(false);
@@ -238,6 +306,18 @@ export function VersionStatus(props: { currentVersion: string }) {
           </>
         )}
       </div>
+      {updating ? (
+        <span className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/95 px-6 backdrop-blur-md">
+          <span className="flex w-full max-w-sm flex-col items-center rounded-2xl border border-cyan-400/20 bg-slate-900/95 p-6 text-center shadow-2xl shadow-black/70">
+            <span className="h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-b-cyan-400" />
+            <span className="mt-5 text-lg font-bold text-white">Update läuft</span>
+            <span className="mt-2 text-sm leading-relaxed text-slate-300">{updateMessage}</span>
+            <span className="mt-4 text-[11px] leading-relaxed text-slate-500">
+              Diese Seite geöffnet lassen. Sie lädt nach dem Neustart automatisch neu.
+            </span>
+          </span>
+        </span>
+      ) : null}
     </span>
   );
 }
