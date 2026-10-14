@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { sendCameraNotification } = require('./ntfy');
+const { motionCooldownSeconds, shouldAcceptExternalMotion } = require('./motion-policy');
 
 function escapeXml(value) {
   if (!value) return '';
@@ -371,10 +372,6 @@ class OnvifEventManager {
 
   async recordMotionEvent(cam, timestamp) {
     const now = Date.now();
-    const last = this.lastAlarmTimes.get(cam.id) || 0;
-    if (now - last < 5000) return;
-    this.lastAlarmTimes.set(cam.id, now);
-
     const cameraTimestamp = timestamp instanceof Date ? timestamp : new Date(timestamp);
     const timestampIsValid = !Number.isNaN(cameraTimestamp.getTime());
     const clockSkewMs = timestampIsValid ? Math.abs(cameraTimestamp.getTime() - now) : Number.POSITIVE_INFINITY;
@@ -384,6 +381,19 @@ class OnvifEventManager {
     }
 
     try {
+      const currentCamera = await this.prisma.camera.findUnique({ where: { id: cam.id } });
+      if (!currentCamera || !shouldAcceptExternalMotion(currentCamera, effectiveTimestamp)) return;
+      const cooldownMs = motionCooldownSeconds(currentCamera) * 1000;
+      const last = this.lastAlarmTimes.get(cam.id) || 0;
+      if (now - last < cooldownMs) return;
+      const recentEvent = await this.prisma.alarmLog.findFirst({
+        where: {
+          cameraId: cam.id,
+          timestamp: { gte: new Date(now - cooldownMs) },
+        },
+        select: { id: true },
+      });
+      if (recentEvent) return;
       await this.prisma.alarmLog.create({
         data: {
           cameraId: cam.id,
@@ -391,8 +401,8 @@ class OnvifEventManager {
           timestamp: effectiveTimestamp,
         }
       });
-      const currentCamera = await this.prisma.camera.findUnique({ where: { id: cam.id } });
-      await sendCameraNotification(this.prisma, currentCamera || cam, 'Bewegung erkannt (ONVIF)');
+      this.lastAlarmTimes.set(cam.id, now);
+      await sendCameraNotification(this.prisma, currentCamera, 'Bewegung erkannt (ONVIF)');
       await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, effectiveTimestamp);
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },

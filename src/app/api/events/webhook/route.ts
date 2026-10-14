@@ -2,9 +2,28 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
 import { isMotionScheduleActive } from "@/lib/motionSchedule";
+import {
+  motionCooldownSeconds,
+  motionMonitoringRequested,
+  requiresServerMotionValidation,
+} from "@/lib/motionPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function classifyAlarmPayload(rawBody: string): string | null {
+  const payload = rawBody.toLowerCase();
+  if (payload.includes("linedetection")) return "Linienüberschreitung erkannt";
+  if (payload.includes("shelteralarm") || payload.includes("tamper")) return "Sabotage / Abdeckung erkannt";
+  if (payload.includes("fielddetection") || payload.includes("intrusion")) return "Bereichsübertritt erkannt";
+  if (payload.includes("vmd") || payload.includes("motion")) return "Bewegung erkannt (Hikvision/Webhook)";
+  return null;
+}
+
+function payloadIsExplicitlyInactive(rawBody: string): boolean {
+  return /<\s*(?:[a-z0-9_-]+:)?eventstate\s*>\s*(?:inactive|false|0)\s*<\//i.test(rawBody)
+    || /["']eventstate["']\s*:\s*["']?(?:inactive|false|0)/i.test(rawBody);
+}
 
 export async function POST(req: Request) {
   try {
@@ -56,19 +75,27 @@ export async function POST(req: Request) {
       }
     }
 
-    // Parse event details
-    let message = "Bewegung erkannt";
-    if (rawBody.includes("linedetection")) {
-      message = "Linienüberschreitung erkannt";
-    } else if (rawBody.includes("shelteralarm") || rawBody.includes("tamper")) {
-      message = "Sabotage / Abdeckung erkannt";
-    } else if (rawBody.includes("fielddetection") || rawBody.includes("intrusion")) {
-      message = "Bereichsübertritt erkannt";
-    } else if (rawBody.includes("VMD") || rawBody.includes("motion") || rawBody.includes("Motion")) {
-      message = "Bewegung erkannt (Hikvision/Webhook)";
-    }
+    const message = classifyAlarmPayload(rawBody);
 
     if (matchedCamera) {
+      if (!message || payloadIsExplicitlyInactive(rawBody)) {
+        return NextResponse.json({
+          ok: true,
+          recorded: false,
+          cameraId: matchedCamera.id,
+          cameraName: matchedCamera.name,
+          note: !message ? "Kein unterstütztes Bewegungsereignis erkannt." : "Inaktives/abgeschlossenes Kamera-Ereignis ignoriert.",
+        });
+      }
+      if (!motionMonitoringRequested(matchedCamera)) {
+        return NextResponse.json({
+          ok: true,
+          recorded: false,
+          cameraId: matchedCamera.id,
+          cameraName: matchedCamera.name,
+          note: "Bewegungsüberwachung und Benachrichtigungen sind für diese Kamera deaktiviert.",
+        });
+      }
       if (!isMotionScheduleActive(matchedCamera)) {
         return NextResponse.json({
           ok: true,
@@ -78,18 +105,13 @@ export async function POST(req: Request) {
           note: "Kamera-Ereignis liegt außerhalb des aktiven Zeitprofils.",
         });
       }
-      let hasMotionMask = false;
-      try {
-        const regions = JSON.parse(matchedCamera.motionIgnoreRegions || "[]");
-        hasMotionMask = Array.isArray(regions) && regions.length > 0;
-      } catch {}
-      if (hasMotionMask || matchedCamera.objectDetectionEnabled) {
+      if (requiresServerMotionValidation(matchedCamera)) {
         return NextResponse.json({
           ok: true,
           recorded: false,
           cameraId: matchedCamera.id,
           cameraName: matchedCamera.name,
-          note: "Kamera-Ereignis ignoriert; Bildmaske bzw. lokale Objekterkennung wird durch die Server-Bildanalyse ausgewertet.",
+          note: "Kamera-Ereignis ignoriert; Maske, Objekt- oder Kennzeichenfilter werden durch die Server-Bildanalyse ausgewertet.",
         });
       }
       const eventTime = new Date();
@@ -104,7 +126,7 @@ export async function POST(req: Request) {
         },
       });
       // Anti-flood debounce: Don't log if there was an alarm for this camera in the configured cooldown period
-      const cooldownSec = matchedCamera.alarmCooldownSeconds || 30;
+      const cooldownSec = motionCooldownSeconds(matchedCamera);
       const recent = await prisma.alarmLog.findFirst({
         where: {
           cameraId: matchedCamera.id,

@@ -6,6 +6,11 @@ const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
 const { readLicensePlates } = require('./license-plate-reader');
 const { isMotionScheduleActive } = require('./motion-schedule');
+const {
+  motionMonitoringRequested,
+  requiresServerMotionValidation,
+  motionCooldownSeconds,
+} = require('./motion-policy');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
@@ -303,9 +308,8 @@ async function runMonitorCycle() {
     try {
       void onvifEvents.syncCameras(cameras.filter((camera) =>
         Boolean(camera.ip)
-        && parseMotionIgnoreRegions(camera.motionIgnoreRegions).length === 0
-        && !camera.objectDetectionEnabled
-        && !camera.licensePlateRecognitionEnabled
+        && motionMonitoringRequested(camera)
+        && !requiresServerMotionValidation(camera)
         && isMotionScheduleActive(camera)
       ));
     } catch (e) {
@@ -375,7 +379,10 @@ async function fetchMotionEventImage(cam, uris) {
 }
 
 async function detectCameraMotion(cam) {
-  if (cam.status && !cam.status.isOnline) return;
+  if (cam.status && !cam.status.isOnline) {
+    motionFrames.delete(cam.id);
+    return;
+  }
   if (!isMotionScheduleActive(cam)) {
     motionFrames.delete(cam.id);
     return;
@@ -534,6 +541,17 @@ async function detectCameraMotion(cam) {
     let detectedObjects = [];
     let recognizedPlates = [];
     let eventImage = null;
+    if (cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) {
+      if (!objectDetectionEnabled) {
+        const warningKey = `object-disabled:${cam.id}`;
+        const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
+        if (Date.now() - lastLogged > 60_000) {
+          console.warn(`[Object Detection] ${cam.name}: lokale Objekterkennung ist global deaktiviert.`);
+          motionFailureLogTimes.set(warningKey, Date.now());
+        }
+        if (cam.objectDetectionEnabled) return;
+      }
+    }
     if ((cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) && objectDetectionEnabled) {
       try {
         eventImage = await fetchMotionEventImage(cam, uris);
@@ -550,7 +568,7 @@ async function detectCameraMotion(cam) {
         const vehicles = cam.licensePlateRecognitionEnabled
           ? relevantVehicleDetections(result, ignoreRegions, motionEvidence)
           : [];
-        if (cam.objectDetectionEnabled && !selectedObjects.length && !vehicles.length) return;
+        if (cam.objectDetectionEnabled && !selectedObjects.length) return;
         detectedObjects = [...selectedObjects];
         for (const vehicle of vehicles) {
           const duplicate = detectedObjects.some((detection) =>
@@ -580,13 +598,17 @@ async function detectCameraMotion(cam) {
         const warningKey = `object:${cam.id}`;
         const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
         if (Date.now() - lastLogged > 60_000) {
-          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Rohbewegung wird verwendet.`);
+          const fallback = cam.objectDetectionEnabled
+            ? 'Ereignis wird wegen aktivem Objektfilter verworfen.'
+            : 'Rohbewegung wird ohne Kennzeichenauswertung verwendet.';
+          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; ${fallback}`);
           motionFailureLogTimes.set(warningKey, Date.now());
         }
+        if (cam.objectDetectionEnabled) return;
       }
     }
 
-    const cooldownSeconds = Math.max(5, cam.alarmCooldownSeconds || 30);
+    const cooldownSeconds = motionCooldownSeconds(cam);
     const recentEvent = await prisma.alarmLog.findFirst({
       where: {
         cameraId: cam.id,
@@ -635,6 +657,7 @@ async function detectCameraMotion(cam) {
       },
     });
   } catch (error) {
+    motionFrames.delete(cam.id);
     const now = Date.now();
     const lastLogged = motionFailureLogTimes.get(cam.id) || 0;
     if (now - lastLogged > 60_000) {

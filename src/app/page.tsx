@@ -1762,7 +1762,7 @@ export default function CameraWallPage() {
                               <span>
                                 <strong className="block text-xs text-white">Lokale KI-Objekterkennung</strong>
                                 <span className="block text-[10px] leading-relaxed text-slate-400">
-                                  Prüft erkannte Bewegung lokal auf dem Server. Kamerabilder werden nicht an einen KI-Dienst gesendet.
+                                  Nur Bewegungen mit den ausgewählten Objektarten erzeugen Ereignisse. Schlägt die Prüfung fehl, wird kein ungefilterter Alarm ausgelöst.
                                 </span>
                               </span>
                             </label>
