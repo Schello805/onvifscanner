@@ -109,6 +109,19 @@ type ClipSortBy =
 
 type ClipSizeFilter = "all" | "under-25" | "25-100" | "100-500" | "over-500";
 
+const TIMELINE_WINDOWS = [
+  { minutes: 1440, label: "24h" },
+  { minutes: 720, label: "12h" },
+  { minutes: 360, label: "6h" },
+  { minutes: 120, label: "2h" },
+  { minutes: 60, label: "1h" },
+  { minutes: 30, label: "30m" },
+  { minutes: 15, label: "15m" },
+  { minutes: 5, label: "5m" },
+] as const;
+
+type TimelineWindowMinutes = (typeof TIMELINE_WINDOWS)[number]["minutes"];
+
 const cameraNameCollator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
 
 type MotionEvent = {
@@ -350,7 +363,7 @@ export default function PlaybackPage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Timeline Zoom & Event Inspector State
-  const [timelineZoom, setTimelineZoom] = useState<24 | 12 | 6 | 2 | 1>(24);
+  const [timelineWindowMinutes, setTimelineWindowMinutes] = useState<TimelineWindowMinutes>(1440);
   const [timelineStartMin, setTimelineStartMin] = useState<number>(0);
   const [showEventLog, setShowEventLog] = useState<boolean>(false);
   const [eventLogSearch, setEventLogSearch] = useState<string>("");
@@ -998,18 +1011,18 @@ export default function PlaybackPage() {
   };
 
   // Timeline Zoom & Pan Handlers
-  const zoomToWindow = (hours: 24 | 12 | 6 | 2 | 1, centerMin?: number) => {
-    setTimelineZoom(hours);
-    const span = hours * 60;
-    if (hours === 24) {
+  const zoomToWindow = (span: TimelineWindowMinutes, centerMin?: number) => {
+    setTimelineWindowMinutes(span);
+    if (span === 1440) {
       setTimelineStartMin(0);
       return;
     }
-    const currentCenter = timelineStartMin + Math.floor((timelineZoom * 60) / 2);
+    const currentCenter = timelineStartMin + Math.floor(timelineWindowMinutes / 2);
     const target = centerMin !== undefined ? centerMin : currentCenter;
     let start = target - Math.floor(span / 2);
     start = Math.max(0, Math.min(1440 - span, start));
-    start = Math.floor(start / 15) * 15;
+    const snapMinutes = span >= 120 ? 15 : span >= 30 ? 5 : 1;
+    start = Math.floor(start / snapMinutes) * snapMinutes;
     setTimelineStartMin(start);
   };
 
@@ -1025,7 +1038,7 @@ export default function PlaybackPage() {
     const mm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
     const nowMin = hh * 60 + mm;
     const span = 2 * 60;
-    setTimelineZoom(2);
+    setTimelineWindowMinutes(120);
     setTimelineStartMin(Math.max(0, Math.min(1440 - span, nowMin - 90)));
   };
 
@@ -1036,8 +1049,7 @@ export default function PlaybackPage() {
   }, []);
 
   const panTimeline = (deltaMin: number) => {
-    const span = timelineZoom * 60;
-    setTimelineStartMin((prev) => Math.max(0, Math.min(1440 - span, prev + deltaMin)));
+    setTimelineStartMin((prev) => Math.max(0, Math.min(1440 - timelineWindowMinutes, prev + deltaMin)));
   };
 
   const jumpToMotionCluster = () => {
@@ -1047,7 +1059,7 @@ export default function PlaybackPage() {
     }
     const firstEv = motionEvents[0];
     const targetMin = Math.floor(firstEv.totalMinutes);
-    zoomToWindow(2, targetMin);
+    zoomToWindow(120, targetMin);
     toast.success(`Zoom auf Bewegungen um ${firstEv.timeStr} Uhr`);
   };
 
@@ -1082,17 +1094,20 @@ export default function PlaybackPage() {
   };
 
   const focusEventOnTimeline = (ev: MotionEvent) => {
-    zoomToWindow(1, Math.floor(ev.totalMinutes));
+    zoomToWindow(60, Math.floor(ev.totalMinutes));
     toast.info(`Zeitleiste auf ${ev.timeStr} Uhr fokussiert`);
   };
 
   const timelineTicks = useMemo(() => {
-    const span = timelineZoom * 60;
-    let stepMin = 120; // 2 Stunden für 24h
-    if (timelineZoom === 12) stepMin = 60;
-    else if (timelineZoom === 6) stepMin = 30;
-    else if (timelineZoom === 2) stepMin = 15;
-    else if (timelineZoom === 1) stepMin = 5;
+    const span = timelineWindowMinutes;
+    let stepMin = 240;
+    if (span === 720) stepMin = 120;
+    else if (span === 360) stepMin = 60;
+    else if (span === 120) stepMin = 20;
+    else if (span === 60) stepMin = 10;
+    else if (span === 30) stepMin = 5;
+    else if (span === 15) stepMin = 3;
+    else if (span === 5) stepMin = 1;
 
     const ticks: { min: number; label: string; pct: number }[] = [];
     const start = timelineStartMin;
@@ -1106,7 +1121,9 @@ export default function PlaybackPage() {
       ticks.push({ min: m, label, pct });
     }
     return ticks;
-  }, [timelineZoom, timelineStartMin]);
+  }, [timelineWindowMinutes, timelineStartMin]);
+  const timelinePanStepMinutes = Math.min(60, timelineWindowMinutes);
+  const timelinePanLabel = timelinePanStepMinutes === 60 ? "1h" : `${timelinePanStepMinutes}m`;
 
   const filteredMotionEvents = useMemo(() => {
     let list = motionEvents;
@@ -2577,23 +2594,23 @@ export default function PlaybackPage() {
           {/* Zoom Buttons & Timeline Navigation */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Pan Controls if zoomed */}
-            {timelineZoom < 24 && (
+            {timelineWindowMinutes < 1440 && (
               <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 rounded-lg p-0.5">
                 <button
-                  onClick={() => panTimeline(-60)}
+                  onClick={() => panTimeline(-timelinePanStepMinutes)}
                   disabled={timelineStartMin <= 0}
                   className="px-2 py-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none text-xs rounded hover:bg-slate-800 transition"
-                  title="-1 Stunde zurückrollen"
+                  title={`${timelinePanLabel} zurückrollen`}
                 >
-                  ◄ -1h
+                  ◄ -{timelinePanLabel}
                 </button>
                 <button
-                  onClick={() => panTimeline(60)}
-                  disabled={timelineStartMin + timelineZoom * 60 >= 1440}
+                  onClick={() => panTimeline(timelinePanStepMinutes)}
+                  disabled={timelineStartMin + timelineWindowMinutes >= 1440}
                   className="px-2 py-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none text-xs rounded hover:bg-slate-800 transition"
-                  title="+1 Stunde vorrollen"
+                  title={`${timelinePanLabel} vorrollen`}
                 >
-                  +1h ►
+                  +{timelinePanLabel} ►
                 </button>
               </div>
             )}
@@ -2613,20 +2630,20 @@ export default function PlaybackPage() {
             </button>
 
             {/* Zoom-Stufen */}
-            <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/90 p-0.5 text-xs font-medium">
+            <div className="flex flex-wrap items-center rounded-lg border border-slate-800 bg-slate-950/90 p-0.5 text-xs font-medium">
               <span className="text-[11px] text-slate-400 px-2 hidden md:inline">Zoom:</span>
-              {([24, 12, 6, 2, 1] as const).map((z) => (
+              {TIMELINE_WINDOWS.map((option) => (
                 <button
-                  key={z}
-                  onClick={() => zoomToWindow(z)}
-                  className={`px-2.5 py-1 rounded-md font-mono transition-all ${
-                    timelineZoom === z
+                  key={option.minutes}
+                  onClick={() => zoomToWindow(option.minutes)}
+                  className={`px-2 py-1 sm:px-2.5 rounded-md font-mono transition-all ${
+                    timelineWindowMinutes === option.minutes
                       ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
                       : "text-slate-400 hover:text-white"
                   }`}
-                  title={`${z} Stunden Zeitbereich anzeigen`}
+                  title={`${option.label} Zeitbereich anzeigen`}
                 >
-                  {z}h
+                  {option.label}
                 </button>
               ))}
             </div>
@@ -2660,7 +2677,7 @@ export default function PlaybackPage() {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
             const pct = clickX / rect.width;
-            const spanMin = timelineZoom * 60;
+            const spanMin = timelineWindowMinutes;
             const totalMinutes = Math.floor(timelineStartMin + pct * spanMin);
             const hour = Math.floor(totalMinutes / 60) % 24;
             const minute = totalMinutes % 60;
@@ -2673,7 +2690,7 @@ export default function PlaybackPage() {
             });
 
             const hasMotion = motionEvents.some(
-              (ev) => Math.abs(ev.totalMinutes - totalMinutes) <= (timelineZoom <= 2 ? 1 : 4)
+              (ev) => Math.abs(ev.totalMinutes - totalMinutes) <= (timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4)
             );
 
             setHoverScrubber({
@@ -2689,7 +2706,7 @@ export default function PlaybackPage() {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
             const pct = clickX / rect.width;
-            const spanMin = timelineZoom * 60;
+            const spanMin = timelineWindowMinutes;
             const totalMinutes = Math.floor(timelineStartMin + pct * spanMin);
 
             // Find matching clip at this time
@@ -2706,7 +2723,8 @@ export default function PlaybackPage() {
               openClipWithOffset(matchingClip, offset);
             } else {
               const hour = Math.floor(totalMinutes / 60) % 24;
-              const minute = Math.floor((totalMinutes % 60) / 15) * 15;
+              const minuteStep = timelineWindowMinutes <= 30 ? 1 : 15;
+              const minute = Math.floor((totalMinutes % 60) / minuteStep) * minuteStep;
               const formatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
               setTimeFrom(formatted);
             }
@@ -2729,7 +2747,7 @@ export default function PlaybackPage() {
           {/* Active Time Window Highlight if timeFrom / timeTo are set */}
           {timeFrom && (
             (() => {
-              const spanMin = timelineZoom * 60;
+              const spanMin = timelineWindowMinutes;
               const vStart = timelineStartMin;
               const vEnd = timelineStartMin + spanMin;
               const [fH, fM] = timeFrom.split(":").map(Number);
@@ -2755,7 +2773,7 @@ export default function PlaybackPage() {
           {/* Recorded Clips as a sleek modern slim baseline track */}
           {showVideoTrack &&
             timelineClips.map((clip) => {
-              const spanMin = timelineZoom * 60;
+              const spanMin = timelineWindowMinutes;
               const vStart = timelineStartMin;
               const vEnd = timelineStartMin + spanMin;
               const timeParts = clip.timeStr.split(":").map(Number);
@@ -2799,14 +2817,14 @@ export default function PlaybackPage() {
 
           {/* Motion Event Markers Layer */}
           {motionEvents.map((ev) => {
-            const spanMin = timelineZoom * 60;
+            const spanMin = timelineWindowMinutes;
             const vStart = timelineStartMin;
             const vEnd = timelineStartMin + spanMin;
             const evMin = ev.totalMinutes;
 
             if (evMin < vStart || evMin > vEnd) return null;
             const leftPct = ((evMin - vStart) / spanMin) * 100;
-            const isHighZoom = timelineZoom <= 2;
+            const isHighZoom = timelineWindowMinutes <= 120;
 
             return (
               <div
@@ -2845,7 +2863,7 @@ export default function PlaybackPage() {
           {/* Indicator for currently playing clip */}
           {activeClip && (
             (() => {
-              const spanMin = timelineZoom * 60;
+              const spanMin = timelineWindowMinutes;
               const vStart = timelineStartMin;
               const vEnd = timelineStartMin + spanMin;
               const timeParts = activeClip.timeStr.split(":").map(Number);
@@ -2915,7 +2933,7 @@ export default function PlaybackPage() {
         </div>
 
         {/* Mini-Map Overview when zoomed in */}
-        {timelineZoom < 24 && (
+        {timelineWindowMinutes < 1440 && (
           <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center gap-3">
             <span className="text-[10px] text-slate-500 font-mono shrink-0">24h Übersicht:</span>
             <div
@@ -2924,7 +2942,7 @@ export default function PlaybackPage() {
                 const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
                 const pct = clickX / rect.width;
                 const clickMin = Math.floor(pct * 1440);
-                zoomToWindow(timelineZoom, clickMin);
+                zoomToWindow(timelineWindowMinutes, clickMin);
               }}
               className="relative h-2.5 flex-1 rounded bg-slate-950 border border-slate-800 overflow-hidden cursor-pointer"
               title="Klicke auf die 24h-Leiste, um das Zoom-Fenster zu verschieben"
@@ -2934,12 +2952,13 @@ export default function PlaybackPage() {
                 className="absolute top-0 bottom-0 bg-amber-500/40 border border-amber-400 rounded-sm"
                 style={{
                   left: `${(timelineStartMin / 1440) * 100}%`,
-                  width: `${((timelineZoom * 60) / 1440) * 100}%`,
+                  width: `${(timelineWindowMinutes / 1440) * 100}%`,
+                  minWidth: "3px",
                 }}
               />
             </div>
             <span className="text-[10px] text-slate-400 font-mono shrink-0">
-              {formatMinutesToTime(timelineStartMin)} - {formatMinutesToTime(timelineStartMin + timelineZoom * 60)}
+              {formatMinutesToTime(timelineStartMin)} - {formatMinutesToTime(timelineStartMin + timelineWindowMinutes)}
             </span>
           </div>
         )}
