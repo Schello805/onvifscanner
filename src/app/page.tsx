@@ -15,6 +15,18 @@ type CameraImageState = {
   updatedAt?: Date;
 };
 
+type MediaPoint = { x: number; y: number };
+
+type MediaGesture = {
+  startScale: number;
+  startX: number;
+  startY: number;
+  startCenterX: number;
+  startCenterY: number;
+  startDistance: number;
+  moved: boolean;
+};
+
 type ActivityEvent = {
   id: string;
   type: "motion" | "online" | "offline";
@@ -298,8 +310,16 @@ export default function CameraWallPage() {
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
   const mediaTransformRef = useRef(mediaTransform);
-  const mediaPointersRef = useRef(new Map<number, { x: number; y: number }>());
-  const mediaGestureRef = useRef({ distance: 0, centerX: 0, centerY: 0, moved: false });
+  const mediaPointersRef = useRef(new Map<number, MediaPoint>());
+  const mediaGestureRef = useRef<MediaGesture>({
+    startScale: 1,
+    startX: 0,
+    startY: 0,
+    startCenterX: 0,
+    startCenterY: 0,
+    startDistance: 0,
+    moved: false,
+  });
   const cameraControlsTimerRef = useRef<number | null>(null);
 
   const revealCameraControls = useCallback((cameraId: string) => {
@@ -325,7 +345,15 @@ export default function CameraWallPage() {
 
   useEffect(() => {
     mediaPointersRef.current.clear();
-    mediaGestureRef.current = { distance: 0, centerX: 0, centerY: 0, moved: false };
+    mediaGestureRef.current = {
+      startScale: 1,
+      startX: 0,
+      startY: 0,
+      startCenterX: 0,
+      startCenterY: 0,
+      startDistance: 0,
+      moved: false,
+    };
     mediaTransformRef.current = { scale: 1, x: 0, y: 0 };
     setMediaTransform({ scale: 1, x: 0, y: 0 });
   }, [expandedCameraId]);
@@ -859,24 +887,32 @@ export default function CameraWallPage() {
     applyMediaTransform({ scale: nextScale, x: 0, y: 0 });
   }
 
+  function resetMediaGesture(points: MediaPoint[], moved = false) {
+    const current = mediaTransformRef.current;
+    const [first, second] = points;
+    const centerX = second ? (first.x + second.x) / 2 : first?.x ?? 0;
+    const centerY = second ? (first.y + second.y) / 2 : first?.y ?? 0;
+    mediaGestureRef.current = {
+      startScale: current.scale,
+      startX: current.x,
+      startY: current.y,
+      startCenterX: centerX,
+      startCenterY: centerY,
+      startDistance: second ? Math.hypot(second.x - first.x, second.y - first.y) : 0,
+      moved,
+    };
+  }
+
   function handleMediaPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (!expandedCameraId || (event.target as HTMLElement).closest("button, a")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const preserveMoved = mediaPointersRef.current.size > 0 && mediaGestureRef.current.moved;
     mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const points = [...mediaPointersRef.current.values()];
-    if (points.length === 1) {
-      mediaGestureRef.current = { distance: 0, centerX: points[0].x, centerY: points[0].y, moved: false };
-    } else {
-      const [first, second] = points;
-      mediaGestureRef.current.distance = Math.hypot(second.x - first.x, second.y - first.y);
-      mediaGestureRef.current.centerX = (first.x + second.x) / 2;
-      mediaGestureRef.current.centerY = (first.y + second.y) / 2;
-    }
+    resetMediaGesture([...mediaPointersRef.current.values()], preserveMoved);
   }
 
   function handleMediaPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    const previousPoint = mediaPointersRef.current.get(event.pointerId);
-    if (!expandedCameraId || !previousPoint) return;
+    if (!expandedCameraId || !mediaPointersRef.current.has(event.pointerId)) return;
     event.preventDefault();
     mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const points = [...mediaPointersRef.current.values()];
@@ -887,39 +923,45 @@ export default function CameraWallPage() {
       const distance = Math.hypot(second.x - first.x, second.y - first.y);
       const centerX = (first.x + second.x) / 2;
       const centerY = (first.y + second.y) / 2;
-      const scaleFactor = gesture.distance > 0 ? distance / gesture.distance : 1;
-      const current = mediaTransformRef.current;
+      const scaleFactor = gesture.startDistance > 0 ? distance / gesture.startDistance : 1;
+      const scale = Math.min(4, Math.max(1, gesture.startScale * scaleFactor));
+      const rect = event.currentTarget.getBoundingClientRect();
+      const originX = rect.left + rect.width / 2;
+      const originY = rect.top + rect.height / 2;
+      const focalX = (gesture.startCenterX - originX - gesture.startX) / gesture.startScale;
+      const focalY = (gesture.startCenterY - originY - gesture.startY) / gesture.startScale;
       applyMediaTransform({
-        scale: current.scale * scaleFactor,
-        x: current.x + centerX - gesture.centerX,
-        y: current.y + centerY - gesture.centerY,
+        scale,
+        x: centerX - originX - focalX * scale,
+        y: centerY - originY - focalY * scale,
       }, event.currentTarget);
-      gesture.distance = distance;
-      gesture.centerX = centerX;
-      gesture.centerY = centerY;
-      gesture.moved = true;
+      if (
+        Math.abs(distance - gesture.startDistance) > 2
+        || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 2
+      ) {
+        gesture.moved = true;
+      }
       return;
     }
 
-    const deltaX = event.clientX - previousPoint.x;
-    const deltaY = event.clientY - previousPoint.y;
-    if (mediaTransformRef.current.scale > 1 && (Math.abs(deltaX) + Math.abs(deltaY) > 0)) {
-      const current = mediaTransformRef.current;
-      applyMediaTransform({ ...current, x: current.x + deltaX, y: current.y + deltaY }, event.currentTarget);
+    const point = points[0];
+    const deltaX = point.x - gesture.startCenterX;
+    const deltaY = point.y - gesture.startCenterY;
+    if (gesture.startScale > 1 && (gesture.moved || Math.hypot(deltaX, deltaY) > 2)) {
+      applyMediaTransform({
+        scale: gesture.startScale,
+        x: gesture.startX + deltaX,
+        y: gesture.startY + deltaY,
+      }, event.currentTarget);
       gesture.moved = true;
     }
-    gesture.centerX = event.clientX;
-    gesture.centerY = event.clientY;
   }
 
   function handleMediaPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const moved = mediaGestureRef.current.moved;
     mediaPointersRef.current.delete(event.pointerId);
     const remaining = [...mediaPointersRef.current.values()];
-    if (remaining.length === 1) {
-      mediaGestureRef.current.distance = 0;
-      mediaGestureRef.current.centerX = remaining[0].x;
-      mediaGestureRef.current.centerY = remaining[0].y;
-    }
+    resetMediaGesture(remaining, moved);
   }
 
   return (
