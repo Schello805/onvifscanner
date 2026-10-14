@@ -36,6 +36,7 @@ import {
   ZoomOut,
   BarChart3,
   Award,
+  Pencil,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -1495,6 +1496,15 @@ export default function PlaybackPage() {
             </span>
             <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
           </button>
+          {selectedCamera ? (
+            <Link
+              href={`/?editCamera=${encodeURIComponent(selectedCamera.id)}`}
+              className="flex min-h-10 w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-3 text-xs font-semibold text-indigo-200 active:scale-[0.98]"
+            >
+              <Pencil className="h-4 w-4" />
+              Kamera bearbeiten
+            </Link>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -1567,6 +1577,16 @@ export default function PlaybackPage() {
                 ))}
               </select>
             </div>
+            {selectedCamera ? (
+              <Link
+                href={`/?editCamera=${encodeURIComponent(selectedCamera.id)}`}
+                className="hidden items-center gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/20 sm:flex"
+                title={`${selectedCamera.name} bearbeiten`}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Bearbeiten
+              </Link>
+            ) : null}
 
             {/* Date selected in the central calendar */}
             <div className="hidden items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 sm:flex">
@@ -2128,6 +2148,14 @@ export default function PlaybackPage() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                <Link
+                  href={`/?editCamera=${encodeURIComponent(activeClip.cameraId)}`}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                  title={`${activeClip.cameraName} bearbeiten`}
+                  aria-label={`${activeClip.cameraName} bearbeiten`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
                 <button
                   onClick={toggleFullscreen}
                   className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"

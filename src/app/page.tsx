@@ -66,6 +66,36 @@ type CameraEditDraft = {
   storageTargetId: string;
 };
 
+function createCameraEditDraft(camera: WallCamera): CameraEditDraft {
+  return {
+    name: camera.name,
+    snapshotUris: camera.snapshotUris.join("\n"),
+    streamUris: camera.streamUris.join("\n"),
+    username: camera.credentials?.username ?? "",
+    password: camera.credentials?.password ?? "",
+    group: camera.group ?? "",
+    overlayPosition: camera.overlayPosition ?? "top-left",
+    recordEnabled: Boolean(camera.recordEnabled),
+    recordMode: camera.recordMode || (camera.recordEnabled ? "motion" : "off"),
+    recordSegmentMinutes: camera.recordSegmentMinutes || 15,
+    motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
+    motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
+    motionSensitivity: camera.motionSensitivity ?? 80,
+    motionIgnoreRegions: camera.motionIgnoreRegions ?? [],
+    objectDetectionEnabled: Boolean(camera.objectDetectionEnabled),
+    objectDetectionClasses: camera.objectDetectionClasses ?? ["person", "vehicle", "animal"],
+    objectMinConfidence: camera.objectMinConfidence ?? 55,
+    licensePlateRecognitionEnabled: Boolean(camera.licensePlateRecognitionEnabled),
+    motionScheduleEnabled: Boolean(camera.motionScheduleEnabled),
+    motionScheduleStart: camera.motionScheduleStart ?? "22:00",
+    motionScheduleEnd: camera.motionScheduleEnd ?? "06:00",
+    motionScheduleDays: camera.motionScheduleDays ?? [0, 1, 2, 3, 4, 5, 6],
+    motionScheduleSensitivity: camera.motionScheduleSensitivity ?? 90,
+    notificationsEnabled: Boolean(camera.notificationsEnabled),
+    storageTargetId: camera.storageTargetId || "",
+  };
+}
+
 function apiUrl(path: string): string {
   return new URL(path, window.location.origin).toString();
 }
@@ -385,6 +415,25 @@ export default function CameraWallPage() {
   }, []);
 
   useEffect(() => {
+    if (!cameras.length || editingCameraId || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const cameraId = url.searchParams.get("editCamera");
+    if (!cameraId) return;
+
+    url.searchParams.delete("editCamera");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+
+    const camera = cameras.find((entry) => entry.id === cameraId);
+    if (!camera) {
+      toast.error("Die ausgewählte Kamera ist nicht mehr vorhanden.");
+      return;
+    }
+    setEditingCameraId(camera.id);
+    setEditDraft(createCameraEditDraft(camera));
+    setShowPassword(false);
+  }, [cameras, editingCameraId, toast]);
+
+  useEffect(() => {
     const onFullscreenChange = () => {
       const fullscreen = Boolean(document.fullscreenElement);
       setIsFullscreen(fullscreen);
@@ -571,33 +620,7 @@ export default function CameraWallPage() {
 
   function openEditor(camera: WallCamera) {
     setEditingCameraId(camera.id);
-    setEditDraft({
-      name: camera.name,
-      snapshotUris: camera.snapshotUris.join("\n"),
-      streamUris: camera.streamUris.join("\n"),
-      username: camera.credentials?.username ?? "",
-      password: camera.credentials?.password ?? "",
-      group: camera.group ?? "",
-      overlayPosition: camera.overlayPosition ?? "top-left",
-      recordEnabled: Boolean(camera.recordEnabled),
-      recordMode: camera.recordMode || (camera.recordEnabled ? "motion" : "off"),
-      recordSegmentMinutes: camera.recordSegmentMinutes || 15,
-      motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
-      motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
-      motionSensitivity: camera.motionSensitivity ?? 80,
-      motionIgnoreRegions: camera.motionIgnoreRegions ?? [],
-      objectDetectionEnabled: Boolean(camera.objectDetectionEnabled),
-      objectDetectionClasses: camera.objectDetectionClasses ?? ["person", "vehicle", "animal"],
-      objectMinConfidence: camera.objectMinConfidence ?? 55,
-      licensePlateRecognitionEnabled: Boolean(camera.licensePlateRecognitionEnabled),
-      motionScheduleEnabled: Boolean(camera.motionScheduleEnabled),
-      motionScheduleStart: camera.motionScheduleStart ?? "22:00",
-      motionScheduleEnd: camera.motionScheduleEnd ?? "06:00",
-      motionScheduleDays: camera.motionScheduleDays ?? [0, 1, 2, 3, 4, 5, 6],
-      motionScheduleSensitivity: camera.motionScheduleSensitivity ?? 90,
-      notificationsEnabled: Boolean(camera.notificationsEnabled),
-      storageTargetId: camera.storageTargetId || "",
-    });
+    setEditDraft(createCameraEditDraft(camera));
     setShowPassword(false);
   }
 
