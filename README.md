@@ -25,7 +25,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Bewegungsaufnahme mit Ringpuffer**: Speichert auf Wunsch nur relevante Bewegungsclips inklusive konfigurierbarem Vor- und Nachlauf; eine klassische Daueraufnahme bleibt weiterhin auswählbar.
 - **Bewegungsmasken pro Kamera**: Beliebig geformte rote Ignorierbereiche lassen sich mit einem Pinsel direkt auf das Kamerabild malen, damit etwa Bäume, Straßen oder Zeitstempel keine Aufnahme auslösen.
 - **Lokale Objekterkennung**: Optional bestätigt ein lokales COCO-SSD-Modell Bewegungen als Person, Fahrzeug oder Tier, ohne Kamerabilder an einen KI-Dienst zu senden.
-- **Zeitprofile pro Kamera**: Wochentage, Start-/Endzeit und eine eigene Empfindlichkeit begrenzen Bewegungserkennung und Aufnahmen auf gewünschte Zeitfenster.
+- **Flexible Aufnahme-Strategien**: Dauer- und Bewegungsaufnahme lassen sich pro Kamera rund um die Uhr, nur in einem Zeitfenster oder als automatische Kombination konfigurieren.
 - **Tageszusammenfassung**: Die Wiedergabe fasst Ereignisse und erkannte Objekte pro Tag und Kamera zusammen.
 - **Kamera-Protokoll**: Zeigt mit Zeitstempel, welche Kamera eine Bewegung gemeldet hat oder offline beziehungsweise wieder online gegangen ist.
 - **Optionale Status-Pushs**: Meldet Kamera-Wechsel zwischen online und offline auf Wunsch zusätzlich über das konfigurierte ntfy-Topic.
@@ -67,13 +67,21 @@ Die Wall-Konfiguration wird lokal auf dem ONVIFscanner-Server in einer SQLite-Da
 
 Der Schalter `Live` bereitet den ersten gespeicherten RTSP-Stream serverseitig über MediaMTX auf. Das Installationsskript richtet MediaMTX und `ffmpeg` automatisch ein. Vor dem Start prüft ONVIFscanner den Codec; nicht WebRTC-kompatible Streams wie H.265/HEVC bleiben automatisch in der Snapshot-Ansicht. Auf Smartphones werden zum Schutz vor Decoder- und Verbindungsabbrüchen höchstens vier Live-Streams parallel geöffnet. Für WebRTC muss der Client den LXC zusätzlich über UDP-Port `8189` erreichen können. Die Signalisierung läuft über dieselbe ONVIFscanner-Adresse und funktioniert dadurch auch hinter einem HTTP-Reverse-Proxy.
 
-## Aufnahmemodi
+## Aufnahme-Strategien
 
-Für jede gespeicherte Kamera kann unter `Aufnahmen` oder direkt beim Bearbeiten der Kamera einer von drei Modi gewählt werden:
+Für jede gespeicherte Kamera wird unter `Aufnahmen` oder direkt beim Bearbeiten genau eine verständliche Strategie gewählt. Ein separater, missverständlicher Zeitprofil-Schalter ist nicht mehr nötig:
 
 - **Aus**: Es werden keine Videodateien geschrieben.
-- **Nur Bewegung (empfohlen)**: MediaMTX schreibt kurze Segmente in einen temporären Ringpuffer. Bei einem ONVIF-, Webhook- oder optionalen Bildanalyse-Ereignis werden nur die Segmente vom Vorlauf bis zum Ende des Nachlaufs in das Aufnahme-Archiv übernommen. Nicht benötigte Pufferdaten werden automatisch gelöscht.
-- **Daueraufnahme**: Der RTSP-Stream wird wie bisher ohne Unterbrechung in konfigurierbaren Segmenten archiviert.
+- **Nur Bewegung – immer**: Rund um die Uhr werden nur erkannte Bewegungen gespeichert.
+- **Daueraufnahme – immer**: Der RTSP-Stream wird rund um die Uhr in konfigurierbaren Segmenten archiviert.
+- **Nur Bewegung – im Zeitfenster**: Innerhalb des Zeitfensters werden Bewegungen gespeichert, außerhalb wird nicht aufgenommen.
+- **Daueraufnahme – im Zeitfenster**: Innerhalb des Zeitfensters wird dauerhaft aufgenommen, außerhalb nicht.
+- **Im Zeitfenster Bewegung, sonst dauerhaft**: Im Zeitfenster werden nur Bewegungen gespeichert, außerhalb läuft die Daueraufnahme.
+- **Im Zeitfenster dauerhaft, sonst Bewegung**: Im Zeitfenster läuft die Daueraufnahme, außerhalb werden nur Bewegungen gespeichert.
+
+Bei allen zeitgesteuerten Strategien werden Start, Ende und Wochentage direkt darunter eingestellt. Zeitfenster über Mitternacht werden unterstützt. Der Monitor setzt einen Strategiewechsel spätestens innerhalb einer Minute um.
+
+Bei einer Bewegungsstrategie schreibt MediaMTX kurze Segmente in einen temporären Ringpuffer. Bei einem ONVIF-, Webhook- oder optionalen Bildanalyse-Ereignis werden nur die Segmente vom Vorlauf bis zum Ende des Nachlaufs in das Aufnahme-Archiv übernommen. Nicht benötigte Pufferdaten werden automatisch gelöscht.
 
 Standardmäßig nutzt die Bewegungsaufnahme 10 Sekunden Vorlauf und 30 Sekunden Nachlauf. Wiederholte Ereignisse verlängern das persistente Aufnahmefenster automatisch. Nach dem Nachlauf verbindet `ffmpeg` alle zugehörigen Ringpuffer-Segmente verlustfrei zu einem Bewegungsclip. Der temporäre Puffer liegt unter `data/motion-buffer`, Arbeitsdateien unter `data/motion-staging`; nur der fertige Clip wird in das gewählte Speicherziel übernommen. Aufnahmefenster und Ereignis-Zuordnung liegen in SQLite und überstehen dadurch einen Neustart der Anwendung.
 

@@ -22,6 +22,15 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import {
+  RECORDING_MODE_OPTIONS,
+  effectiveRecordingMode,
+  recordingModeLabel,
+  recordingModeUsesContinuous,
+  recordingModeUsesMotion,
+  recordingModeUsesSchedule,
+  type RecordingMode,
+} from "@/lib/recordingPolicy";
 
 type CameraNvrItem = {
   id: string;
@@ -30,11 +39,16 @@ type CameraNvrItem = {
   resolution?: string;
   isOnline: boolean;
   recordEnabled: boolean;
-  recordMode: "off" | "motion" | "continuous";
+  recordMode: RecordingMode;
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
   motionSensitivity: number;
+  motionScheduleEnabled: boolean;
+  motionScheduleStart: string;
+  motionScheduleEnd: string;
+  motionScheduleDays: number[];
+  motionScheduleSensitivity: number;
   motionEventState: "unknown" | "probing" | "active" | "unsupported" | "error";
   motionEventSource?: string | null;
   motionEventLastSeen?: string | null;
@@ -170,11 +184,30 @@ export default function RecordingsConfigPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Fehler beim Ändern des Aufnahmemodus");
       setCameras((prev) => prev.map((camera) => camera.id === cameraId
-        ? { ...camera, recordMode, recordEnabled: recordMode !== "off" }
+        ? {
+            ...camera,
+            recordMode,
+            recordEnabled: recordMode !== "off",
+            motionScheduleEnabled: recordingModeUsesSchedule(recordMode),
+          }
         : camera));
-      toast.success(recordMode === "motion" ? "Bewegungsaufnahme aktiviert." : recordMode === "continuous" ? "Daueraufnahme aktiviert." : "Aufnahme gestoppt.");
+      toast.success(recordMode === "off" ? "Aufnahme gestoppt." : `${recordingModeLabel(recordMode)} aktiviert.`);
     } catch (error: any) {
       toast.error(error.message || "Aufnahmemodus konnte nicht geändert werden.");
+    }
+  };
+
+  const handleUpdateSchedule = async (cameraId: string, patch: Partial<Pick<CameraNvrItem, "motionScheduleStart" | "motionScheduleEnd" | "motionScheduleDays" | "motionScheduleSensitivity">>) => {
+    try {
+      const res = await fetch("/api/nvr/cameras", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: cameraId, ...patch }),
+      });
+      if (!res.ok) throw new Error("Zeitfenster konnte nicht gespeichert werden");
+      setCameras((current) => current.map((camera) => camera.id === cameraId ? { ...camera, ...patch } : camera));
+    } catch (error: any) {
+      toast.error(error.message || "Zeitfenster konnte nicht gespeichert werden.");
     }
   };
 
@@ -651,13 +684,15 @@ export default function RecordingsConfigPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredCameras.map((cam) => {
             const isSelected = selectedCamIds.has(cam.id);
+            const effectiveMode = effectiveRecordingMode(cam);
+            const isRecordingNow = effectiveMode !== "off";
             return (
               <div
                 key={cam.id}
                 className={`flex flex-col justify-between rounded-2xl border bg-slate-900/90 p-4 space-y-3.5 transition-all shadow-md ${
                   isSelected
                     ? "border-indigo-500/80 bg-indigo-950/15"
-                    : cam.recordEnabled
+                    : isRecordingNow
                     ? "border-rose-500/70 ring-2 ring-rose-500/30 bg-gradient-to-b from-rose-950/25 via-slate-900 to-slate-950 shadow-[0_0_22px_rgba(244,63,94,0.2)]"
                     : "border-slate-800/80"
                 }`}
@@ -681,9 +716,9 @@ export default function RecordingsConfigPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm sm:text-base font-bold text-white truncate">{cam.name}</h3>
                         {cam.recordEnabled && (
-                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-rose-500/25 border border-rose-500/50 px-2 py-0.5 text-[10px] font-bold text-rose-200 shadow-sm animate-pulse">
-                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-                            {cam.recordMode === "motion" ? "MOTION" : "REC"}
+                          <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold shadow-sm ${isRecordingNow ? "border-rose-500/50 bg-rose-500/25 text-rose-200 animate-pulse" : "border-slate-600 bg-slate-800 text-slate-400"}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${isRecordingNow ? "bg-rose-500" : "bg-slate-500"}`}></span>
+                            {effectiveMode === "motion" ? "MOTION" : effectiveMode === "continuous" ? "REC" : "ZEITPAUSE"}
                           </span>
                         )}
                         <span
@@ -701,7 +736,7 @@ export default function RecordingsConfigPage() {
                           </span>
                         )}
                       </div>
-                      {cam.recordMode === "motion" && (
+                      {recordingModeUsesMotion(cam.recordMode) && (
                         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-medium">
                           <span
                             className={`rounded-full border px-2 py-0.5 ${
@@ -747,23 +782,26 @@ export default function RecordingsConfigPage() {
                         cam.recordEnabled ? "bg-white" : "bg-rose-500"
                       }`}
                     />
-                    {cam.recordEnabled ? (cam.recordMode === "motion" ? "Motion Aktiv" : "🔴 REC Aktiv") : "Aufnahme Start"}
+                    {cam.recordEnabled ? recordingModeLabel(cam.recordMode) : "Aufnahme Start"}
                   </button>
                 </div>
 
                 {/* Settings Grid */}
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
                   <div className="col-span-2">
-                    <label className="text-[11px] text-slate-400 block mb-1 font-medium">Aufnahmemodus</label>
+                    <label className="text-[11px] text-slate-400 block mb-1 font-medium">Aufnahme-Strategie</label>
                     <select
                       value={cam.recordMode || (cam.recordEnabled ? "motion" : "off")}
                       onChange={(event) => handleUpdateRecordMode(cam.id, event.target.value as CameraNvrItem["recordMode"])}
                       className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500"
                     >
-                      <option value="off">Aus</option>
-                      <option value="motion">Nur Bewegung (empfohlen)</option>
-                      <option value="continuous">Daueraufnahme</option>
+                      {RECORDING_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
                     </select>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      {RECORDING_MODE_OPTIONS.find((option) => option.value === cam.recordMode)?.description}
+                    </p>
                   </div>
                   <div>
                     <label className="text-[11px] text-slate-400 block mb-1 font-medium">
@@ -785,7 +823,74 @@ export default function RecordingsConfigPage() {
                       })}
                     </select>
                   </div>
-                  {cam.recordMode === "motion" && (
+                  {recordingModeUsesSchedule(cam.recordMode) && (
+                    <div className="col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
+                      <div>
+                        <strong className="block text-xs text-white">Zeitfenster</strong>
+                        <span className="text-[10px] leading-relaxed text-slate-400">
+                          Die Strategie wechselt automatisch an den gewählten Tagen. Änderungen werden spätestens innerhalb einer Minute aktiv.
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="grid gap-1 text-[10px] text-slate-400">
+                          Von
+                          <input
+                            type="time"
+                            value={cam.motionScheduleStart || "22:00"}
+                            onChange={(event) => void handleUpdateSchedule(cam.id, { motionScheduleStart: event.target.value })}
+                            className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-[10px] text-slate-400">
+                          Bis
+                          <input
+                            type="time"
+                            value={cam.motionScheduleEnd || "06:00"}
+                            onChange={(event) => void handleUpdateSchedule(cam.id, { motionScheduleEnd: event.target.value })}
+                            className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
+                          />
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"].map((label, day) => {
+                          const days = Array.isArray(cam.motionScheduleDays) ? cam.motionScheduleDays : [];
+                          const selected = days.includes(day);
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => void handleUpdateSchedule(cam.id, {
+                                motionScheduleDays: selected
+                                  ? days.filter((entry) => entry !== day)
+                                  : [...days, day].sort(),
+                              })}
+                              className={`rounded-md border px-1 py-1.5 text-[9px] font-semibold ${selected ? "border-violet-400 bg-violet-500/25 text-violet-200" : "border-slate-800 bg-slate-950 text-slate-500"}`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {recordingModeUsesMotion(cam.recordMode) && (
+                        <label className="grid gap-1">
+                          <span className="flex justify-between text-[11px] text-slate-400">
+                            <span>Empfindlichkeit im Zeitfenster</span>
+                            <strong className="text-violet-300">{cam.motionScheduleSensitivity ?? 90}%</strong>
+                          </span>
+                          <input
+                            type="range"
+                            min={1}
+                            max={100}
+                            value={cam.motionScheduleSensitivity ?? 90}
+                            onChange={(event) => void handleUpdateSchedule(cam.id, { motionScheduleSensitivity: Number(event.target.value) })}
+                            className="motion-sensitivity-range range range-secondary range-sm"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {recordingModeUsesMotion(cam.recordMode) && (
                     <>
                       <div className="col-span-2">
                         <label className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-400">
@@ -843,7 +948,7 @@ export default function RecordingsConfigPage() {
                     </>
                   )}
 
-                  {cam.recordMode === "continuous" && <div>
+                  {recordingModeUsesContinuous(cam.recordMode) && <div>
                     <label className="text-[11px] text-slate-400 block mb-1 font-medium">
                       Segmentlänge
                     </label>

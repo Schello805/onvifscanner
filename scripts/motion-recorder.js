@@ -3,6 +3,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const { effectiveRecordingMode } = require('./recording-policy');
 
 const execFileAsync = promisify(execFile);
 const BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGMENT_SECONDS) || 5);
@@ -41,7 +42,7 @@ class MotionRecorder {
       const queryStartedAt = new Date();
       const [motionCameras, unfinishedRecordings, defaultStorage, events] = await Promise.all([
         this.prisma.camera.findMany({
-          where: { recordMode: 'motion' },
+          where: { recordEnabled: true },
           include: { storageTarget: true },
         }),
         this.prisma.motionRecording.findMany({
@@ -60,7 +61,9 @@ class MotionRecorder {
         }),
       ]);
 
-      const camerasById = new Map(motionCameras.map((camera) => [camera.id, camera]));
+      const camerasById = new Map(motionCameras
+        .filter((camera) => effectiveRecordingMode(camera) === 'motion')
+        .map((camera) => [camera.id, camera]));
       for (const recording of unfinishedRecordings) {
         if (!camerasById.has(recording.cameraId)) camerasById.set(recording.cameraId, recording.camera);
       }
@@ -69,7 +72,7 @@ class MotionRecorder {
         if (this.seenEventIds.has(event.id) || event.motionRecordingId) continue;
         this.seenEventIds.add(event.id);
         const camera = camerasById.get(event.cameraId);
-        if (!camera || camera.recordMode !== 'motion') continue;
+        if (!camera || effectiveRecordingMode(camera, event.timestamp) !== 'motion') continue;
         await this.registerEvent(camera, event);
       }
 

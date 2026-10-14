@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { RECORDING_MODES, normalizeRecordingMode, recordingModeUsesSchedule } from "@/lib/recordingPolicy";
 import fs from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/db";
@@ -104,7 +105,7 @@ export async function GET() {
       model: cam.model ?? undefined,
       resolution: cam.resolution ?? undefined,
       recordEnabled: cam.recordEnabled,
-      recordMode: cam.recordMode,
+      recordMode: normalizeRecordingMode(cam),
       recordSegmentMinutes: cam.recordSegmentMinutes,
       motionPreRollSeconds: cam.motionPreRollSeconds,
       motionPostRollSeconds: cam.motionPostRollSeconds,
@@ -180,7 +181,7 @@ export async function POST(req: Request) {
             model: cam.model,
             resolution: cam.resolution,
             recordEnabled: typeof cam.recordEnabled === "boolean" ? cam.recordEnabled : undefined,
-            recordMode: ['off', 'motion', 'continuous'].includes(cam.recordMode) ? cam.recordMode : undefined,
+            recordMode: RECORDING_MODES.includes(cam.recordMode) ? cam.recordMode : undefined,
             recordSegmentMinutes: typeof cam.recordSegmentMinutes === "number" ? cam.recordSegmentMinutes : undefined,
             motionPreRollSeconds: typeof cam.motionPreRollSeconds === "number" ? cam.motionPreRollSeconds : undefined,
             motionPostRollSeconds: typeof cam.motionPostRollSeconds === "number" ? cam.motionPostRollSeconds : undefined,
@@ -190,7 +191,9 @@ export async function POST(req: Request) {
             objectDetectionClasses: cam.objectDetectionClasses !== undefined ? JSON.stringify(normalizeStringArray(cam.objectDetectionClasses, ["person", "vehicle", "animal"])) : undefined,
             objectMinConfidence: typeof cam.objectMinConfidence === "number" ? Math.min(95, Math.max(20, Math.round(cam.objectMinConfidence))) : undefined,
             licensePlateRecognitionEnabled: typeof cam.licensePlateRecognitionEnabled === "boolean" ? cam.licensePlateRecognitionEnabled : undefined,
-            motionScheduleEnabled: typeof cam.motionScheduleEnabled === "boolean" ? cam.motionScheduleEnabled : undefined,
+            motionScheduleEnabled: RECORDING_MODES.includes(cam.recordMode)
+              ? recordingModeUsesSchedule(cam.recordMode)
+              : (typeof cam.motionScheduleEnabled === "boolean" ? cam.motionScheduleEnabled : undefined),
             motionScheduleStart: cam.motionScheduleStart !== undefined ? normalizeTime(cam.motionScheduleStart, "22:00") : undefined,
             motionScheduleEnd: cam.motionScheduleEnd !== undefined ? normalizeTime(cam.motionScheduleEnd, "06:00") : undefined,
             motionScheduleDays: cam.motionScheduleDays !== undefined ? JSON.stringify(normalizeScheduleDays(cam.motionScheduleDays)) : undefined,
@@ -213,7 +216,7 @@ export async function POST(req: Request) {
             model: cam.model,
             resolution: cam.resolution,
             recordEnabled: Boolean(cam.recordEnabled),
-            recordMode: ['motion', 'continuous'].includes(cam.recordMode) ? cam.recordMode : (cam.recordEnabled ? 'motion' : 'off'),
+            recordMode: RECORDING_MODES.includes(cam.recordMode) && cam.recordMode !== "off" ? cam.recordMode : (cam.recordEnabled ? 'motion' : 'off'),
             recordSegmentMinutes: typeof cam.recordSegmentMinutes === "number" ? cam.recordSegmentMinutes : 15,
             motionPreRollSeconds: typeof cam.motionPreRollSeconds === "number" ? cam.motionPreRollSeconds : 10,
             motionPostRollSeconds: typeof cam.motionPostRollSeconds === "number" ? cam.motionPostRollSeconds : 30,
@@ -223,7 +226,7 @@ export async function POST(req: Request) {
             objectDetectionClasses: JSON.stringify(normalizeStringArray(cam.objectDetectionClasses, ["person", "vehicle", "animal"])),
             objectMinConfidence: typeof cam.objectMinConfidence === "number" ? Math.min(95, Math.max(20, Math.round(cam.objectMinConfidence))) : 55,
             licensePlateRecognitionEnabled: Boolean(cam.licensePlateRecognitionEnabled),
-            motionScheduleEnabled: Boolean(cam.motionScheduleEnabled),
+            motionScheduleEnabled: recordingModeUsesSchedule(cam.recordMode),
             motionScheduleStart: normalizeTime(cam.motionScheduleStart, "22:00"),
             motionScheduleEnd: normalizeTime(cam.motionScheduleEnd, "06:00"),
             motionScheduleDays: JSON.stringify(normalizeScheduleDays(cam.motionScheduleDays)),

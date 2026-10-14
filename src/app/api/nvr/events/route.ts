@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { effectiveRecordingMode } from "@/lib/recordingPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,16 @@ export async function GET(req: Request) {
       take: 2000,
       include: {
         camera: {
-          select: { id: true, name: true, recordEnabled: true, recordMode: true },
+          select: {
+            id: true,
+            name: true,
+            recordEnabled: true,
+            recordMode: true,
+            motionScheduleEnabled: true,
+            motionScheduleStart: true,
+            motionScheduleEnd: true,
+            motionScheduleDays: true,
+          },
         },
         motionRecording: {
           select: { id: true, status: true, filePath: true, startedAt: true, endedAt: true, error: true },
@@ -59,8 +69,9 @@ export async function GET(req: Request) {
       const recordingPath = ev.motionRecording?.status === "ready" ? ev.motionRecording.filePath : null;
       const clipId = recordingPath ? Buffer.from(recordingPath).toString("base64url") : null;
 
+      const effectiveMode = ev.camera ? effectiveRecordingMode(ev.camera, d) : "off";
       const recordingStatus = ev.motionRecording?.status
-        ?? (ev.camera?.recordMode === "motion" ? "pending" : ev.camera?.recordMode === "continuous" ? "continuous" : "disabled");
+        ?? (effectiveMode === "motion" ? "pending" : effectiveMode === "continuous" ? "continuous" : "disabled");
 
       return {
         id: ev.id,

@@ -1,3 +1,8 @@
+const {
+  effectiveRecordingMode,
+  normalizeRecordingMode,
+  recordingModeUsesSchedule,
+} = require('./recording-policy');
 const { isMotionScheduleActive } = require('./motion-schedule');
 
 function parseIgnoreRegions(value) {
@@ -9,12 +14,13 @@ function parseIgnoreRegions(value) {
   }
 }
 
-function motionMonitoringRequested(camera) {
-  const recordMode = camera?.recordMode;
-  return recordMode === 'motion'
-    || recordMode === 'continuous'
-    || (Boolean(camera?.recordEnabled) && recordMode !== 'off')
-    || Boolean(camera?.notificationsEnabled);
+function motionMonitoringRequested(camera, date = new Date()) {
+  if (effectiveRecordingMode(camera, date) !== 'off') return true;
+  if (!camera?.notificationsEnabled) return false;
+
+  const mode = normalizeRecordingMode(camera);
+  return !recordingModeUsesSchedule(mode)
+    || isMotionScheduleActive({ ...camera, motionScheduleEnabled: true }, date);
 }
 
 function requiresServerMotionValidation(camera) {
@@ -28,8 +34,7 @@ function motionCooldownSeconds(camera) {
 }
 
 function shouldAcceptExternalMotion(camera, date = new Date()) {
-  return motionMonitoringRequested(camera)
-    && isMotionScheduleActive(camera, date)
+  return motionMonitoringRequested(camera, date)
     && !requiresServerMotionValidation(camera);
 }
 

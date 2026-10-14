@@ -1,3 +1,8 @@
+import {
+  effectiveRecordingMode,
+  normalizeRecordingMode,
+  recordingModeUsesSchedule,
+} from "@/lib/recordingPolicy";
 import { isMotionScheduleActive } from "@/lib/motionSchedule";
 
 type MotionPolicyCamera = {
@@ -23,11 +28,13 @@ function parseIgnoreRegions(value: MotionPolicyCamera["motionIgnoreRegions"]): u
   }
 }
 
-export function motionMonitoringRequested(camera: MotionPolicyCamera): boolean {
-  return camera.recordMode === "motion"
-    || camera.recordMode === "continuous"
-    || (Boolean(camera.recordEnabled) && camera.recordMode !== "off")
-    || Boolean(camera.notificationsEnabled);
+export function motionMonitoringRequested(camera: MotionPolicyCamera, date = new Date()): boolean {
+  if (effectiveRecordingMode(camera, date) !== "off") return true;
+  if (!camera.notificationsEnabled) return false;
+
+  const mode = normalizeRecordingMode(camera);
+  return !recordingModeUsesSchedule(mode)
+    || isMotionScheduleActive({ ...camera, motionScheduleEnabled: true }, date);
 }
 
 export function requiresServerMotionValidation(camera: MotionPolicyCamera): boolean {
@@ -41,7 +48,6 @@ export function motionCooldownSeconds(camera: MotionPolicyCamera): number {
 }
 
 export function shouldAcceptExternalMotion(camera: MotionPolicyCamera, date = new Date()): boolean {
-  return motionMonitoringRequested(camera)
-    && isMotionScheduleActive(camera, date)
+  return motionMonitoringRequested(camera, date)
     && !requiresServerMotionValidation(camera);
 }

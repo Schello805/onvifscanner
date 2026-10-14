@@ -3,12 +3,13 @@ import { isPrivateIpv4 } from "@/lib/net/ip";
 import path from "path";
 import fs from "fs";
 import { ensureDefaultStorageTarget } from "./storage";
+import { effectiveRecordingMode, type RecordingMode } from "@/lib/recordingPolicy";
 
 const MEDIA_MTX_API = process.env.MEDIAMTX_API_URL ?? "http://127.0.0.1:9997";
 
 export type CameraNvrConfig = {
   recordEnabled: boolean;
-  recordMode: "off" | "motion" | "continuous";
+  recordMode: RecordingMode;
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
@@ -16,11 +17,6 @@ export type CameraNvrConfig = {
 };
 
 const MOTION_BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGMENT_SECONDS) || 5);
-
-function effectiveRecordMode(camera: { recordMode?: string | null; recordEnabled: boolean }) {
-  if (camera.recordMode === "motion" || camera.recordMode === "continuous") return camera.recordMode;
-  return camera.recordEnabled ? "motion" : "off";
-}
 
 /**
  * Builds the MediaMTX RTSP source URL with credentials for a camera.
@@ -102,7 +98,7 @@ export async function syncCameraWithMediaMtx(cameraId: string): Promise<{ ok: bo
       }
     }
 
-    const recordMode = effectiveRecordMode(camera);
+    const recordMode = effectiveRecordingMode(camera);
     const recordingActive = recordMode !== "off";
     const motionBufferRoot = process.env.MOTION_BUFFER_DIR || path.join(process.cwd(), "data", "motion-buffer");
     const motionBufferDir = path.join(motionBufferRoot, camera.id);

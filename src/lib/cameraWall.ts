@@ -1,4 +1,5 @@
 import type { Credentials, ScanResult } from "@/lib/types";
+import type { RecordingMode } from "@/lib/recordingPolicy";
 
 export const CAMERA_WALL_STORAGE_KEY = "onvifscanner.camera-wall.v1";
 
@@ -18,7 +19,7 @@ export type WallCamera = {
   model?: string;
   resolution?: string;
   recordEnabled?: boolean;
-  recordMode?: "off" | "motion" | "continuous";
+  recordMode?: RecordingMode;
   recordSegmentMinutes?: number;
   motionPreRollSeconds?: number;
   motionPostRollSeconds?: number;

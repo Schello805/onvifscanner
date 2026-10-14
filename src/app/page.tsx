@@ -6,6 +6,15 @@ import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type MotionRegion, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+import {
+  RECORDING_MODE_OPTIONS,
+  effectiveRecordingMode,
+  normalizeRecordingMode,
+  recordingModeUsesContinuous,
+  recordingModeUsesMotion,
+  recordingModeUsesSchedule,
+  type RecordingMode,
+} from "@/lib/recordingPolicy";
 
 type CameraImageState = {
   src?: string;
@@ -47,7 +56,7 @@ type CameraEditDraft = {
   group: string;
   overlayPosition: "top-left" | "top-right" | "bottom-left" | "bottom-right";
   recordEnabled: boolean;
-  recordMode: "off" | "motion" | "continuous";
+  recordMode: RecordingMode;
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
@@ -67,6 +76,7 @@ type CameraEditDraft = {
 };
 
 function createCameraEditDraft(camera: WallCamera): CameraEditDraft {
+  const recordMode = normalizeRecordingMode(camera);
   return {
     name: camera.name,
     snapshotUris: camera.snapshotUris.join("\n"),
@@ -76,7 +86,7 @@ function createCameraEditDraft(camera: WallCamera): CameraEditDraft {
     group: camera.group ?? "",
     overlayPosition: camera.overlayPosition ?? "top-left",
     recordEnabled: Boolean(camera.recordEnabled),
-    recordMode: camera.recordMode || (camera.recordEnabled ? "motion" : "off"),
+    recordMode,
     recordSegmentMinutes: camera.recordSegmentMinutes || 15,
     motionPreRollSeconds: camera.motionPreRollSeconds ?? 10,
     motionPostRollSeconds: camera.motionPostRollSeconds ?? 30,
@@ -86,7 +96,7 @@ function createCameraEditDraft(camera: WallCamera): CameraEditDraft {
     objectDetectionClasses: camera.objectDetectionClasses ?? ["person", "vehicle", "animal"],
     objectMinConfidence: camera.objectMinConfidence ?? 55,
     licensePlateRecognitionEnabled: Boolean(camera.licensePlateRecognitionEnabled),
-    motionScheduleEnabled: Boolean(camera.motionScheduleEnabled),
+    motionScheduleEnabled: recordingModeUsesSchedule(recordMode),
     motionScheduleStart: camera.motionScheduleStart ?? "22:00",
     motionScheduleEnd: camera.motionScheduleEnd ?? "06:00",
     motionScheduleDays: camera.motionScheduleDays ?? [0, 1, 2, 3, 4, 5, 6],
@@ -716,6 +726,7 @@ export default function CameraWallPage() {
     if (!editingCameraId || !editDraft) return;
     const lines = (value: string) => Array.from(new Set(value.split("\n").map((line) => line.trim()).filter(Boolean)));
     const currentCam = cameras.find((camera) => camera.id === editingCameraId);
+    const motionScheduleEnabled = recordingModeUsesSchedule(editDraft.recordMode);
     const next = cameras.map((camera) => camera.id === editingCameraId ? {
       ...camera,
       name: editDraft.name.trim() || `Kamera ${camera.ip}`,
@@ -737,7 +748,7 @@ export default function CameraWallPage() {
       objectDetectionClasses: editDraft.objectDetectionClasses,
       objectMinConfidence: editDraft.objectMinConfidence,
       licensePlateRecognitionEnabled: editDraft.licensePlateRecognitionEnabled,
-      motionScheduleEnabled: editDraft.motionScheduleEnabled,
+      motionScheduleEnabled,
       motionScheduleStart: editDraft.motionScheduleStart,
       motionScheduleEnd: editDraft.motionScheduleEnd,
       motionScheduleDays: editDraft.motionScheduleDays,
@@ -762,7 +773,7 @@ export default function CameraWallPage() {
         objectDetectionClasses: editDraft.objectDetectionClasses,
         objectMinConfidence: editDraft.objectMinConfidence,
         licensePlateRecognitionEnabled: editDraft.licensePlateRecognitionEnabled,
-        motionScheduleEnabled: editDraft.motionScheduleEnabled,
+        motionScheduleEnabled,
         motionScheduleStart: editDraft.motionScheduleStart,
         motionScheduleEnd: editDraft.motionScheduleEnd,
         motionScheduleDays: editDraft.motionScheduleDays,
@@ -999,13 +1010,13 @@ export default function CameraWallPage() {
             <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
               {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
             </span>
-            {cameras.filter((c) => c.recordEnabled).length > 0 ? (
+            {cameras.filter((camera) => effectiveRecordingMode(camera) !== "off").length > 0 ? (
               <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300 shadow-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                 </span>
-                <span>{cameras.filter((c) => c.recordEnabled).length} REC aktiv</span>
+                <span>{cameras.filter((camera) => effectiveRecordingMode(camera) !== "off").length} REC aktiv</span>
                 <button
                   type="button"
                   disabled={batchRecordLoading}
@@ -1193,6 +1204,8 @@ export default function CameraWallPage() {
             const image = images[camera.id];
             const isLive = liveCameras.has(camera.id);
             const isOffline = camera.status && camera.status.isOnline === false;
+            const effectiveRecordMode = effectiveRecordingMode(camera);
+            const isRecordingNow = effectiveRecordMode !== "off";
             return (
               <article 
                 key={camera.id} 
@@ -1226,7 +1239,7 @@ export default function CameraWallPage() {
                 className={`camera-card group overflow-hidden transition-all flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl ${camera.recordEnabled ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                    : `relative rounded-2xl border bg-black shadow-2xl ${isRecordingNow ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
                 <div 
@@ -1390,13 +1403,13 @@ export default function CameraWallPage() {
                       ${camera.overlayPosition === "bottom-right" ? "bottom-0 right-0" : ""}
                     `}>
                       <span className="truncate">{camera.name}</span>
-                      {camera.recordEnabled && (
+                      {isRecordingNow && (
                         <span className="shrink-0 inline-flex items-center gap-1 rounded bg-rose-500/25 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 text-[9px] font-bold leading-tight">
                           <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
                           </span>
-                          REC
+                          {effectiveRecordMode === "motion" ? "MOTION" : "REC"}
                         </span>
                       )}
                       {isOffline ? <span className="shrink-0 rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider font-bold leading-tight">Offline</span> : null}
@@ -1754,35 +1767,30 @@ export default function CameraWallPage() {
                 </label>
 
                 <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3 flex flex-col gap-2.5">
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editDraft.recordMode !== "off"}
-                      onChange={(e) => setEditDraft({ ...editDraft, recordEnabled: e.target.checked, recordMode: e.target.checked ? "motion" : "off" })}
-                      className="rounded border-slate-700 bg-slate-900 text-rose-600 focus:ring-0"
-                    />
-                    <div className="min-w-0">
-                      <span className="font-semibold text-white block text-xs">Aufnahme aktivieren</span>
-                      <span className="text-[10px] text-slate-400 block truncate">Standardmäßig nur erkannte Bewegungen speichern</span>
-                    </div>
+                  <label className="grid gap-1.5">
+                    <span className="font-semibold text-white text-xs">Aufnahme-Strategie</span>
+                    <select
+                      value={editDraft.recordMode}
+                      onChange={(event) => {
+                        const recordMode = event.target.value as RecordingMode;
+                        setEditDraft({
+                          ...editDraft,
+                          recordMode,
+                          recordEnabled: recordMode !== "off",
+                          motionScheduleEnabled: recordingModeUsesSchedule(recordMode),
+                        });
+                      }}
+                      className="glass-input rounded-lg bg-slate-900 px-2.5 py-2 text-xs text-white outline-none"
+                    >
+                      {RECORDING_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <span className="text-[10px] leading-relaxed text-slate-400">
+                      {RECORDING_MODE_OPTIONS.find((option) => option.value === editDraft.recordMode)?.description}
+                    </span>
                   </label>
 
                   {editDraft.recordEnabled && (
                     <div className="grid gap-2 sm:grid-cols-2 pt-2 border-t border-rose-500/20 text-xs">
-                      <label className="grid gap-1 sm:col-span-2">
-                        <span className="text-slate-400 text-[11px]">Aufnahmemodus:</span>
-                        <select
-                          value={editDraft.recordMode}
-                          onChange={(e) => {
-                            const recordMode = e.target.value as CameraEditDraft["recordMode"];
-                            setEditDraft({ ...editDraft, recordMode, recordEnabled: recordMode !== "off" });
-                          }}
-                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs outline-none bg-slate-900 text-white"
-                        >
-                          <option value="motion">Nur Bewegung (empfohlen)</option>
-                          <option value="continuous">Daueraufnahme</option>
-                        </select>
-                      </label>
                       <label className="grid gap-1">
                         <span className="text-slate-400 text-[11px]">Speicherziel:</span>
                         <select
@@ -1798,7 +1806,53 @@ export default function CameraWallPage() {
                           ))}
                         </select>
                       </label>
-                      {editDraft.recordMode === "motion" && (
+                      {recordingModeUsesSchedule(editDraft.recordMode) ? (
+                        <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
+                          <div>
+                            <strong className="block text-xs text-white">Zeitfenster</strong>
+                            <span className="block text-[10px] leading-relaxed text-slate-400">
+                              Die gewählte Aufnahme-Strategie wechselt an diesen Tagen automatisch am Anfang und Ende des Zeitfensters.
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 border-t border-violet-500/15 pt-3">
+                            <label className="grid gap-1 text-[10px] text-slate-400">
+                              Von
+                              <input type="time" value={editDraft.motionScheduleStart} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleStart: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
+                            </label>
+                            <label className="grid gap-1 text-[10px] text-slate-400">
+                              Bis
+                              <input type="time" value={editDraft.motionScheduleEnd} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleEnd: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1">
+                            {["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"].map((label, day) => (
+                              <button
+                                key={label}
+                                type="button"
+                                onClick={() => setEditDraft({
+                                  ...editDraft,
+                                  motionScheduleDays: editDraft.motionScheduleDays.includes(day)
+                                    ? editDraft.motionScheduleDays.filter((entry) => entry !== day)
+                                    : [...editDraft.motionScheduleDays, day].sort(),
+                                })}
+                                className={`rounded-md border px-1 py-1.5 text-[9px] font-semibold ${editDraft.motionScheduleDays.includes(day) ? "border-violet-400 bg-violet-500/25 text-violet-200" : "border-white/10 bg-slate-950/60 text-slate-500"}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {recordingModeUsesMotion(editDraft.recordMode) ? (
+                            <label className="grid gap-1">
+                              <span className="flex justify-between text-[11px] text-slate-400">
+                                <span>Empfindlichkeit im Zeitfenster</span>
+                                <strong className="text-violet-300">{editDraft.motionScheduleSensitivity}%</strong>
+                              </span>
+                              <input type="range" min={1} max={100} value={editDraft.motionScheduleSensitivity} onInput={(event) => setEditDraft({ ...editDraft, motionScheduleSensitivity: Number(event.currentTarget.value) })} className="range range-secondary range-sm" />
+                            </label>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {recordingModeUsesMotion(editDraft.recordMode) && (
                         <>
                           <label className="grid gap-1 sm:col-span-2">
                             <span className="flex items-center justify-between text-slate-400 text-[11px]">
@@ -1903,67 +1957,6 @@ export default function CameraWallPage() {
                               </span>
                             </label>
                           </div>
-                          <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
-                            <label className="flex cursor-pointer items-start gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={editDraft.motionScheduleEnabled}
-                                onChange={(event) => setEditDraft({ ...editDraft, motionScheduleEnabled: event.target.checked })}
-                                className="mt-0.5 rounded border-slate-700 bg-slate-900 text-violet-500 focus:ring-0"
-                              />
-                              <span>
-                                <strong className="block text-xs text-white">Zeitprofil für Bewegung</strong>
-                                <span className="block text-[10px] leading-relaxed text-slate-400">
-                                  Außerhalb des Zeitfensters werden keine Bewegungsereignisse oder Bewegungsclips erzeugt.
-                                </span>
-                              </span>
-                            </label>
-                            {editDraft.motionScheduleEnabled && (
-                              <div className="space-y-3 border-t border-violet-500/15 pt-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <label className="grid gap-1 text-[10px] text-slate-400">
-                                    Von
-                                    <input type="time" value={editDraft.motionScheduleStart} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleStart: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
-                                  </label>
-                                  <label className="grid gap-1 text-[10px] text-slate-400">
-                                    Bis
-                                    <input type="time" value={editDraft.motionScheduleEnd} onChange={(event) => setEditDraft({ ...editDraft, motionScheduleEnd: event.target.value })} className="glass-input rounded-lg px-2 py-1.5 text-xs text-white" />
-                                  </label>
-                                </div>
-                                <div className="grid grid-cols-7 gap-1">
-                                  {["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"].map((label, day) => (
-                                    <button
-                                      key={label}
-                                      type="button"
-                                      onClick={() => setEditDraft({
-                                        ...editDraft,
-                                        motionScheduleDays: editDraft.motionScheduleDays.includes(day)
-                                          ? editDraft.motionScheduleDays.filter((entry) => entry !== day)
-                                          : [...editDraft.motionScheduleDays, day].sort(),
-                                      })}
-                                      className={`rounded-md border px-1 py-1.5 text-[9px] font-semibold ${editDraft.motionScheduleDays.includes(day) ? "border-violet-400 bg-violet-500/25 text-violet-200" : "border-white/10 bg-slate-950/60 text-slate-500"}`}
-                                    >
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
-                                <label className="grid gap-1">
-                                  <span className="flex justify-between text-[11px] text-slate-400">
-                                    <span>Empfindlichkeit im Zeitfenster</span>
-                                    <strong className="text-violet-300">{editDraft.motionScheduleSensitivity}%</strong>
-                                  </span>
-                                  <input
-                                    type="range"
-                                    min={1}
-                                    max={100}
-                                    value={editDraft.motionScheduleSensitivity}
-                                    onInput={(event) => setEditDraft({ ...editDraft, motionScheduleSensitivity: Number(event.currentTarget.value) })}
-                                    className="range range-secondary range-sm"
-                                  />
-                                </label>
-                              </div>
-                            )}
-                          </div>
                           <label className="grid gap-1">
                             <span className="text-slate-400 text-[11px]">Vorlauf:</span>
                             <select value={editDraft.motionPreRollSeconds} onChange={(e) => setEditDraft({ ...editDraft, motionPreRollSeconds: Number(e.target.value) })} className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white">
@@ -1979,7 +1972,7 @@ export default function CameraWallPage() {
                         </>
                       )}
 
-                      {editDraft.recordMode === "continuous" && <label className="grid gap-1">
+                      {recordingModeUsesContinuous(editDraft.recordMode) && <label className="grid gap-1">
                         <span className="text-slate-400 text-[11px]">Segmentlänge:</span>
                         <select
                           value={editDraft.recordSegmentMinutes}

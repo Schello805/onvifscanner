@@ -6,6 +6,7 @@ const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
 const { readLicensePlates } = require('./license-plate-reader');
 const { isMotionScheduleActive } = require('./motion-schedule');
+const { effectiveRecordingMode } = require('./recording-policy');
 const {
   motionMonitoringRequested,
   requiresServerMotionValidation,
@@ -310,7 +311,6 @@ async function runMonitorCycle() {
         Boolean(camera.ip)
         && motionMonitoringRequested(camera)
         && !requiresServerMotionValidation(camera)
-        && isMotionScheduleActive(camera)
       ));
     } catch (e) {
       // quiet
@@ -330,7 +330,7 @@ async function runMotionDetection() {
     const cameras = await prisma.camera.findMany({
       where: {
         OR: [
-          { recordMode: { in: ['motion', 'continuous'] } },
+          { recordEnabled: true },
           { notificationsEnabled: true },
         ],
       },
@@ -383,7 +383,7 @@ async function detectCameraMotion(cam) {
     motionFrames.delete(cam.id);
     return;
   }
-  if (!isMotionScheduleActive(cam)) {
+  if (!motionMonitoringRequested(cam)) {
     motionFrames.delete(cam.id);
     return;
   }
@@ -456,7 +456,7 @@ async function detectCameraMotion(cam) {
     let changedPixels = 0;
     let differenceSum = 0;
     const changedPixelMap = new Uint8Array(info.width * info.height);
-    const configuredSensitivity = cam.motionScheduleEnabled
+    const configuredSensitivity = cam.motionScheduleEnabled && isMotionScheduleActive(cam)
       ? cam.motionScheduleSensitivity
       : cam.motionSensitivity;
     const sensitivity = Math.min(100, Math.max(1, Number(configuredSensitivity) || 80));
@@ -767,9 +767,7 @@ async function syncMediaMtxPaths(cameras) {
            } catch(e) {}
         }
 
-        const recordMode = cam.recordMode === 'continuous' || cam.recordMode === 'motion'
-          ? cam.recordMode
-          : (cam.recordEnabled ? 'motion' : 'off');
+        const recordMode = effectiveRecordingMode(cam);
         const recordingActive = recordMode !== 'off';
         let recordPath = null;
         let segmentDuration = "15m";

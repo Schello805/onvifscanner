@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
-import { isMotionScheduleActive } from "@/lib/motionSchedule";
 import {
   motionCooldownSeconds,
   motionMonitoringRequested,
@@ -94,15 +93,6 @@ export async function POST(req: Request) {
           cameraId: matchedCamera.id,
           cameraName: matchedCamera.name,
           note: "Bewegungsüberwachung und Benachrichtigungen sind für diese Kamera deaktiviert.",
-        });
-      }
-      if (!isMotionScheduleActive(matchedCamera)) {
-        return NextResponse.json({
-          ok: true,
-          recorded: false,
-          cameraId: matchedCamera.id,
-          cameraName: matchedCamera.name,
-          note: "Kamera-Ereignis liegt außerhalb des aktiven Zeitprofils.",
         });
       }
       if (requiresServerMotionValidation(matchedCamera)) {

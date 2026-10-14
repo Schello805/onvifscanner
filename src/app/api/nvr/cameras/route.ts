@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { syncCameraWithMediaMtx } from "@/lib/nvr/manager";
+import { RECORDING_MODES, normalizeRecordingMode, recordingModeUsesSchedule } from "@/lib/recordingPolicy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET() {
       resolution: c.resolution,
       isOnline: c.status?.isOnline ?? false,
       recordEnabled: c.recordEnabled,
-      recordMode: c.recordMode,
+      recordMode: normalizeRecordingMode(c),
       recordSegmentMinutes: c.recordSegmentMinutes,
       motionPreRollSeconds: c.motionPreRollSeconds,
       motionPostRollSeconds: c.motionPostRollSeconds,
@@ -92,11 +93,12 @@ export async function PATCH(req: Request) {
 
     if (body.recordMode !== undefined) {
       const recordMode = String(body.recordMode);
-      if (!['off', 'motion', 'continuous'].includes(recordMode)) {
+      if (!RECORDING_MODES.includes(recordMode as (typeof RECORDING_MODES)[number])) {
         return NextResponse.json({ error: "Ungültiger Aufnahmemodus." }, { status: 400 });
       }
       updateData.recordMode = recordMode;
       updateData.recordEnabled = recordMode !== 'off';
+      updateData.motionScheduleEnabled = recordingModeUsesSchedule(recordMode);
     } else if (body.recordEnabled !== undefined) {
       updateData.recordEnabled = Boolean(body.recordEnabled);
       updateData.recordMode = body.recordEnabled ? 'motion' : 'off';
@@ -138,7 +140,9 @@ export async function PATCH(req: Request) {
     if (body.licensePlateRecognitionEnabled !== undefined) {
       updateData.licensePlateRecognitionEnabled = Boolean(body.licensePlateRecognitionEnabled);
     }
-    if (body.motionScheduleEnabled !== undefined) updateData.motionScheduleEnabled = Boolean(body.motionScheduleEnabled);
+    if (body.recordMode === undefined && body.motionScheduleEnabled !== undefined) {
+      updateData.motionScheduleEnabled = Boolean(body.motionScheduleEnabled);
+    }
     if (body.motionScheduleStart !== undefined && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.motionScheduleStart))) updateData.motionScheduleStart = String(body.motionScheduleStart);
     if (body.motionScheduleEnd !== undefined && /^([01]\d|2[0-3]):[0-5]\d$/.test(String(body.motionScheduleEnd))) updateData.motionScheduleEnd = String(body.motionScheduleEnd);
     if (body.motionScheduleDays !== undefined) {
