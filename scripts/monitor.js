@@ -8,6 +8,10 @@ const { readLicensePlates } = require('./license-plate-reader');
 const { isMotionScheduleActive } = require('./motion-schedule');
 const { effectiveRecordingMode } = require('./recording-policy');
 const {
+  relevantDetections,
+  objectDetectionMessage,
+} = require('./object-detection-policy');
+const {
   motionMonitoringRequested,
   requiresServerMotionValidation,
   motionCooldownSeconds,
@@ -27,7 +31,7 @@ const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
 const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
 const motionConfirmationFrames = Math.max(1, Math.min(4, Number(process.env.MOTION_CONFIRMATION_FRAMES) || 2));
-const motionSourceWidth = Math.max(256, Math.min(960, Number(process.env.MOTION_SOURCE_WIDTH) || 640));
+const motionSourceWidth = Math.max(256, Math.min(1280, Number(process.env.MOTION_SOURCE_WIDTH) || 768));
 const motionAnalysisWidth = Math.max(160, Math.min(512, Number(process.env.MOTION_ANALYSIS_WIDTH) || 192));
 const motionAnalysisHeight = Math.round(motionAnalysisWidth * 9 / 16);
 const autoDiscoveryEnabled = process.env.ENABLE_AUTO_DISCOVERY === 'true';
@@ -40,81 +44,6 @@ let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
 let motionSensitivityDefaultsMigrated = false;
-
-const objectClassGroups = {
-  person: new Set(['person']),
-  vehicle: new Set(['bicycle', 'car', 'motorcycle', 'bus', 'truck', 'train', 'boat']),
-  animal: new Set(['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe']),
-};
-const objectGroupLabels = { person: 'Person', vehicle: 'Fahrzeug', animal: 'Tier' };
-
-function parseObjectGroups(value) {
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-    return Array.isArray(parsed) ? parsed.filter((group) => objectClassGroups[group]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function pointIsIgnored(x, y, ignoreRegions) {
-  return ignoreRegions.some((region) =>
-    x >= region.x && x <= region.x + region.width
-    && y >= region.y && y <= region.y + region.height
-  );
-}
-
-function detectionOverlapsMotion(prediction, result, motionEvidence) {
-  if (!motionEvidence?.changedPixels?.length) return true;
-  const [x, y, width, height] = prediction.bbox || [];
-  const left = Math.max(0, Math.floor((Number(x) / Math.max(1, result.width)) * motionEvidence.width));
-  const right = Math.min(motionEvidence.width, Math.ceil(((Number(x) + Number(width)) / Math.max(1, result.width)) * motionEvidence.width));
-  const top = Math.max(0, Math.floor((Number(y) / Math.max(1, result.height)) * motionEvidence.height));
-  const bottom = Math.min(motionEvidence.height, Math.ceil(((Number(y) + Number(height)) / Math.max(1, result.height)) * motionEvidence.height));
-  let boxPixels = 0;
-  let changedPixels = 0;
-  for (let row = top; row < bottom; row += 1) {
-    for (let column = left; column < right; column += 1) {
-      boxPixels += 1;
-      if (motionEvidence.changedPixels[row * motionEvidence.width + column]) changedPixels += 1;
-    }
-  }
-  return changedPixels >= Math.max(4, Math.ceil(boxPixels * 0.01));
-}
-
-function relevantObjectDetections(result, camera, ignoreRegions, motionEvidence) {
-  const selectedGroups = new Set(parseObjectGroups(camera.objectDetectionClasses));
-  if (!selectedGroups.size) return [];
-  return (result.predictions || []).flatMap((prediction) => {
-    const group = Object.keys(objectClassGroups).find((key) =>
-      selectedGroups.has(key) && objectClassGroups[key].has(prediction.className)
-    );
-    if (!group) return [];
-    const [x, y, width, height] = prediction.bbox || [];
-    const centerX = (Number(x) + Number(width) / 2) / Math.max(1, result.width);
-    const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
-    if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
-    if (!detectionOverlapsMotion(prediction, result, motionEvidence)) return [];
-    return [{ ...prediction, group }];
-  });
-}
-
-function relevantVehicleDetections(result, ignoreRegions, motionEvidence) {
-  return (result.predictions || []).flatMap((prediction) => {
-    if (!objectClassGroups.vehicle.has(prediction.className)) return [];
-    const [x, y, width, height] = prediction.bbox || [];
-    const centerX = (Number(x) + Number(width) / 2) / Math.max(1, result.width);
-    const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
-    if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
-    if (!detectionOverlapsMotion(prediction, result, motionEvidence)) return [];
-    return [{ ...prediction, group: 'vehicle' }];
-  });
-}
-
-function objectDetectionMessage(detections) {
-  const groups = Array.from(new Set(detections.map((detection) => detection.group)));
-  return `${groups.map((group) => objectGroupLabels[group]).join(', ')} erkannt (lokale KI)`;
-}
 
 function parseMotionIgnoreRegions(value) {
   try {
@@ -563,10 +492,10 @@ async function detectCameraMotion(cam) {
           changedPixels: changedPixelMap,
         };
         const selectedObjects = cam.objectDetectionEnabled
-          ? relevantObjectDetections(result, cam, ignoreRegions, motionEvidence)
+          ? relevantDetections(result, cam, ignoreRegions, motionEvidence)
           : [];
         const vehicles = cam.licensePlateRecognitionEnabled
-          ? relevantVehicleDetections(result, ignoreRegions, motionEvidence)
+          ? relevantDetections(result, cam, ignoreRegions, motionEvidence, { vehicleOnly: true })
           : [];
         if (cam.objectDetectionEnabled && !selectedObjects.length) return;
         detectedObjects = [...selectedObjects];

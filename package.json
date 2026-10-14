@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "private": true,
   "description": "Local-first camera discovery, monitoring and NVR for ONVIF/RTSP cameras.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -16,6 +16,7 @@
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:motion-policy": "node scripts/test-motion-policy.js",
+    "test:object-detection-policy": "node scripts/test-object-detection-policy.js",
     "update": "bash scripts/update.sh"
   },
   "dependencies": {

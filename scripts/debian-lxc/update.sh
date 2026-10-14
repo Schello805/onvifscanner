@@ -113,6 +113,17 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q '^# MOTION_CPU_OPTIMIZATION_V1_APPLIED=true
   echo "Applied CPU-optimized motion detection defaults in $ENV_FILE."
 fi
 
+if [[ -f "$ENV_FILE" ]] && ! grep -q '^# OBJECT_DETECTION_QUALITY_V1_APPLIED=true$' "$ENV_FILE"; then
+  sed -i 's/^MOTION_SOURCE_WIDTH=640$/MOTION_SOURCE_WIDTH=768/' "$ENV_FILE"
+  grep -q '^MOTION_SOURCE_WIDTH=' "$ENV_FILE" || printf 'MOTION_SOURCE_WIDTH=768\n' >>"$ENV_FILE"
+  grep -q '^OBJECT_DETECTION_MODEL_BASE=' "$ENV_FILE" || printf 'OBJECT_DETECTION_MODEL_BASE=mobilenet_v2\n' >>"$ENV_FILE"
+  printf '# OBJECT_DETECTION_QUALITY_V1_APPLIED=true\n' >>"$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+  chown root:"$APP_USER" "$ENV_FILE"
+  ENV_CHANGED=true
+  echo "Applied higher-quality local object detection defaults in $ENV_FILE."
+fi
+
 if [[ -n "$previous_commit" && "$previous_commit" == "$current_commit" && "$FORCE_REBUILD" != "true" && "$ENV_CHANGED" != "true" && -f "$APP_DIR/.next/BUILD_ID" && -x "$APP_DIR/mediamtx" ]] && systemctl is-active --quiet onvifscanner.service; then
   echo "ONVIFscanner is already current; skipping dependencies, build and restart."
   exit 0

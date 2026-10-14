@@ -124,6 +124,20 @@ const TIMELINE_WINDOWS = [
 type TimelineWindowMinutes = (typeof TIMELINE_WINDOWS)[number]["minutes"];
 
 const cameraNameCollator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+const objectClassLabels: Record<string, string> = {
+  person: "Person",
+  bicycle: "Fahrrad",
+  car: "Auto",
+  motorcycle: "Motorrad",
+  bus: "Bus",
+  truck: "Lkw",
+  train: "Zug",
+  boat: "Boot",
+  bird: "Vogel",
+  cat: "Katze",
+  dog: "Hund",
+  horse: "Pferd",
+};
 
 type MotionEvent = {
   id: string;
@@ -3067,7 +3081,16 @@ export default function PlaybackPage() {
                           <p className="text-[10px] text-slate-400 truncate mt-0.5">
                             {ev.cameraName} · {ev.message}
                           </p>
-                          {ev.objectClasses && ev.objectClasses.length > 0 && (
+                          {ev.objectDetections && ev.objectDetections.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {ev.objectDetections.map((detection, index) => (
+                                <span key={`${detection.className || detection.group}-${index}`} className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">
+                                  {objectClassLabels[detection.className || ""] || detection.className || detection.group || "Objekt"}
+                                  {typeof detection.score === "number" ? ` ${Math.round(detection.score * 100)} %` : ""}
+                                </span>
+                              ))}
+                            </div>
+                          ) : ev.objectClasses && ev.objectClasses.length > 0 ? (
                             <div className="mt-1 flex flex-wrap gap-1">
                               {ev.objectClasses.map((group) => (
                                 <span key={group} className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">
@@ -3075,7 +3098,7 @@ export default function PlaybackPage() {
                                 </span>
                               ))}
                             </div>
-                          )}
+                          ) : null}
                           {ev.motionRecordingStatus && !["ready", "continuous"].includes(ev.motionRecordingStatus) && (
                             <p className={`mt-0.5 text-[9px] ${["failed", "disabled"].includes(ev.motionRecordingStatus) ? "text-rose-400" : "text-amber-400"}`} title={ev.motionRecordingError || undefined}>
                               {ev.motionRecordingStatus === "failed"

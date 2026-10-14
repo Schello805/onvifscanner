@@ -1905,7 +1905,7 @@ export default function CameraWallPage() {
                                 <div className="grid grid-cols-3 gap-2">
                                   {([
                                     ["person", "Personen"],
-                                    ["vehicle", "Fahrzeuge"],
+                                    ["vehicle", "Fahrzeuge/Fahrräder"],
                                     ["animal", "Tiere"],
                                   ] as const).map(([value, label]) => (
                                     <label key={value} className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2">
