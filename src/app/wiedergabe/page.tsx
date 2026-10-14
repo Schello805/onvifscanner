@@ -3220,7 +3220,7 @@ export default function PlaybackPage() {
                       Dateiname <span aria-hidden="true">{sortIndicator("filename-asc", "filename-desc")}</span>
                     </button>
                   </th>
-                  <th className="py-2.5 px-3 text-right">Aktionen</th>
+                  <th className="sticky right-0 z-10 bg-slate-950 py-2.5 px-3 text-right shadow-[-8px_0_12px_rgba(2,6,23,0.65)]">Aktionen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -3346,29 +3346,31 @@ export default function PlaybackPage() {
                       </td>
 
                       {/* Aktionen */}
-                      <td className="py-2 px-3 text-right">
-                        <div className="inline-flex items-center gap-1">
+                      <td className="sticky right-0 z-10 bg-slate-900/95 py-2 px-2 text-right shadow-[-8px_0_12px_rgba(2,6,23,0.65)] backdrop-blur-sm sm:px-3">
+                        <div className="inline-flex items-center gap-1.5">
                           <button
                             onClick={() =>
                               clipMotions.length > 0
                                 ? openClipWithOffset(clip, clipMotions[0].offsetSec)
                                 : openClip(clip)
                             }
-                            className="rounded p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors sm:h-auto sm:w-auto sm:p-1.5"
                             title="Abspielen"
                           >
                             <Play className="h-3.5 w-3.5" />
                           </button>
                           <a
                             href={clip.downloadUrl}
-                            className="rounded p-1.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-                            title="Download"
+                            download={clip.filename}
+                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 px-3 font-semibold text-sky-200 hover:bg-sky-500/20 hover:text-white transition-colors sm:h-auto sm:border-0 sm:bg-transparent sm:p-1.5 sm:text-slate-300"
+                            title="Clip herunterladen"
                           >
                             <Download className="h-3.5 w-3.5" />
+                            <span className="sm:hidden">Download</span>
                           </a>
                           <button
                             onClick={() => handleDeleteClip(clip)}
-                            className="rounded p-1.5 text-slate-400 hover:bg-rose-950/60 hover:text-rose-400 transition-colors"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-950/60 hover:text-rose-400 transition-colors sm:h-auto sm:w-auto sm:p-1.5"
                             title="Löschen"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -3492,10 +3494,12 @@ export default function PlaybackPage() {
 
                   <a
                     href={clip.downloadUrl}
-                    className="rounded p-1.5 border border-slate-800 bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-                    title="Download"
+                    download={clip.filename}
+                    className="flex-1 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 px-2 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20 hover:text-white transition-colors"
+                    title="Clip herunterladen"
                   >
                     <Download className="h-3.5 w-3.5" />
+                    Download
                   </a>
 
                   <button
