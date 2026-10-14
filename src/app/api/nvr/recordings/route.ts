@@ -72,6 +72,9 @@ export async function GET(req: Request) {
         try {
           files = await fsp.readdir(camPath);
         } catch {
+          if (!unavailableStorageTargets.includes(target.name)) {
+            unavailableStorageTargets.push(target.name);
+          }
           continue;
         }
 

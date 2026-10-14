@@ -509,6 +509,9 @@ export default function PlaybackPage() {
         setClips((current) => {
           const canRetainUnavailable = clipsQueryKeyRef.current === queryKey;
           clipsQueryKeyRef.current = queryKey;
+          if (silent && canRetainUnavailable && current.length > 0 && dataClips.clips.length === 0) {
+            return current;
+          }
           if (!unavailableTargets.length || !canRetainUnavailable) return dataClips.clips;
           const incomingIds = new Set<string>(dataClips.clips.map((clip: RecordingClip) => clip.id));
           const retained = current.filter((clip) =>
