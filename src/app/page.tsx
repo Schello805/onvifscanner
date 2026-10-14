@@ -1436,25 +1436,40 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(camera.id);
                           if (closing) revealCameraControls(camera.id);
                         }}
-                        className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-md border border-white/15 bg-black/75 text-lg font-bold text-white shadow-lg backdrop-blur-md"
+                        className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border border-white/20 bg-black/80 text-xl font-bold text-white shadow-lg backdrop-blur-md sm:h-9 sm:w-9 sm:rounded-md sm:text-lg"
                         aria-label={`Aktionen für ${camera.name}`}
                         aria-expanded={cameraMenuId === camera.id}
                       >
                         ⋯
                       </button>
                       {cameraMenuId === camera.id ? (
-                        <div className="absolute bottom-11 right-0 z-50 w-52 overflow-hidden rounded-xl border border-white/15 bg-slate-950/95 p-1.5 text-xs text-slate-200 shadow-2xl backdrop-blur-xl">
-                          <button type="button" disabled={recordLoading.has(camera.id)} onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); void toggleRecord(camera); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10 disabled:opacity-50">
+                        <>
+                          <button
+                            type="button"
+                            className="fixed inset-0 z-[99990] cursor-default bg-black/45 backdrop-blur-[1px] sm:hidden"
+                            onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); }}
+                            aria-label="Kameraaktionen schließen"
+                          />
+                          <div className="fixed inset-x-3 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-[100000] w-auto overflow-hidden rounded-2xl border border-white/15 bg-slate-950/98 p-2 text-sm text-slate-100 shadow-2xl backdrop-blur-xl sm:absolute sm:inset-x-auto sm:bottom-11 sm:right-0 sm:z-50 sm:w-56 sm:rounded-xl sm:p-1.5 sm:text-xs sm:text-slate-200">
+                          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2 sm:hidden">
+                            <div className="min-w-0">
+                              <div className="truncate font-semibold text-white">{camera.name}</div>
+                              <div className="text-[11px] text-slate-400">Kameraaktionen</div>
+                            </div>
+                            <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xl text-slate-300" aria-label="Kameraaktionen schließen">×</button>
+                          </div>
+                          <button type="button" disabled={recordLoading.has(camera.id)} onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); void toggleRecord(camera); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-white/10 active:bg-white/15 disabled:opacity-50 sm:min-h-0 sm:gap-2 sm:rounded-lg sm:py-2">
                             <span>{camera.recordEnabled ? "⏹" : "⏺"}</span><span>{camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}</span>
                           </button>
-                          {camera.recordEnabled ? <Link href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-white/10"><span>🎞️</span><span>Aufnahmen öffnen</span></Link> : null}
-                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); openEditor(camera); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10"><span>✎</span><span>Bearbeiten</span></button>
-                          <div className="grid grid-cols-2 gap-1 border-y border-white/10 py-1">
-                            <button type="button" disabled={index === 0} onClick={() => { moveCamera(index, -1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="rounded-lg px-2 py-2 hover:bg-white/10 disabled:opacity-30">← Vor</button>
-                            <button type="button" disabled={index === cameras.length - 1} onClick={() => { moveCamera(index, 1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="rounded-lg px-2 py-2 hover:bg-white/10 disabled:opacity-30">Zurück →</button>
+                          {camera.recordEnabled ? <Link href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-white/10 active:bg-white/15 sm:min-h-0 sm:gap-2 sm:rounded-lg sm:py-2"><span>🎞️</span><span>Aufnahmen öffnen</span></Link> : null}
+                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); openEditor(camera); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-white/10 active:bg-white/15 sm:min-h-0 sm:gap-2 sm:rounded-lg sm:py-2"><span>✎</span><span>Bearbeiten</span></button>
+                          <div className="grid grid-cols-2 gap-1.5 border-y border-white/10 py-1.5 sm:gap-1 sm:py-1">
+                            <button type="button" disabled={index === 0} onClick={() => { moveCamera(index, -1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="min-h-11 rounded-xl px-2 py-2 hover:bg-white/10 active:bg-white/15 disabled:opacity-30 sm:min-h-0 sm:rounded-lg">← Vor</button>
+                            <button type="button" disabled={index === cameras.length - 1} onClick={() => { moveCamera(index, 1); setCameraMenuId(null); setActiveCameraControlsId(null); }} className="min-h-11 rounded-xl px-2 py-2 hover:bg-white/10 active:bg-white/15 disabled:opacity-30 sm:min-h-0 sm:rounded-lg">Zurück →</button>
                           </div>
-                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) removeCamera(camera.id); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-300 hover:bg-red-500/15"><span>✕</span><span>Von Monitoren entfernen</span></button>
-                        </div>
+                          <button type="button" onClick={() => { setCameraMenuId(null); setActiveCameraControlsId(null); if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) removeCamera(camera.id); }} className="flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-red-300 hover:bg-red-500/15 active:bg-red-500/20 sm:min-h-0 sm:gap-2 sm:rounded-lg sm:py-2"><span>✕</span><span>Von Monitoren entfernen</span></button>
+                          </div>
+                        </>
                       ) : null}
                     </div>
                   </div>
