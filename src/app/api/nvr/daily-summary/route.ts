@@ -27,17 +27,28 @@ export async function GET(request: Request) {
     const start = new Date(`${date}T00:00:00`);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
-    const events = await prisma.alarmLog.findMany({
-      where: {
-        ...(cameraId ? { cameraId } : {}),
-        timestamp: { gte: start, lt: end },
-      },
-      orderBy: { timestamp: "asc" },
-      include: { camera: { select: { id: true, name: true } } },
-    });
+    const [events, savedCameras] = await Promise.all([
+      prisma.alarmLog.findMany({
+        where: {
+          ...(cameraId ? { cameraId } : {}),
+          timestamp: { gte: start, lt: end },
+        },
+        orderBy: { timestamp: "asc" },
+        include: { camera: { select: { id: true, name: true } } },
+      }),
+      prisma.camera.findMany({
+        where: cameraId ? { id: cameraId } : undefined,
+        select: { id: true, name: true },
+      }),
+    ]);
 
     const counts = { person: 0, vehicle: 0, animal: 0, unclassified: 0 };
-    const cameras = new Map<string, { cameraId: string; cameraName: string; events: number; objects: number }>();
+    const cameras = new Map(
+      savedCameras.map((camera) => [
+        camera.id,
+        { cameraId: camera.id, cameraName: camera.name, events: 0, objects: 0 },
+      ]),
+    );
     for (const event of events) {
       const detections = parseArray(event.objectDetections) as Detection[];
       const groups = detections.length
@@ -63,7 +74,9 @@ export async function GET(request: Request) {
       date,
       totalEvents: events.length,
       counts,
-      cameras: Array.from(cameras.values()).sort((left, right) => right.events - left.events || left.cameraName.localeCompare(right.cameraName, "de")),
+      cameras: Array.from(cameras.values()).sort((left, right) =>
+        left.cameraName.localeCompare(right.cameraName, "de", { numeric: true, sensitivity: "base" }),
+      ),
       firstEventAt: events[0]?.timestamp.toISOString() || null,
       lastEventAt: events.at(-1)?.timestamp.toISOString() || null,
     });
