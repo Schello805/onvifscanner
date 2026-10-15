@@ -405,21 +405,45 @@ export default function CameraWallPage() {
     const viewport = mediaViewportRef.current;
     if (!viewport) return;
 
-    const preventGesture = (event: Event) => event.preventDefault();
-    const preventNativePan = (event: TouchEvent) => {
-      if (event.touches.length > 1 || mediaTransformRef.current.scale > 1) {
+    const previousHtmlTouchAction = document.documentElement.style.touchAction;
+    const previousBodyTouchAction = document.body.style.touchAction;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    document.documentElement.style.touchAction = "none";
+    document.body.style.touchAction = "none";
+    document.documentElement.style.overscrollBehavior = "none";
+    document.body.style.overscrollBehavior = "none";
+
+    const eventBelongsToViewport = (event: Event) => {
+      const target = event.target;
+      return target instanceof Node && viewport.contains(target);
+    };
+    const preventGesture = (event: Event) => {
+      if (!eventBelongsToViewport(event)) return;
+      event.preventDefault();
+    };
+    const preventNativeTouch = (event: TouchEvent) => {
+      if (!eventBelongsToViewport(event)) return;
+      if (event.type === "touchmove" || event.touches.length > 1 || mediaTransformRef.current.scale > 1) {
         event.preventDefault();
       }
     };
-    viewport.addEventListener("gesturestart", preventGesture, { passive: false });
-    viewport.addEventListener("gesturechange", preventGesture, { passive: false });
-    viewport.addEventListener("gestureend", preventGesture, { passive: false });
-    viewport.addEventListener("touchmove", preventNativePan, { passive: false });
+    const listenerOptions: AddEventListenerOptions = { passive: false, capture: true };
+    document.addEventListener("gesturestart", preventGesture, listenerOptions);
+    document.addEventListener("gesturechange", preventGesture, listenerOptions);
+    document.addEventListener("gestureend", preventGesture, listenerOptions);
+    document.addEventListener("touchstart", preventNativeTouch, listenerOptions);
+    document.addEventListener("touchmove", preventNativeTouch, listenerOptions);
     return () => {
-      viewport.removeEventListener("gesturestart", preventGesture);
-      viewport.removeEventListener("gesturechange", preventGesture);
-      viewport.removeEventListener("gestureend", preventGesture);
-      viewport.removeEventListener("touchmove", preventNativePan);
+      document.removeEventListener("gesturestart", preventGesture, true);
+      document.removeEventListener("gesturechange", preventGesture, true);
+      document.removeEventListener("gestureend", preventGesture, true);
+      document.removeEventListener("touchstart", preventNativeTouch, true);
+      document.removeEventListener("touchmove", preventNativeTouch, true);
+      document.documentElement.style.touchAction = previousHtmlTouchAction;
+      document.body.style.touchAction = previousBodyTouchAction;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
     };
   }, [expandedCameraId]);
 
@@ -1303,7 +1327,7 @@ export default function CameraWallPage() {
                       lastClickRef.current = { id: camera.id, time: now };
                     }
                   }}
-                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
+                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
                   {expandedCameraId === camera.id ? (
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
