@@ -350,6 +350,7 @@ export default function CameraWallPage() {
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
   const mediaTransformRef = useRef(mediaTransform);
+  const mediaSurfaceRef = useRef<HTMLDivElement | null>(null);
   const mediaPointersRef = useRef(new Map<number, MediaPoint>());
   const mediaGestureRef = useRef<MediaGesture>({
     startScale: 1,
@@ -902,7 +903,11 @@ export default function CameraWallPage() {
     }
   }
 
-  function applyMediaTransform(next: { scale: number; x: number; y: number }, element?: HTMLElement) {
+  function applyMediaTransform(
+    next: { scale: number; x: number; y: number },
+    element?: HTMLElement,
+    commit = true,
+  ) {
     const scale = Math.min(4, Math.max(1, next.scale));
     const rect = element?.getBoundingClientRect();
     const maxX = rect ? (rect.width * (scale - 1)) / 2 : Number.POSITIVE_INFINITY;
@@ -913,7 +918,10 @@ export default function CameraWallPage() {
       y: scale === 1 ? 0 : Math.min(maxY, Math.max(-maxY, next.y)),
     };
     mediaTransformRef.current = transform;
-    setMediaTransform(transform);
+    if (mediaSurfaceRef.current) {
+      mediaSurfaceRef.current.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
+    }
+    if (commit) setMediaTransform(transform);
   }
 
   function toggleMediaZoom() {
@@ -968,7 +976,7 @@ export default function CameraWallPage() {
         scale,
         x: centerX - originX - focalX * scale,
         y: centerY - originY - focalY * scale,
-      }, event.currentTarget);
+      }, event.currentTarget, false);
       if (
         Math.abs(distance - gesture.startDistance) > 2
         || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 2
@@ -986,7 +994,7 @@ export default function CameraWallPage() {
         scale: gesture.startScale,
         x: gesture.startX + deltaX,
         y: gesture.startY + deltaY,
-      }, event.currentTarget);
+      }, event.currentTarget, false);
       gesture.moved = true;
     }
   }
@@ -996,6 +1004,9 @@ export default function CameraWallPage() {
     mediaPointersRef.current.delete(event.pointerId);
     const remaining = [...mediaPointersRef.current.values()];
     resetMediaGesture(remaining, moved);
+    if (remaining.length === 0) {
+      setMediaTransform({ ...mediaTransformRef.current });
+    }
   }
 
   return (
@@ -1336,10 +1347,12 @@ export default function CameraWallPage() {
                     </div>
                   ) : null}
                   <div
+                    ref={expandedCameraId === camera.id ? mediaSurfaceRef : undefined}
                     className="h-full w-full will-change-transform"
                     style={{
-                      transform: `translate3d(${mediaTransform.x}px, ${mediaTransform.y}px, 0) scale(${mediaTransform.scale})`,
-                      transition: mediaPointersRef.current.size ? "none" : "transform 160ms ease-out",
+                      transform: `translate3d(${mediaTransformRef.current.x}px, ${mediaTransformRef.current.y}px, 0) scale(${mediaTransformRef.current.scale})`,
+                      transformOrigin: "center center",
+                      transition: "none",
                     }}
                   >
                   {isLive ? (
