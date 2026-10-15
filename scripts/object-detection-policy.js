@@ -1,6 +1,6 @@
 const objectClassGroups = {
   person: new Set(['person']),
-  vehicle: new Set(['bicycle', 'car', 'motorcycle', 'bus', 'truck', 'train', 'boat']),
+  vehicle: new Set(['bicycle', 'car', 'motorcycle', 'bus', 'truck']),
   animal: new Set(['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe']),
 };
 
@@ -11,8 +11,6 @@ const objectClassLabels = {
   motorcycle: 'Motorrad',
   bus: 'Bus',
   truck: 'Lkw',
-  train: 'Zug',
-  boat: 'Boot',
   bird: 'Vogel',
   cat: 'Katze',
   dog: 'Hund',

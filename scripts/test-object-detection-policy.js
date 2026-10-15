@@ -34,4 +34,15 @@ assert.equal(
   0,
 );
 
+const excludedVehicleClasses = {
+  width: 100,
+  height: 100,
+  predictions: [
+    { className: 'train', score: 0.91, bbox: [0, 0, 100, 100] },
+    { className: 'boat', score: 0.88, bbox: [0, 0, 100, 100] },
+  ],
+};
+assert.deepEqual(relevantDetections(excludedVehicleClasses, camera, [], relevantMotion), []);
+assert.deepEqual(relevantDetections(excludedVehicleClasses, camera, [], relevantMotion, { vehicleOnly: true }), []);
+
 console.log('Object detection policy tests passed.');
