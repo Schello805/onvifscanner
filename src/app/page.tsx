@@ -350,6 +350,7 @@ export default function CameraWallPage() {
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
   const mediaTransformRef = useRef(mediaTransform);
+  const mediaViewportRef = useRef<HTMLDivElement | null>(null);
   const mediaSurfaceRef = useRef<HTMLDivElement | null>(null);
   const mediaPointersRef = useRef(new Map<number, MediaPoint>());
   const mediaGestureRef = useRef<MediaGesture>({
@@ -397,6 +398,29 @@ export default function CameraWallPage() {
     };
     mediaTransformRef.current = { scale: 1, x: 0, y: 0 };
     setMediaTransform({ scale: 1, x: 0, y: 0 });
+  }, [expandedCameraId]);
+
+  useEffect(() => {
+    if (!expandedCameraId) return;
+    const viewport = mediaViewportRef.current;
+    if (!viewport) return;
+
+    const preventGesture = (event: Event) => event.preventDefault();
+    const preventNativePan = (event: TouchEvent) => {
+      if (event.touches.length > 1 || mediaTransformRef.current.scale > 1) {
+        event.preventDefault();
+      }
+    };
+    viewport.addEventListener("gesturestart", preventGesture, { passive: false });
+    viewport.addEventListener("gesturechange", preventGesture, { passive: false });
+    viewport.addEventListener("gestureend", preventGesture, { passive: false });
+    viewport.addEventListener("touchmove", preventNativePan, { passive: false });
+    return () => {
+      viewport.removeEventListener("gesturestart", preventGesture);
+      viewport.removeEventListener("gesturechange", preventGesture);
+      viewport.removeEventListener("gestureend", preventGesture);
+      viewport.removeEventListener("touchmove", preventNativePan);
+    };
   }, [expandedCameraId]);
 
   useEffect(() => {
@@ -1254,6 +1278,7 @@ export default function CameraWallPage() {
                 }`}
               >
                 <div 
+                  ref={expandedCameraId === camera.id ? mediaViewportRef : undefined}
                   onPointerDown={handleMediaPointerDown}
                   onPointerMove={handleMediaPointerMove}
                   onPointerUp={handleMediaPointerEnd}
@@ -1278,7 +1303,7 @@ export default function CameraWallPage() {
                       lastClickRef.current = { id: camera.id, time: now };
                     }
                   }}
-                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
+                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
                   {expandedCameraId === camera.id ? (
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">

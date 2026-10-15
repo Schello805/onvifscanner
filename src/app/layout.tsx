@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import "./globals.css";
 import pkg from "../../package.json";
@@ -19,6 +19,14 @@ export const metadata: Metadata = {
     title: "ONVIFscanner NVR",
     statusBarStyle: "black-translucent"
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 const repoUrl =
