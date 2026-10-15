@@ -353,6 +353,8 @@ export default function CameraWallPage() {
   const mediaViewportRef = useRef<HTMLDivElement | null>(null);
   const mediaSurfaceRef = useRef<HTMLDivElement | null>(null);
   const mediaPointersRef = useRef(new Map<number, MediaPoint>());
+  const mediaTouchCountRef = useRef(0);
+  const updateMediaGestureRef = useRef<(points: MediaPoint[], element: HTMLElement) => void>(() => undefined);
   const mediaGestureRef = useRef<MediaGesture>({
     startScale: 1,
     startX: 0,
@@ -429,17 +431,50 @@ export default function CameraWallPage() {
       }
     };
     const listenerOptions: AddEventListenerOptions = { passive: false, capture: true };
+    const touchPoints = (touches: TouchList): MediaPoint[] => Array.from(touches, (touch) => ({
+      x: touch.clientX,
+      y: touch.clientY,
+    }));
+    const handleTouchStart = (event: TouchEvent) => {
+      const points = touchPoints(event.touches);
+      const preserveMoved = mediaTouchCountRef.current > 0 && mediaGestureRef.current.moved;
+      mediaTouchCountRef.current = points.length;
+      if (points.length > 1) event.preventDefault();
+      resetMediaGesture(points, preserveMoved);
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      event.preventDefault();
+      const points = touchPoints(event.touches);
+      mediaTouchCountRef.current = points.length;
+      updateMediaGestureRef.current(points, viewport);
+    };
+    const handleTouchEnd = (event: TouchEvent) => {
+      const moved = mediaGestureRef.current.moved;
+      const remaining = touchPoints(event.touches);
+      mediaTouchCountRef.current = remaining.length;
+      resetMediaGesture(remaining, moved);
+      if (remaining.length === 0) setMediaTransform({ ...mediaTransformRef.current });
+    };
     document.addEventListener("gesturestart", preventGesture, listenerOptions);
     document.addEventListener("gesturechange", preventGesture, listenerOptions);
     document.addEventListener("gestureend", preventGesture, listenerOptions);
     document.addEventListener("touchstart", preventNativeTouch, listenerOptions);
     document.addEventListener("touchmove", preventNativeTouch, listenerOptions);
+    viewport.addEventListener("touchstart", handleTouchStart, { passive: false });
+    viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
+    viewport.addEventListener("touchend", handleTouchEnd, { passive: false });
+    viewport.addEventListener("touchcancel", handleTouchEnd, { passive: false });
     return () => {
       document.removeEventListener("gesturestart", preventGesture, true);
       document.removeEventListener("gesturechange", preventGesture, true);
       document.removeEventListener("gestureend", preventGesture, true);
       document.removeEventListener("touchstart", preventNativeTouch, true);
       document.removeEventListener("touchmove", preventNativeTouch, true);
+      viewport.removeEventListener("touchstart", handleTouchStart);
+      viewport.removeEventListener("touchmove", handleTouchMove);
+      viewport.removeEventListener("touchend", handleTouchEnd);
+      viewport.removeEventListener("touchcancel", handleTouchEnd);
+      mediaTouchCountRef.current = 0;
       document.documentElement.style.touchAction = previousHtmlTouchAction;
       document.body.style.touchAction = previousBodyTouchAction;
       document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
@@ -994,7 +1029,7 @@ export default function CameraWallPage() {
   }
 
   function handleMediaPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!expandedCameraId || (event.target as HTMLElement).closest("button, a")) return;
+    if (!expandedCameraId || event.pointerType === "touch" || (event.target as HTMLElement).closest("button, a")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const preserveMoved = mediaPointersRef.current.size > 0 && mediaGestureRef.current.moved;
     mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1002,10 +1037,14 @@ export default function CameraWallPage() {
   }
 
   function handleMediaPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!expandedCameraId || !mediaPointersRef.current.has(event.pointerId)) return;
+    if (!expandedCameraId || event.pointerType === "touch" || !mediaPointersRef.current.has(event.pointerId)) return;
     event.preventDefault();
     mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    const points = [...mediaPointersRef.current.values()];
+    updateMediaGesture([...mediaPointersRef.current.values()], event.currentTarget);
+  }
+
+  function updateMediaGesture(points: MediaPoint[], element: HTMLElement) {
+    if (points.length === 0) return;
     const gesture = mediaGestureRef.current;
 
     if (points.length >= 2) {
@@ -1015,7 +1054,7 @@ export default function CameraWallPage() {
       const centerY = (first.y + second.y) / 2;
       const scaleFactor = gesture.startDistance > 0 ? distance / gesture.startDistance : 1;
       const scale = Math.min(4, Math.max(1, gesture.startScale * scaleFactor));
-      const rect = event.currentTarget.getBoundingClientRect();
+      const rect = element.getBoundingClientRect();
       const originX = rect.left + rect.width / 2;
       const originY = rect.top + rect.height / 2;
       const focalX = (gesture.startCenterX - originX - gesture.startX) / gesture.startScale;
@@ -1024,7 +1063,7 @@ export default function CameraWallPage() {
         scale,
         x: centerX - originX - focalX * scale,
         y: centerY - originY - focalY * scale,
-      }, event.currentTarget, false);
+      }, element, false);
       if (
         Math.abs(distance - gesture.startDistance) > 2
         || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 2
@@ -1042,12 +1081,15 @@ export default function CameraWallPage() {
         scale: gesture.startScale,
         x: gesture.startX + deltaX,
         y: gesture.startY + deltaY,
-      }, event.currentTarget, false);
+      }, element, false);
       gesture.moved = true;
     }
   }
 
+  updateMediaGestureRef.current = updateMediaGesture;
+
   function handleMediaPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     const moved = mediaGestureRef.current.moved;
     mediaPointersRef.current.delete(event.pointerId);
     const remaining = [...mediaPointersRef.current.values()];
