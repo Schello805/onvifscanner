@@ -128,6 +128,11 @@ function decryptSecret(stored) {
   }
 }
 
+function maskSecret(secret) {
+  if (!secret) return "";
+  return MASKED_PASSWORD;
+}
+
 function hashPassword(password, salt) {
   const effectiveSalt = salt || crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(String(password), effectiveSalt, 64).toString("hex");
@@ -239,6 +244,16 @@ function verifySessionToken(token) {
   }
 }
 
+function removeAppPassword() {
+  setAppPassword(null);
+}
+
+function rotateSessionSecret() {
+  const cfg = loadSecurityConfig();
+  cfg.sessionSecret = crypto.randomBytes(32).toString("hex");
+  saveSecurityConfig(cfg);
+}
+
 function parseCookies(cookieHeader) {
   const out = {};
   if (!cookieHeader || typeof cookieHeader !== "string") return out;
@@ -261,9 +276,14 @@ module.exports = {
   saveSecurityConfig,
   encryptSecret,
   decryptSecret,
-  isAppAuthEnabled,
+  maskSecret,
+  hashPassword,
+  verifyPassword: verifyAppPassword,
   verifyAppPassword,
+  isAppAuthEnabled,
   setAppPassword,
+  removeAppPassword,
+  rotateSessionSecret,
   getWebhookToken,
   setWebhookToken,
   createSessionToken,
