@@ -65,9 +65,9 @@ function loadSecurityConfig() {
 function saveSecurityConfig(config) {
   try {
     ensureDataDir();
-    fs.writeFileSync(SECURITY_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
+    fs.writeFileSync(SECURITY_FILE, JSON.stringify(config, null, 2), { mode: 0o666 });
     try {
-      fs.chmodSync(SECURITY_FILE, 0o600);
+      fs.chmodSync(SECURITY_FILE, 0o666);
     } catch {}
     const stat = fs.statSync(SECURITY_FILE);
     cachedConfig = config;
