@@ -679,15 +679,15 @@ export default function StorageManagementPage() {
                     <div className="flex items-center justify-between text-xs mb-1.5">
                       <span className="text-slate-400">
                         Belegt:{" "}
-                        <strong className="text-slate-200">{formatBytes(stats.usedBytes)}</strong> von{" "}
-                        {formatBytes(stats.totalBytes)}
+                        <strong className="text-slate-200">{formatBytes(stats.usedBytes)}</strong>{" "}
+                        von {formatBytes(stats.totalBytes)}
                       </span>
                       <span
                         className={`font-semibold ${
                           isCrit ? "text-rose-400" : isWarn ? "text-amber-400" : "text-cyan-400"
                         }`}
                       >
-                        {percent}% belegt
+                        {`${percent}% belegt`}
                       </span>
                     </div>
 
@@ -705,9 +705,9 @@ export default function StorageManagementPage() {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-                      <span>Freier Speicher: {formatBytes(stats.freeBytes)}</span>
+                      <span>{`Freier Speicher: ${formatBytes(stats.freeBytes)}`}</span>
                       <span>
-                        NVR-Clips: {stats.recordingsCount} ({formatBytes(stats.recordingsSizeBytes)})
+                        {`NVR-Clips: ${stats.recordingsCount} (${formatBytes(stats.recordingsSizeBytes)})`}
                       </span>
                     </div>
                   </div>
@@ -1282,7 +1282,7 @@ export default function StorageManagementPage() {
                             Pfad erfolgreich geprüft & beschreibbar!
                           </div>
                           <div className="text-[11px] opacity-90">
-                            Freier Speicher: {formatBytes(testResult.freeBytes)} von {formatBytes(testResult.totalBytes)}
+                            {`Freier Speicher: ${formatBytes(testResult.freeBytes)} von ${formatBytes(testResult.totalBytes)}`}
                           </div>
                         </div>
                       ) : (

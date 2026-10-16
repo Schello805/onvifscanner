@@ -585,6 +585,20 @@ const EXACT_DE_TO_EN: Record<string, string> = {
   "Notfall-Puffer:": "Emergency Buffer:",
   "Aktiviert (Aufnahmen auf dieses Ziel zulassen)": "Enabled (allow recordings to this target)",
   "Änderungen speichern": "Save Changes",
+  "Lokaler Speicher": "Local Storage",
+  "Lokaler Speicher (Standard)": "Local Storage (Default)",
+  "Standard": "Default",
+  "Belegt:": "Used:",
+  "Belegt": "Used",
+  "von": "of",
+  "% belegt": "% used",
+  "%belegt": "% used",
+  "Freier Speicher:": "Free space:",
+  "Freier Speicher": "Free space",
+  "NVR-Clips:": "NVR Clips:",
+  "Kapazität:": "Capacity:",
+  "Frei:": "Free:",
+  "· Frei:": "· Free:",
 };
 
 const GERMAN_MONTH_MAP: Record<string, string> = {
@@ -638,8 +652,13 @@ const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/^(\d+)\s+Aufnahme\(n\)\s+von\s+(\d+)\s+Kamera\(s\)$/i, "$1 recording(s) from $2 camera(s)"],
   [/^(\d+)\s+Clips im Monat$/i, "$1 clips this month"],
   [/^(\d+)\s+REC aktiv$/i, "$1 REC active"],
-  [/^(\d+)%\s+belegt$/i, "$1% used"],
+  [/^(\d+)%\s*belegt$/i, "$1% used"],
+  [/^%\s*belegt$/i, "% used"],
+  [/^Belegt:\s*(.+)\s+von\s+(.+)$/i, "Used: $1 of $2"],
+  [/^Freier Speicher:\s*(.+)\s+von\s+(.+)$/i, "Free space: $1 of $2"],
   [/^Freier Speicher:\s*(.+)$/i, "Free space: $1"],
+  [/^Freier Speicher:$/i, "Free space:"],
+  [/^Belegt:$/i, "Used:"],
   [/^Min\.\s*(\d+)\s*GB\s*frei$/i, "Min. $1 GB free"],
   [/^Erkannte Laufwerke\s*\((\d+)\)$/i, "Detected Drives ($1)"],
   [/^Neue Version verfügbar:\s*(.+)$/i, "New version available: $1"],
@@ -665,6 +684,8 @@ const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/^(.+)\s+vorrollen$/i, "Scroll forward $1"],
   [/^(.+)\s+Zeitbereich anzeigen$/i, "Show $1 window"],
   [/^Abspielen ab\s+(.+)\s+Uhr$/i, "Play from $1"],
+  [/^Lokaler Speicher\s*\((.+)\)$/i, "Local Storage ($1)"],
+  [/^Lokaler Speicher$/i, "Local Storage"],
 ];
 
 export function translateText(input: string, lang: AppLanguage): string {
