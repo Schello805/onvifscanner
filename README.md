@@ -10,6 +10,11 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 
 ## Features
 
+- **Zweisprachige Oberfläche**: Vollständige Unterstützung für Deutsch und Englisch mit 1-Klick-Umschaltung im Header und in den Einstellungen.
+- **Cybersecurity & Zugriffsschutz**: Integriertes AuthGate für Passwort- oder PIN-Schutz der Web-App mit Brute-Force-Sperre, sicherem Session-Cookie und AES-256-GCM-Verschlüsselung gespeicherter Kamera-Passwörter (Zero-Plaintext on Disk).
+- **Notfall-Reset via CLI**: Passwort oder PIN jederzeit direkt über die Konsole zurücksetzen oder deaktivieren (`npm run reset-password`).
+- **Speichermanagement & NAS-Anbindung**: Lokale Speicheranzeige, 1-Klick-Rechte-Reparatur, Mounten von SMB/CIFS- und NFS-Netzwerkfreigaben direkt in der UI sowie automatische Bereinigung mit Mindest-Pufferschutz und konfigurierbarer Vorhaltezeit (Retention).
+- **Interaktive Vorfall-Zeitleiste**: Zoomstufen von 15 Minuten bis 24 Stunden, Mini-Map, Farbmarkierungen für Personen/Fahrzeuge und flüssiges Scrubben durch alle Aufnahmen.
 - **Ein-Klick Auto-Scan**: Kombiniert WS-Discovery, IP/CIDR-Portscan und Hersteller-Profile automatisch.
 - **Kamera-Identifikation**: Ermittelt Hersteller, Modell und Hostname per ONVIF, Vendor-API und Reverse-DNS soweit verfügbar.
 - **Stream- & Snapshot-URLs**: Sammelt bestätigte RTSP-, HTTP-Stream- und Snapshot-URLs und bietet Kopieren per Klick.
@@ -94,6 +99,73 @@ Für Smartphones normalisiert ONVIFscanner neue Bewegungsclips in ein kompatible
 Unter `Aufnahmen` zeigt jede Kamera außerdem den Zustand ihrer Bewegungsquelle an: aktive ONVIF-PullPoint-Verbindung, Webhook, Snapshot-Fallback, laufende Prüfung oder einen konkreten Fehler. In der Wiedergabe ist jedes Bewegungsereignis direkt mit dem daraus erzeugten Clip verknüpft; die bisherige zeitbasierte Zuordnung bleibt als Fallback für ältere Aufnahmen erhalten.
 
 Der systemd-Dienst startet die Anwendung im Produktionsmodus und startet sie nach einem unerwarteten Ende automatisch neu. Der Endpunkt `/api/health` steht für externe Zustandsprüfungen bereit. Der Kamera-Statusmonitor läuft standardmäßig alle 60 Sekunden. ONVIF-Bewegungsereignisse und Kamera-Webhooks werden unabhängig davon verarbeitet. Für Kameras ohne zuverlässige ONVIF-Ereignisse ist zusätzlich die ressourcenschonende serverseitige Bildanalyse standardmäßig aktiv. Die automatische Netzwerksuche bleibt standardmäßig deaktiviert.
+
+## Sicherheit & Zugriffsschutz (Cybersecurity)
+
+ONVIFscanner legt großen Wert auf Datensparsamkeit und robuste Absicherung im LAN:
+
+- **AuthGate (App-Passwort & PIN)**:
+  - In den Einstellungen (`/settings`) kann ein Master-Passwort oder eine PIN aktiviert werden.
+  - Sobald aktiv, schützt ein Anmeldedialog den Zugriff auf Kameras, Streams, Wall, Einstellungen und Aufnahmen.
+  - Sichere Session-Cookies (`HttpOnly`, `SameSite=Lax`, mit 30 Tagen Gültigkeit).
+  - Progressive Sperre (Brute-Force-Schutz): Nach mehreren Fehlversuchen wird der Login temporär gesperrt.
+- **Passwort-Verschlüsselung auf der Festplatte (Zero Plaintext)**:
+  - Alle für Kameras hinterlegten Passwörter werden vor dem Speichern in der SQLite-Datenbank mit **AES-256-GCM** verschlüsselt.
+  - Der Verschlüsselungsschlüssel wird automatisch generiert und geschützt unter `data/security.json` verwaltet.
+- **CSRF- & SSRF-Schutz**:
+  - Strenges Origin-Gating für alle mutierenden API-Endpunkte (POST/PUT/DELETE).
+  - Validierung lokaler IP-Bereiche verhindert unberechtigte Zugriffe auf externe Netze.
+- **Path-Traversal-Schutz**:
+  - Alle Dateizugriffe (Clips, Snapshots, Puffer) werden strikt auf erlaubte Zielverzeichnisse begrenzt.
+- **HTTP Security Header**:
+  - Automatische Header wie `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` und restriktive Berechtigungsrichtlinien.
+
+### Notfall-Reset des App-Passworts
+
+Solltest du das App-Passwort oder die PIN einmal vergessen haben oder ausgesperrt sein, kannst du den Schutz direkt über die Shell auf dem Server (z. B. im Proxmox Debian LXC) zurücksetzen:
+
+```bash
+# Interaktives Tool aufrufen (im Projektverzeichnis):
+npm run reset-password
+
+# Oder direkt via Node:
+node scripts/reset-password.js
+```
+
+Das Skript erlaubt es dir, das Passwort direkt im Terminal neu zu vergeben, den Schutz vollständig zu deaktivieren oder die Dateiberechtigungen der Konfiguration zu reparieren. Alternativ kann die Datei `data/security.json` gelöscht werden, um den Auth-Schutz manuell zu entfernen.
+
+## Speichermanagement, NAS & Notfall-Schutz
+
+Unter `/nvr/storage` (bzw. über das Menü "Speicher") bietet ONVIFscanner vollständige Kontrolle über lokale und entfernte Speichermedien:
+
+- **Echtzeit-Speicheranzeige**:
+  - Zeigt den aktuellen Speicherplatz, belegten und freien Platz in Gigabyte sowie Prozent an.
+- **NAS & Netzlaufwerke (SMB/CIFS & NFS)**:
+  - Freigaben von Synology, QNAP, TrueNAS oder Linux-Servern können direkt über die Weboberfläche eingebunden werden – ganz ohne manuelles Hantieren im Terminal.
+  - Automatische Integration in `/etc/fstab` für persistente Mounts auch nach einem Server-Neustart.
+- **1-Klick-Rechte-Reparatur**:
+  - Repariert Dateiberechtigungen (`0775`) und Eigentümer (`onvifscanner:onvifscanner`), falls ein Netzlaufwerk oder USB-Datenträger Schreibprobleme verursacht.
+- **Automatischer Notfall-Pufferschutz & Retention**:
+  - **Mindest-Freispeicher (Buffer)**: Garantiert, dass z. B. immer mindestens 5 GB freier Speicherplatz auf der Partition verbleiben. Fällt der freie Speicher darunter, löscht das System automatisch die ältesten Videosegmente.
+  - **Vorhaltezeit (Tage)**: Begrenzt die Lebensdauer von Aufnahmen (z. B. maximal 14 oder 30 Tage gemäß DSGVO).
+  - **Ordner-Hygiene**: Automatische Bereinigung verwaister temporärer Ringpuffer- und Staging-Dateien.
+
+## Interaktive Zeitleiste & Vorfall-Prüfung
+
+Unter `/timeline` steht eine intuitive Zeitleiste für die Überprüfung aller Überwachungsaufnahmen bereit:
+
+- **Flexible Zoomstufen**: Umschalten zwischen 15 Minuten, 30 Minuten, 1 Stunde, 3 Stunden, 6 Stunden, 12 Stunden und 24 Stunden.
+- **Visuelle Mini-Map**: Zeigt den gesamten Tagesverlauf auf einen Blick mit direkter Sprungfunktion zu auffälligen Ereignissen.
+- **Farbcodierung**: Aufnahmen mit erkannten Personen, Fahrzeugen oder reinen Bewegungsereignissen sind farblich hervorgehoben.
+- **Flüssiges Scrubben**: Direktes Spulen und präzise Zeitpunktauswahl synchronisiert mit der Videowiedergabe.
+- **Kamera-Filter**: Einzelne Kameras gezielt isolieren oder die Gesamtsituation im Überblick betrachten.
+
+## Zweisprachige Oberfläche (Deutsch & Englisch)
+
+ONVIFscanner unterstützt Deutsch und Englisch vollständig:
+- Schnellumschaltung direkt über das Sprach-Symbol (DE/EN) im Header oder in den Einstellungen.
+- Alle Navigationselemente, Einstellungen, Kalender, Tageszusammenfassungen, Speicherstatistiken und Dialoge passen sich sofort an.
+- Datums- und Zeitformate sowie Monatsnamen im Archiv und in der Zeitleiste werden automatisch in der gewählten Sprache formatiert.
 
 ## Woher kommen die Streaming-URLs?
 
