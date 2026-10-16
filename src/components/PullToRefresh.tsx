@@ -12,9 +12,25 @@ export function PullToRefresh({ children }: { children: React.ReactNode }) {
     // Nur auf Touch-Geräten aktivieren
     if (typeof window === "undefined" || !("ontouchstart" in window)) return;
 
-    const handleTouchStart = (e: TouchEvent) => {
+    const isModalOrMultiTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) return true;
+      if (
+        document.body.style.touchAction === "none" ||
+        document.documentElement.style.touchAction === "none" ||
+        document.body.style.overflow === "hidden" ||
+        document.body.style.position === "fixed"
+      ) {
+        return true;
+      }
       const target = e.target instanceof Element ? e.target : null;
-      if (target?.closest('[data-pull-to-refresh-ignore="true"]')) {
+      if (target?.closest('[data-pull-to-refresh-ignore="true"], .camera-fullscreen-viewport')) {
+        return true;
+      }
+      return false;
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isModalOrMultiTouch(e)) {
         setIsPulling(false);
         setPullDistance(0);
         return;
@@ -28,6 +44,11 @@ export function PullToRefresh({ children }: { children: React.ReactNode }) {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isPulling) return;
+      if (isModalOrMultiTouch(e)) {
+        setIsPulling(false);
+        setPullDistance(0);
+        return;
+      }
       
       const currentY = e.touches[0].clientY;
       const diff = currentY - startY;

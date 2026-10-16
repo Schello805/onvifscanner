@@ -172,6 +172,23 @@ export const VENDOR_CAMERA_PROFILES: VendorCameraProfile[] = [
     ]
   },
   {
+    id: "xiongmai",
+    label: "Xiongmai / XMeye / NetSurveillance",
+    match: ["xiongmai", "xmeye", "netsurveillance", "ipc", "hi35", "sofia", "besder", "hiseeu", "ctronics", "srihome", "anran", "zosi"],
+    rtsp: [
+      { label: "RTSP Main (XMeye)", path: "/user=admin&password=&channel=1&stream=0.sdp?" },
+      { label: "RTSP Sub (XMeye)", path: "/user=admin&password=&channel=1&stream=1.sdp?" },
+      { label: "RTSP Live Ch0", path: "/live/ch0" },
+      { label: "RTSP Stream 0", path: "/0" },
+      { label: "RTSP Stream 11", path: "/11" }
+    ],
+    httpStream: [],
+    snapshot: [
+      { label: "Snapshot CGI", path: "/webcapture.jpg?command=snap&channel=1" },
+      { label: "Snapshot", path: "/snapshot.jpg" }
+    ]
+  },
+  {
     id: "generic",
     label: "Generic MJPEG/JPEG",
     match: [],

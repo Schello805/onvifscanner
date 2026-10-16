@@ -33,6 +33,11 @@ type MediaGesture = {
   startCenterX: number;
   startCenterY: number;
   startDistance: number;
+  prevCenterX: number;
+  prevCenterY: number;
+  prevDistance: number;
+  lastPointCount: number;
+  wasMultiTouch: boolean;
   moved: boolean;
 };
 
@@ -349,6 +354,7 @@ export default function CameraWallPage() {
   const liveCamerasRef = useRef<Set<string>>(new Set());
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
+  const lastGestureTimeRef = useRef(0);
   const mediaTransformRef = useRef(mediaTransform);
   const mediaViewportRef = useRef<HTMLDivElement | null>(null);
   const mediaSurfaceRef = useRef<HTMLDivElement | null>(null);
@@ -362,6 +368,11 @@ export default function CameraWallPage() {
     startCenterX: 0,
     startCenterY: 0,
     startDistance: 0,
+    prevCenterX: 0,
+    prevCenterY: 0,
+    prevDistance: 0,
+    lastPointCount: 0,
+    wasMultiTouch: false,
     moved: false,
   });
   const cameraControlsTimerRef = useRef<number | null>(null);
@@ -396,6 +407,11 @@ export default function CameraWallPage() {
       startCenterX: 0,
       startCenterY: 0,
       startDistance: 0,
+      prevCenterX: 0,
+      prevCenterY: 0,
+      prevDistance: 0,
+      lastPointCount: 0,
+      wasMultiTouch: false,
       moved: false,
     };
     mediaTransformRef.current = { scale: 1, x: 0, y: 0 };
@@ -416,6 +432,9 @@ export default function CameraWallPage() {
     document.documentElement.style.overscrollBehavior = "none";
     document.body.style.overscrollBehavior = "none";
 
+    const isInteractiveControl = (target: EventTarget | null) =>
+      target instanceof Element && Boolean(target.closest("button, a"));
+
     const eventBelongsToViewport = (event: Event) => {
       const target = event.target;
       return target instanceof Node && viewport.contains(target);
@@ -425,9 +444,9 @@ export default function CameraWallPage() {
       event.preventDefault();
     };
     const preventNativeTouch = (event: TouchEvent) => {
-      if (!eventBelongsToViewport(event)) return;
+      if (!eventBelongsToViewport(event) || isInteractiveControl(event.target)) return;
       if (event.type === "touchmove" || event.touches.length > 1 || mediaTransformRef.current.scale > 1) {
-        event.preventDefault();
+        if (event.cancelable) event.preventDefault();
       }
     };
     const listenerOptions: AddEventListenerOptions = { passive: false, capture: true };
@@ -436,24 +455,59 @@ export default function CameraWallPage() {
       y: touch.clientY,
     }));
     const handleTouchStart = (event: TouchEvent) => {
+      if (isInteractiveControl(event.target)) return;
       const points = touchPoints(event.touches);
       const preserveMoved = mediaTouchCountRef.current > 0 && mediaGestureRef.current.moved;
+      const preserveMulti = (mediaTouchCountRef.current > 0 && mediaGestureRef.current.wasMultiTouch) || points.length >= 2;
       mediaTouchCountRef.current = points.length;
-      if (points.length > 1) event.preventDefault();
-      resetMediaGesture(points, preserveMoved);
+      if (points.length > 1) {
+        lastGestureTimeRef.current = Date.now();
+        if (event.cancelable) event.preventDefault();
+      }
+      resetMediaGesture(points, preserveMoved, preserveMulti);
     };
     const handleTouchMove = (event: TouchEvent) => {
-      event.preventDefault();
+      if (isInteractiveControl(event.target)) return;
+      if (event.cancelable) event.preventDefault();
       const points = touchPoints(event.touches);
       mediaTouchCountRef.current = points.length;
+      if (points.length > 1) {
+        lastGestureTimeRef.current = Date.now();
+      }
       updateMediaGestureRef.current(points, viewport);
     };
     const handleTouchEnd = (event: TouchEvent) => {
+      if (isInteractiveControl(event.target)) return;
       const moved = mediaGestureRef.current.moved;
+      const wasMulti = mediaGestureRef.current.wasMultiTouch;
+      if (moved || wasMulti) {
+        lastGestureTimeRef.current = Date.now();
+      }
       const remaining = touchPoints(event.touches);
       mediaTouchCountRef.current = remaining.length;
-      resetMediaGesture(remaining, moved);
-      if (remaining.length === 0) setMediaTransform({ ...mediaTransformRef.current });
+      if (remaining.length === 0) {
+        resetMediaGesture([], false, false);
+        setMediaTransform({ ...mediaTransformRef.current });
+      } else {
+        resetMediaGesture(remaining, moved, wasMulti);
+      }
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (isInteractiveControl(event.target)) return;
+      event.preventDefault();
+      lastGestureTimeRef.current = Date.now();
+      const current = mediaTransformRef.current;
+      const zoomIntensity = event.ctrlKey ? 0.015 : 0.0025;
+      const factor = Math.exp(-event.deltaY * zoomIntensity);
+      const nextScale = Math.min(4, Math.max(1, current.scale * factor));
+      if (Math.abs(nextScale - current.scale) < 0.001) return;
+      const rect = viewport.getBoundingClientRect();
+      const originX = rect.left + rect.width / 2;
+      const originY = rect.top + rect.height / 2;
+      const ratio = nextScale / current.scale;
+      const nextX = (event.clientX - originX) * (1 - ratio) + current.x * ratio;
+      const nextY = (event.clientY - originY) * (1 - ratio) + current.y * ratio;
+      applyMediaTransform({ scale: nextScale, x: nextX, y: nextY }, viewport, true);
     };
     document.addEventListener("gesturestart", preventGesture, listenerOptions);
     document.addEventListener("gesturechange", preventGesture, listenerOptions);
@@ -464,6 +518,7 @@ export default function CameraWallPage() {
     viewport.addEventListener("touchmove", handleTouchMove, { passive: false });
     viewport.addEventListener("touchend", handleTouchEnd, { passive: false });
     viewport.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
     return () => {
       document.removeEventListener("gesturestart", preventGesture, true);
       document.removeEventListener("gesturechange", preventGesture, true);
@@ -474,6 +529,7 @@ export default function CameraWallPage() {
       viewport.removeEventListener("touchmove", handleTouchMove);
       viewport.removeEventListener("touchend", handleTouchEnd);
       viewport.removeEventListener("touchcancel", handleTouchEnd);
+      viewport.removeEventListener("wheel", handleWheel);
       mediaTouchCountRef.current = 0;
       document.documentElement.style.touchAction = previousHtmlTouchAction;
       document.body.style.touchAction = previousBodyTouchAction;
@@ -1012,18 +1068,24 @@ export default function CameraWallPage() {
     applyMediaTransform({ scale: nextScale, x: 0, y: 0 });
   }
 
-  function resetMediaGesture(points: MediaPoint[], moved = false) {
+  function resetMediaGesture(points: MediaPoint[], moved = false, wasMultiTouch = false) {
     const current = mediaTransformRef.current;
     const [first, second] = points;
     const centerX = second ? (first.x + second.x) / 2 : first?.x ?? 0;
     const centerY = second ? (first.y + second.y) / 2 : first?.y ?? 0;
+    const dist = second ? Math.hypot(second.x - first.x, second.y - first.y) : 0;
     mediaGestureRef.current = {
       startScale: current.scale,
       startX: current.x,
       startY: current.y,
       startCenterX: centerX,
       startCenterY: centerY,
-      startDistance: second ? Math.hypot(second.x - first.x, second.y - first.y) : 0,
+      startDistance: dist,
+      prevCenterX: centerX,
+      prevCenterY: centerY,
+      prevDistance: dist,
+      lastPointCount: points.length,
+      wasMultiTouch: wasMultiTouch || points.length >= 2,
       moved,
     };
   }
@@ -1032,8 +1094,10 @@ export default function CameraWallPage() {
     if (!expandedCameraId || event.pointerType === "touch" || (event.target as HTMLElement).closest("button, a")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const preserveMoved = mediaPointersRef.current.size > 0 && mediaGestureRef.current.moved;
+    const preserveMulti = mediaPointersRef.current.size > 0 && mediaGestureRef.current.wasMultiTouch;
     mediaPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    resetMediaGesture([...mediaPointersRef.current.values()], preserveMoved);
+    const pts = [...mediaPointersRef.current.values()];
+    resetMediaGesture(pts, preserveMoved, preserveMulti || pts.length >= 2);
   }
 
   function handleMediaPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1052,18 +1116,42 @@ export default function CameraWallPage() {
       const distance = Math.hypot(second.x - first.x, second.y - first.y);
       const centerX = (first.x + second.x) / 2;
       const centerY = (first.y + second.y) / 2;
-      const scaleFactor = gesture.startDistance > 0 ? distance / gesture.startDistance : 1;
-      const scale = Math.min(4, Math.max(1, gesture.startScale * scaleFactor));
+      gesture.wasMultiTouch = true;
+
+      // Sync anchor on transition into 2-finger mode to prevent any initial jump
+      if (gesture.lastPointCount !== points.length || gesture.prevDistance <= 0) {
+        gesture.startScale = mediaTransformRef.current.scale;
+        gesture.startX = mediaTransformRef.current.x;
+        gesture.startY = mediaTransformRef.current.y;
+        gesture.startCenterX = centerX;
+        gesture.startCenterY = centerY;
+        gesture.startDistance = distance;
+        gesture.prevCenterX = centerX;
+        gesture.prevCenterY = centerY;
+        gesture.prevDistance = distance;
+        gesture.lastPointCount = points.length;
+        return;
+      }
+
+      const current = mediaTransformRef.current;
+      const stepRatio = distance > 0 && gesture.prevDistance > 0 ? distance / gesture.prevDistance : 1;
+      const nextScale = Math.min(4, Math.max(1, current.scale * stepRatio));
+      const effectiveRatio = current.scale > 0 ? nextScale / current.scale : 1;
+
       const rect = element.getBoundingClientRect();
       const originX = rect.left + rect.width / 2;
       const originY = rect.top + rect.height / 2;
-      const focalX = (gesture.startCenterX - originX - gesture.startX) / gesture.startScale;
-      const focalY = (gesture.startCenterY - originY - gesture.startY) / gesture.startScale;
-      applyMediaTransform({
-        scale,
-        x: centerX - originX - focalX * scale,
-        y: centerY - originY - focalY * scale,
-      }, element, false);
+
+      const nextX = centerX - originX - (gesture.prevCenterX - originX - current.x) * effectiveRatio;
+      const nextY = centerY - originY - (gesture.prevCenterY - originY - current.y) * effectiveRatio;
+
+      applyMediaTransform({ scale: nextScale, x: nextX, y: nextY }, element, false);
+
+      gesture.prevCenterX = centerX;
+      gesture.prevCenterY = centerY;
+      gesture.prevDistance = distance;
+      gesture.lastPointCount = points.length;
+
       if (
         Math.abs(distance - gesture.startDistance) > 2
         || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 2
@@ -1073,16 +1161,38 @@ export default function CameraWallPage() {
       return;
     }
 
+    // Ignore 1-finger trailing movement when lifting fingers after a multi-touch pinch
+    if (gesture.wasMultiTouch) {
+      gesture.lastPointCount = points.length;
+      return;
+    }
+
     const point = points[0];
-    const deltaX = point.x - gesture.startCenterX;
-    const deltaY = point.y - gesture.startCenterY;
-    if (gesture.startScale > 1 && (gesture.moved || Math.hypot(deltaX, deltaY) > 2)) {
+    if (gesture.lastPointCount !== 1) {
+      gesture.prevCenterX = point.x;
+      gesture.prevCenterY = point.y;
+      gesture.startCenterX = point.x;
+      gesture.startCenterY = point.y;
+      gesture.lastPointCount = 1;
+      return;
+    }
+
+    const totalDeltaX = point.x - gesture.startCenterX;
+    const totalDeltaY = point.y - gesture.startCenterY;
+    const stepX = point.x - gesture.prevCenterX;
+    const stepY = point.y - gesture.prevCenterY;
+
+    if (mediaTransformRef.current.scale > 1 && (gesture.moved || Math.hypot(totalDeltaX, totalDeltaY) > 3)) {
+      const current = mediaTransformRef.current;
       applyMediaTransform({
-        scale: gesture.startScale,
-        x: gesture.startX + deltaX,
-        y: gesture.startY + deltaY,
+        scale: current.scale,
+        x: current.x + stepX,
+        y: current.y + stepY,
       }, element, false);
+      gesture.prevCenterX = point.x;
+      gesture.prevCenterY = point.y;
       gesture.moved = true;
+      lastGestureTimeRef.current = Date.now();
     }
   }
 
@@ -1091,11 +1201,17 @@ export default function CameraWallPage() {
   function handleMediaPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.pointerType === "touch") return;
     const moved = mediaGestureRef.current.moved;
+    const wasMulti = mediaGestureRef.current.wasMultiTouch;
+    if (moved || wasMulti) {
+      lastGestureTimeRef.current = Date.now();
+    }
     mediaPointersRef.current.delete(event.pointerId);
     const remaining = [...mediaPointersRef.current.values()];
-    resetMediaGesture(remaining, moved);
     if (remaining.length === 0) {
+      resetMediaGesture([], false, false);
       setMediaTransform({ ...mediaTransformRef.current });
+    } else {
+      resetMediaGesture(remaining, moved, wasMulti);
     }
   }
 
@@ -1337,26 +1453,33 @@ export default function CameraWallPage() {
                   setDraggedIndex(null);
                   setDragOverIndex(null);
                 }}
-                className={`camera-card group overflow-hidden transition-all flex flex-col justify-center ${
+                data-pull-to-refresh-ignore={expandedCameraId === camera.id ? "true" : undefined}
+                className={`camera-card group overflow-hidden flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl ${isRecordingNow ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                    : `relative rounded-2xl border bg-black shadow-2xl transition-all ${isRecordingNow ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
                 <div 
                   ref={expandedCameraId === camera.id ? mediaViewportRef : undefined}
+                  data-pull-to-refresh-ignore={expandedCameraId === camera.id ? "true" : undefined}
                   onPointerDown={handleMediaPointerDown}
                   onPointerMove={handleMediaPointerMove}
                   onPointerUp={handleMediaPointerEnd}
                   onPointerCancel={handleMediaPointerEnd}
                   onClick={() => {
-                    if (mediaGestureRef.current.moved) {
+                    const now = Date.now();
+                    if (
+                      mediaGestureRef.current.moved ||
+                      mediaGestureRef.current.wasMultiTouch ||
+                      now - lastGestureTimeRef.current < 350
+                    ) {
                       mediaGestureRef.current.moved = false;
+                      lastClickRef.current = { id: "", time: 0 };
                       return;
                     }
                     setCameraMenuId(null);
                     revealCameraControls(camera.id);
-                    const now = Date.now();
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
                       if (expandedCameraId === camera.id) {
@@ -1440,11 +1563,15 @@ export default function CameraWallPage() {
                   <div
                     ref={expandedCameraId === camera.id ? mediaSurfaceRef : undefined}
                     className="h-full w-full will-change-transform"
-                    style={{
-                      transform: `translate3d(${mediaTransformRef.current.x}px, ${mediaTransformRef.current.y}px, 0) scale(${mediaTransformRef.current.scale})`,
-                      transformOrigin: "center center",
-                      transition: "none",
-                    }}
+                    style={
+                      expandedCameraId === camera.id
+                        ? {
+                            transform: `translate3d(${mediaTransformRef.current.x}px, ${mediaTransformRef.current.y}px, 0) scale(${mediaTransformRef.current.scale})`,
+                            transformOrigin: "center center",
+                            transition: "none",
+                          }
+                        : undefined
+                    }
                   >
                   {isLive ? (
                      <iframe 
@@ -1459,7 +1586,7 @@ export default function CameraWallPage() {
                       <img
                         src={image.src}
                         alt={camera.name}
-                        className={`w-full h-full block transition-all duration-500 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
+                        className={`w-full h-full block transition-opacity duration-300 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
                           image.state === "error" ? "opacity-30 grayscale" : 
                           (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
                         }`}

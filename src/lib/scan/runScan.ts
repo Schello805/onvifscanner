@@ -145,15 +145,25 @@ export async function runScan(
         }
       }
 
-      // If HTTP is open, try common ONVIF device_service path as a hint.
-      const httpPort = openTcpPorts.find((p) => p === 80 || p === 8000 || p === 8080);
+      // If HTTP/ONVIF port is open, try common ONVIF device_service paths in priority order (dedicated ONVIF ports first).
+      const onvifPortPriority = [8899, 8000, 2020, 8080, 8888, 8081, 80];
+      const onvifHttpPorts = openTcpPorts
+        .filter((p) => onvifPortPriority.includes(p))
+        .sort((a, b) => onvifPortPriority.indexOf(a) - onvifPortPriority.indexOf(b));
       const httpsPort = openTcpPorts.find((p) => p === 443);
       const xaddrs: string[] = [];
-      if (httpPort) xaddrs.push(`http://${ip}:${httpPort}/onvif/device_service`);
+      for (const p of onvifHttpPorts) {
+        xaddrs.push(`http://${ip}:${p}/onvif/device_service`);
+      }
       if (httpsPort) xaddrs.push(`https://${ip}:${httpsPort}/onvif/device_service`);
 
+      const hasDedicatedCameraPort = openTcpPorts.some((p) =>
+        [554, 8554, 10554, 8555, 8000, 8899, 2020].includes(p)
+      );
+      const shouldProbeOnvifNow = req.deepProbe && (deepProbeCidr || hasDedicatedCameraPort);
+
       if (xaddrs.length) {
-        if (deepProbeCidr) {
+        if (shouldProbeOnvifNow) {
           result.onvif = await probeOnvifFromXaddr({
             ip,
             xaddrs,
@@ -165,13 +175,15 @@ export async function runScan(
           const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
           if (onvifRtsp.length) {
             if (!result.rtsp) {
-              result.rtsp = { ok: false, port: 554, uris: onvifRtsp };
+              result.rtsp = { ok: true, port: rtspPort ?? 554, uris: onvifRtsp };
             } else {
+              result.rtsp.ok = true;
               result.rtsp.uris = Array.from(
                 new Set([...(result.rtsp.uris ?? []), ...onvifRtsp])
               );
             }
           }
+          finalizeCameraResult(result);
         } else if (req.preset !== "auto") {
           result.onvif = {
             ok: false,
@@ -204,7 +216,7 @@ export async function runScan(
     const cameraCandidates = scanned.filter((r) => {
       if (isConfirmedCamera(r)) return true;
       const ports = r.openTcpPorts ?? [];
-      return ports.some((p) => [554, 8554, 8000, 8899].includes(p));
+      return ports.some((p) => [554, 8554, 8000, 8899, 2020].includes(p));
     });
     mergeResults(results, cameraCandidates);
     warnings.push(
@@ -239,6 +251,24 @@ export async function runScan(
     const vendorTargets = results.slice(0, vendorLimit);
     await mapLimit(vendorTargets, Math.min(4, vendorTargets.length), async (r) => {
       throwIfAborted();
+      if (!r.onvif?.ok) {
+        const onvifPortPriority = [8899, 8000, 2020, 8080, 8888, 8081, 80];
+        const portXaddrs = (r.openTcpPorts ?? [])
+          .filter((p) => onvifPortPriority.includes(p))
+          .sort((a, b) => onvifPortPriority.indexOf(a) - onvifPortPriority.indexOf(b))
+          .map((p) => `http://${r.ip}:${p}/onvif/device_service`);
+        const candidateXaddrs = Array.from(new Set([...(r.onvif?.xaddrs ?? []), ...portXaddrs]));
+        if (candidateXaddrs.length) {
+          const onvifRes = await probeOnvifFromXaddr({
+            ip: r.ip,
+            xaddrs: candidateXaddrs,
+            timeoutMs: req.timeoutMs,
+            credentials: req.credentials,
+            credentialsList: credsList.length ? credsList : undefined
+          });
+          r.onvif = preferDetailedOnvif(r.onvif, onvifRes);
+        }
+      }
       let vendor;
       try {
         vendor = await probeVendorUrls({
@@ -362,10 +392,20 @@ function isConfirmedCamera(result: ScanResult): boolean {
       "eufy",
       "ezviz",
       "imou",
-      "annke"
+      "annke",
+      "xiongmai",
+      "xmeye",
+      "netsurveillance",
+      "hisilicon",
+      "besder",
+      "hiseeu",
+      "ctronics",
+      "srihome",
+      "anran",
+      "zosi"
     ];
     if (cameraVendors.some((cv) => m.includes(cv))) {
-      const hasCameraPort = result.openTcpPorts?.some((p) => [554, 8554, 8000, 8899].includes(p));
+      const hasCameraPort = result.openTcpPorts?.some((p) => [554, 8554, 8000, 8899, 2020].includes(p));
       if (hasCameraPort) return true;
     }
   }
@@ -403,6 +443,7 @@ function preferDetailedOnvif(
   if (!current) return next;
   if (!next) return current;
   if (next.ok && !current.ok) return next;
+  if (!current.ok && !current.discoveryOnly && next.discoveryOnly) return next;
   if ((next.rtspUris?.length ?? 0) > (current.rtspUris?.length ?? 0)) return next;
   if ((next.snapshotUris?.length ?? 0) > (current.snapshotUris?.length ?? 0)) return next;
   return {

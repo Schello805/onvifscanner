@@ -127,7 +127,11 @@ export async function probeVendorUrls(args: {
       }
     }
 
-    const shouldProbeRtsp = profileHit || hasVendorHint || args.result.rtsp?.ok;
+    const hasRtspOrOnvifPort = Boolean(
+      args.result.rtsp?.port ||
+        args.result.openTcpPorts?.some((p) => [554, 8554, 8899].includes(p))
+    );
+    const shouldProbeRtsp = profileHit || hasVendorHint || args.result.rtsp?.ok || hasRtspOrOnvifPort;
     for (const candidate of shouldProbeRtsp ? profile.rtsp.slice(0, 2) : []) {
       if (rtspUris.length >= 2 || Date.now() >= deadlineAt) break;
       const url = `rtsp://${args.result.ip}:${rtspPort}${candidate.path}`;
@@ -194,11 +198,15 @@ function chooseProfiles(
     .join(" ")
     .toLowerCase();
 
+  if (xaddrText.includes(":8899/") || result.openTcpPorts?.includes(8899)) {
+    return byIds(["xiongmai", "hikvision", "dahua", "reolink", "uniview", "tapo", "generic"]);
+  }
+
   if (xaddrText.includes(":8000/")) {
     return byIds(["reolink", "hikvision", "dahua", "axis", "uniview", "geutebrueck", "generic"]);
   }
 
-  return byIds(["hikvision", "reolink", "dahua", "axis", "uniview", "geutebrueck", "foscam", "tapo", "generic"]);
+  return byIds(["hikvision", "reolink", "dahua", "xiongmai", "axis", "uniview", "geutebrueck", "foscam", "tapo", "generic"]);
 }
 
 function byIds(ids: string[]) {
