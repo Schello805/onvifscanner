@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
+import { decryptSecret, getWebhookToken } from "@/lib/security";
 import {
   motionCooldownSeconds,
   motionMonitoringRequested,
@@ -27,6 +28,23 @@ function payloadIsExplicitlyInactive(rawBody: string): boolean {
 export async function POST(req: Request) {
   try {
     const url = new URL(req.url);
+    const configuredToken = getWebhookToken();
+    if (configuredToken) {
+      const queryToken = url.searchParams.get("token")?.trim();
+      const headerToken = req.headers.get("x-webhook-token")?.trim();
+      const authHeader = req.headers.get("authorization") || "";
+      const bearerToken = authHeader.toLowerCase().startsWith("bearer ")
+        ? authHeader.slice(7).trim()
+        : "";
+      const provided = queryToken || headerToken || bearerToken;
+      if (provided !== configuredToken) {
+        return NextResponse.json(
+          { ok: false, error: "Ungültiger oder fehlender Webhook-Token." },
+          { status: 401 }
+        );
+      }
+    }
+
     const queryCameraId = url.searchParams.get("cameraId");
     const queryIp = url.searchParams.get("ip");
 
@@ -146,13 +164,14 @@ export async function POST(req: Request) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                  cameraId: matchedCamera.id,
                   urls: [...snapshotUris, ...streamUris],
                   size: 480,
                   timeoutMs: 3_000,
                   fastAuth: true,
                   fresh: true,
                   credentials: matchedCamera.username
-                    ? { username: matchedCamera.username, password: matchedCamera.password || "" }
+                    ? { username: matchedCamera.username, password: decryptSecret(matchedCamera.password) }
                     : undefined,
                 }),
                 signal: AbortSignal.timeout(5_000),

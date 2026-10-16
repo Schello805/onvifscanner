@@ -244,6 +244,77 @@ export async function discoverSystemVolumes(): Promise<DiscoveredVolume[]> {
   return volumes;
 }
 
+const BLOCKED_SYSTEM_PREFIXES = [
+  "/etc",
+  "/bin",
+  "/sbin",
+  "/usr",
+  "/lib",
+  "/lib64",
+  "/boot",
+  "/proc",
+  "/sys",
+  "/dev",
+  "/root",
+  "/run/systemd",
+  "/var/lib",
+  "/var/log",
+  "/var/run",
+  "/var/spool",
+  "/System",
+  "/Library",
+  "/Applications",
+  "/private/etc",
+  "/private/var",
+];
+
+/**
+ * Validates that a storage path is safe and not pointing to sensitive OS or application code directories.
+ */
+export function validateStorageTargetPath(targetPath: string): {
+  ok: boolean;
+  resolved: string;
+  error?: string;
+} {
+  if (!targetPath || typeof targetPath !== "string" || targetPath.includes("\0")) {
+    return { ok: false, resolved: "", error: "Ungültiger Pfad." };
+  }
+  const resolved = path.resolve(targetPath.trim());
+  if (resolved === "/" || resolved === "/mnt" || resolved === "/media" || resolved === "/Volumes") {
+    return {
+      ok: false,
+      resolved,
+      error: "Bitte einen konkreten Unterordner (z. B. /mnt/nas/recordings) statt des Wurzelverzeichnisses angeben.",
+    };
+  }
+
+  for (const prefix of BLOCKED_SYSTEM_PREFIXES) {
+    if (resolved === prefix || resolved.startsWith(`${prefix}/`)) {
+      return {
+        ok: false,
+        resolved,
+        error: `Systempfad (${prefix}) ist aus Sicherheitsgründen als Speicherziel gesperrt.`,
+      };
+    }
+  }
+
+  const appRoot = path.resolve(process.cwd());
+  const appDataDir = path.resolve(appRoot, "data");
+  if (
+    (resolved === appRoot || resolved.startsWith(`${appRoot}/`)) &&
+    resolved !== appDataDir &&
+    !resolved.startsWith(`${appDataDir}/`)
+  ) {
+    return {
+      ok: false,
+      resolved,
+      error: "Innerhalb des Programmordners darf nur das Unterverzeichnis 'data/' für Aufnahmen genutzt werden.",
+    };
+  }
+
+  return { ok: true, resolved };
+}
+
 /**
  * Tests an arbitrary path for existence and write permissions.
  */
@@ -270,7 +341,12 @@ export async function testStoragePath(
   };
 
   try {
-    const resolved = path.resolve(targetPath);
+    const check = validateStorageTargetPath(targetPath);
+    if (!check.ok) {
+      res.error = check.error;
+      return res;
+    }
+    const resolved = check.resolved;
     let exists = fs.existsSync(resolved);
 
     if (!exists && autoCreate) {
@@ -326,7 +402,11 @@ export async function fixPathPermissions(targetPath: string): Promise<{
   message: string;
   error?: string;
 }> {
-  const resolved = path.resolve(targetPath);
+  const check = validateStorageTargetPath(targetPath);
+  if (!check.ok) {
+    return { ok: false, message: check.error || "Ungültiger Pfad.", error: check.error };
+  }
+  const resolved = check.resolved;
   if (!fs.existsSync(resolved)) {
     try {
       await fsp.mkdir(resolved, { recursive: true });
@@ -351,8 +431,8 @@ export async function fixPathPermissions(targetPath: string): Promise<{
 
   // 2. Direct chmod fallback
   try {
-    await fsp.chmod(resolved, 0o777);
-    return { ok: true, message: "Berechtigungen wurden freigegeben (777)." };
+    await fsp.chmod(resolved, 0o775);
+    return { ok: true, message: "Berechtigungen wurden freigegeben (775)." };
   } catch (chmodErr: any) {
     return {
       ok: false,
@@ -379,7 +459,21 @@ export async function mountNetworkShare(params: {
   message: string;
   error?: string;
 }> {
-  const resolvedMount = path.resolve(params.mountpoint);
+  const check = validateStorageTargetPath(params.mountpoint);
+  if (!check.ok) {
+    return { ok: false, message: check.error || "Ungültiger Mountpunkt.", error: check.error };
+  }
+  const resolvedMount = check.resolved;
+
+  const cleanServer = String(params.server || "").trim();
+  const cleanShare = String(params.share || "").trim().replace(/^\/+/, "");
+  if (!/^[a-zA-Z0-9._-]+$/.test(cleanServer) || cleanServer.startsWith("-")) {
+    return { ok: false, message: "Ungültiger Servername oder IP-Adresse.", error: "Ungültiger Servername." };
+  }
+  if (!cleanShare || /[\0\r\n;|&$`\\]/.test(cleanShare) || cleanShare.startsWith("-")) {
+    return { ok: false, message: "Ungültiger Freigabename.", error: "Ungültiger Freigabename." };
+  }
+
   const helperPath = "/usr/local/bin/onvifscanner-storage-helper";
 
   if (!fs.existsSync(helperPath)) {
@@ -395,8 +489,8 @@ export async function mountNetworkShare(params: {
       const { stdout } = await execFileAsync("sudo", [
         helperPath,
         "mount-cifs",
-        params.server,
-        params.share,
+        cleanServer,
+        cleanShare,
         resolvedMount,
         params.username || "",
         params.password || "",
@@ -409,8 +503,8 @@ export async function mountNetworkShare(params: {
       const { stdout } = await execFileAsync("sudo", [
         helperPath,
         "mount-nfs",
-        params.server,
-        params.share,
+        cleanServer,
+        cleanShare,
         resolvedMount,
         params.persist !== false ? "true" : "false",
       ]);

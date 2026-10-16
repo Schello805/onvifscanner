@@ -223,9 +223,10 @@ class OnvifEventManager {
   }
 
   async runWorkerLoop(cam, workerState) {
+    const { decryptSecret } = require('./security');
     const port = cam.onvifPort || cam.port || 80;
     const deviceUrl = `http://${cam.ip}:${port}/onvif/device_service`;
-    const creds = cam.username ? { username: cam.username, password: cam.password } : undefined;
+    const creds = cam.username ? { username: cam.username, password: decryptSecret(cam.password) } : undefined;
 
     // 1. Get Event service URL
     let eventServiceUrl = `http://${cam.ip}:${port}/onvif/event_service`;

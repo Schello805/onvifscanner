@@ -3,6 +3,7 @@ import { RECORDING_MODES, normalizeRecordingMode, recordingModeUsesSchedule } fr
 import fs from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/db";
+import { decryptSecret, encryptSecret, MASKED_PASSWORD } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ export async function GET() {
                 snapshotUris: JSON.stringify(cam.snapshotUris || []),
                 streamUris: JSON.stringify(cam.streamUris || []),
                 username: cam.credentials?.username,
-                password: cam.credentials?.password,
+                password: encryptSecret(cam.credentials?.password),
                 overlayPosition: cam.overlayPosition,
                 savedAt: cam.savedAt ? new Date(cam.savedAt) : new Date(),
                 status: {
@@ -84,9 +85,15 @@ export async function GET() {
             update: { columns: parsed.columns ?? null, refresh: parsed.refresh ?? null },
             create: { id: "default", columns: parsed.columns ?? null, refresh: parsed.refresh ?? null }
           });
-          
+
+          const sanitizedMigrated = parsed.cameras.map((cam: any) => ({
+            ...cam,
+            credentials: cam.credentials?.username
+              ? { username: cam.credentials.username, password: cam.credentials.password ? MASKED_PASSWORD : "" }
+              : undefined,
+          }));
           return NextResponse.json({
-            cameras: parsed.cameras,
+            cameras: sanitizedMigrated,
             columns: parsed.columns ?? null,
             refresh: parsed.refresh ?? null
           });
@@ -96,39 +103,44 @@ export async function GET() {
       }
     }
 
-    const cameras = dbCameras.map(cam => ({
-      id: cam.id,
-      ip: cam.ip,
-      name: cam.name,
-      hostname: cam.hostname ?? undefined,
-      manufacturer: cam.manufacturer ?? undefined,
-      model: cam.model ?? undefined,
-      resolution: cam.resolution ?? undefined,
-      recordEnabled: cam.recordEnabled,
-      recordMode: normalizeRecordingMode(cam),
-      recordSegmentMinutes: cam.recordSegmentMinutes,
-      motionPreRollSeconds: cam.motionPreRollSeconds,
-      motionPostRollSeconds: cam.motionPostRollSeconds,
-      motionSensitivity: cam.motionSensitivity,
-      motionIgnoreRegions: normalizeMotionRegions(JSON.parse(cam.motionIgnoreRegions || "[]")),
-      objectDetectionEnabled: cam.objectDetectionEnabled,
-      objectDetectionClasses: normalizeStringArray(JSON.parse(cam.objectDetectionClasses || "[]"), ["person", "vehicle", "animal"]),
-      objectMinConfidence: cam.objectMinConfidence,
-      licensePlateRecognitionEnabled: cam.licensePlateRecognitionEnabled,
-      motionScheduleEnabled: cam.motionScheduleEnabled,
-      motionScheduleStart: cam.motionScheduleStart,
-      motionScheduleEnd: cam.motionScheduleEnd,
-      motionScheduleDays: normalizeScheduleDays(JSON.parse(cam.motionScheduleDays || "[]")),
-      motionScheduleSensitivity: cam.motionScheduleSensitivity,
-      notificationsEnabled: cam.notificationsEnabled,
-      storageTargetId: cam.storageTargetId ?? undefined,
-      snapshotUris: JSON.parse(cam.snapshotUris),
-      streamUris: JSON.parse(cam.streamUris),
-      credentials: cam.username ? { username: cam.username, password: cam.password ?? "" } : undefined,
-      overlayPosition: cam.overlayPosition ?? undefined,
-      savedAt: cam.savedAt.toISOString(),
-      status: cam.status ? { isOnline: cam.status.isOnline, lastSeen: cam.status.lastSeen.toISOString() } : undefined
-    }));
+    const cameras = dbCameras.map(cam => {
+      const hasRealPassword = Boolean(decryptSecret(cam.password));
+      return {
+        id: cam.id,
+        ip: cam.ip,
+        name: cam.name,
+        hostname: cam.hostname ?? undefined,
+        manufacturer: cam.manufacturer ?? undefined,
+        model: cam.model ?? undefined,
+        resolution: cam.resolution ?? undefined,
+        recordEnabled: cam.recordEnabled,
+        recordMode: normalizeRecordingMode(cam),
+        recordSegmentMinutes: cam.recordSegmentMinutes,
+        motionPreRollSeconds: cam.motionPreRollSeconds,
+        motionPostRollSeconds: cam.motionPostRollSeconds,
+        motionSensitivity: cam.motionSensitivity,
+        motionIgnoreRegions: normalizeMotionRegions(JSON.parse(cam.motionIgnoreRegions || "[]")),
+        objectDetectionEnabled: cam.objectDetectionEnabled,
+        objectDetectionClasses: normalizeStringArray(JSON.parse(cam.objectDetectionClasses || "[]"), ["person", "vehicle", "animal"]),
+        objectMinConfidence: cam.objectMinConfidence,
+        licensePlateRecognitionEnabled: cam.licensePlateRecognitionEnabled,
+        motionScheduleEnabled: cam.motionScheduleEnabled,
+        motionScheduleStart: cam.motionScheduleStart,
+        motionScheduleEnd: cam.motionScheduleEnd,
+        motionScheduleDays: normalizeScheduleDays(JSON.parse(cam.motionScheduleDays || "[]")),
+        motionScheduleSensitivity: cam.motionScheduleSensitivity,
+        notificationsEnabled: cam.notificationsEnabled,
+        storageTargetId: cam.storageTargetId ?? undefined,
+        snapshotUris: JSON.parse(cam.snapshotUris),
+        streamUris: JSON.parse(cam.streamUris),
+        credentials: cam.username
+          ? { username: cam.username, password: hasRealPassword ? MASKED_PASSWORD : "" }
+          : undefined,
+        overlayPosition: cam.overlayPosition ?? undefined,
+        savedAt: cam.savedAt.toISOString(),
+        status: cam.status ? { isOnline: cam.status.isOnline, lastSeen: cam.status.lastSeen.toISOString() } : undefined
+      };
+    });
 
     return NextResponse.json({ 
       cameras, 
@@ -154,9 +166,9 @@ export async function POST(req: Request) {
 
     // Then save cameras
     if (body.cameras && Array.isArray(body.cameras)) {
-      // For simplicity, we'll sync the database to match the incoming list
-      // 1. Get existing cameras to avoid losing status
-      const existing = await prisma.camera.findMany({ select: { id: true } });
+      // 1. Get existing cameras to avoid losing status and preserved encrypted passwords
+      const existing = await prisma.camera.findMany({ select: { id: true, password: true } });
+      const existingMap = new Map(existing.map(e => [e.id, e]));
       const existingIds = new Set(existing.map(e => e.id));
       const incomingIds = new Set(body.cameras.map((c: any) => c.id));
 
@@ -171,6 +183,14 @@ export async function POST(req: Request) {
       // 3. Upsert incoming cameras
       for (let i = 0; i < body.cameras.length; i++) {
         const cam = body.cameras[i];
+        const prevCam = existingMap.get(cam.id);
+        const incomingPass = cam.credentials?.password;
+        const resolvedEncryptedPassword = !cam.credentials?.username
+          ? null
+          : incomingPass === MASKED_PASSWORD && prevCam
+          ? encryptSecret(decryptSecret(prevCam.password))
+          : encryptSecret(incomingPass ?? "");
+
         await prisma.camera.upsert({
           where: { id: cam.id },
           update: {
@@ -203,7 +223,7 @@ export async function POST(req: Request) {
             snapshotUris: JSON.stringify(cam.snapshotUris || []),
             streamUris: JSON.stringify(cam.streamUris || []),
             username: cam.credentials?.username,
-            password: cam.credentials?.password,
+            password: resolvedEncryptedPassword,
             overlayPosition: cam.overlayPosition,
             sortOrder: i,
           },
@@ -236,7 +256,7 @@ export async function POST(req: Request) {
             snapshotUris: JSON.stringify(cam.snapshotUris || []),
             streamUris: JSON.stringify(cam.streamUris || []),
             username: cam.credentials?.username,
-            password: cam.credentials?.password,
+            password: resolvedEncryptedPassword,
             overlayPosition: cam.overlayPosition,
             sortOrder: i,
             status: {

@@ -12,6 +12,12 @@ if (!process.env.DATABASE_URL) {
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const {
+  SESSION_COOKIE_NAME,
+  isAppAuthEnabled,
+  parseCookies,
+  verifySessionToken,
+} = require("./scripts/security");
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST || "0.0.0.0";
@@ -19,6 +25,11 @@ const port = parseInt(process.env.PORT || "3000", 10);
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
+
+function isLoopbackAddress(addr) {
+  if (!addr) return false;
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+}
 
 app.prepare().then(() => {
   let mediaMtx = null;
@@ -49,6 +60,65 @@ app.prepare().then(() => {
 
   const server = createServer(async (req, res) => {
     try {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("Referrer-Policy", "same-origin");
+
+      const rawUrl = req.url || "/";
+      const pathname = rawUrl.split("?")[0];
+      const method = (req.method || "GET").toUpperCase();
+
+      // 1. CSRF Origin Verification for mutating API requests from browsers
+      if (
+        pathname.startsWith("/api/") &&
+        !pathname.startsWith("/api/events/") &&
+        ["POST", "PUT", "PATCH", "DELETE"].includes(method)
+      ) {
+        const origin = req.headers.origin;
+        const expectedHost = (req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+        if (origin && expectedHost) {
+          try {
+            const originHost = new URL(origin).host;
+            if (originHost !== expectedHost) {
+              res.statusCode = 403;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "CSRF Origin mismatch." }));
+              return;
+            }
+          } catch {
+            res.statusCode = 403;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Invalid Origin header." }));
+            return;
+          }
+        }
+      }
+
+      // 2. API Authentication Gate when App Password/PIN is enabled
+      if (
+        pathname.startsWith("/api/") &&
+        !pathname.startsWith("/api/auth/") &&
+        !pathname.startsWith("/api/health") &&
+        !pathname.startsWith("/api/events/") &&
+        isAppAuthEnabled()
+      ) {
+        const isInternalWorkerCall =
+          isLoopbackAddress(req.socket?.remoteAddress) &&
+          !req.headers["sec-fetch-mode"] &&
+          !req.headers.origin;
+
+        if (!isInternalWorkerCall) {
+          const cookies = parseCookies(req.headers.cookie);
+          const valid = verifySessionToken(cookies[SESSION_COOKIE_NAME]);
+          if (!valid) {
+            res.statusCode = 401;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Authentifizierung erforderlich." }));
+            return;
+          }
+        }
+      }
+
       await handle(req, res);
     } catch (err) {
       console.error("Error occurred handling", req.url, err);

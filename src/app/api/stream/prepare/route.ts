@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isPrivateIpv4 } from "@/lib/net/ip";
+import { decryptSecret } from "@/lib/security";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
     let chosenIsSub = false;
     let unsupportedCodecSeen: string | null = null;
 
+    const plainPassword = decryptSecret(camera.password);
     for (const candidate of orderedCandidates) {
       let parsed: URL;
       try {
@@ -104,7 +106,7 @@ export async function POST(request: Request) {
 
       if (camera.username) {
         parsed.username = camera.username;
-        parsed.password = camera.password ?? "";
+        parsed.password = plainPassword;
       }
 
       const codec = await probeVideoCodec(parsed.toString());

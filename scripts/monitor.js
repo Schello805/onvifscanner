@@ -16,6 +16,7 @@ const {
   requiresServerMotionValidation,
   motionCooldownSeconds,
 } = require('./motion-policy');
+const { decryptSecret } = require('./security');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
@@ -293,7 +294,8 @@ async function fetchMotionEventImage(cam, uris) {
         timeoutMs: 3_500,
         fastAuth: true,
         fresh: true,
-        credentials: cam.username ? { username: cam.username, password: cam.password } : undefined,
+        cameraId: cam.id,
+        credentials: cam.username ? { username: cam.username, password: decryptSecret(cam.password) } : undefined,
       }),
       signal: controller.signal,
     });
@@ -350,7 +352,8 @@ async function detectCameraMotion(cam) {
         timeoutMs: 2_500,
         fastAuth: true,
         fresh: true,
-        credentials: cam.username ? { username: cam.username, password: cam.password } : undefined,
+        cameraId: cam.id,
+        credentials: cam.username ? { username: cam.username, password: decryptSecret(cam.password) } : undefined,
       }),
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
@@ -691,7 +694,7 @@ async function syncMediaMtxPaths(cameras) {
            try {
               let parsed = new URL(uri);
               parsed.username = cam.username;
-              parsed.password = cam.password || "";
+              parsed.password = decryptSecret(cam.password);
               uri = parsed.toString();
            } catch(e) {}
         }

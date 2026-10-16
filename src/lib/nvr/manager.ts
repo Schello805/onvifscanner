@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { isPrivateIpv4 } from "@/lib/net/ip";
+import { decryptSecret } from "@/lib/security";
 import path from "path";
 import fs from "fs";
 import { ensureDefaultStorageTarget } from "./storage";
@@ -49,7 +50,7 @@ export function getCameraSourceUrl(camera: {
 
     if (camera.username) {
       source.username = camera.username;
-      source.password = camera.password ?? "";
+      source.password = decryptSecret(camera.password);
     }
 
     return source.toString();

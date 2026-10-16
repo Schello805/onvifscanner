@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { X, Settings2, Bell, Save, Send, Languages } from "lucide-react";
+import { X, Settings2, Bell, Save, Send, Languages, Shield, KeyRound, LogOut, RefreshCw } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -11,6 +11,9 @@ type SettingsData = {
   ntfyServer: string | null;
   ntfyCameraStatusEnabled: boolean;
   autoCleanup: boolean;
+  authEnabled: boolean;
+  envAuthLocked: boolean;
+  webhookToken: string;
 };
 
 export function SettingsModal({
@@ -27,7 +30,12 @@ export function SettingsModal({
     ntfyServer: "",
     ntfyCameraStatusEnabled: false,
     autoCleanup: true,
+    authEnabled: false,
+    envAuthLocked: false,
+    webhookToken: "",
   });
+  const [newAppPassword, setNewAppPassword] = useState("");
+  const [disableAppPassword, setDisableAppPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingNotification, setIsTestingNotification] = useState(false);
@@ -35,6 +43,8 @@ export function SettingsModal({
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
+    setNewAppPassword("");
+    setDisableAppPassword(false);
     try {
       const res = await fetch("/api/settings");
       if (!res.ok) throw new Error("Failed to load");
@@ -44,6 +54,9 @@ export function SettingsModal({
         ntfyServer: json.ntfyServer || "",
         ntfyCameraStatusEnabled: Boolean(json.ntfyCameraStatusEnabled),
         autoCleanup: json.autoCleanup ?? true,
+        authEnabled: Boolean(json.authEnabled),
+        envAuthLocked: Boolean(json.envAuthLocked),
+        webhookToken: json.webhookToken || "",
       });
     } catch {
       toast.error(t("Fehler beim Laden der Einstellungen.", "Failed to load settings."));
@@ -69,10 +82,14 @@ export function SettingsModal({
           ntfyServer: data.ntfyServer?.trim() || null,
           ntfyCameraStatusEnabled: data.ntfyCameraStatusEnabled,
           autoCleanup: data.autoCleanup,
+          newAppPassword: newAppPassword.trim() || undefined,
+          disableAppPassword: disableAppPassword || undefined,
+          webhookToken: data.webhookToken.trim(),
         }),
       });
 
       if (!res.ok) throw new Error("Failed to save");
+      window.dispatchEvent(new CustomEvent("onvifscanner:auth-changed"));
       toast.success(t("Einstellungen gespeichert!", "Settings saved!"));
       onClose();
     } catch {
@@ -80,6 +97,28 @@ export function SettingsModal({
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      onClose();
+      window.dispatchEvent(new CustomEvent("onvifscanner:auth-changed"));
+      toast.success(t("Sitzung gesperrt.", "Session locked."));
+    } catch {
+      toast.error(t("Fehler beim Abmelden.", "Failed to log out."));
+    }
+  }
+
+  function generateRandomToken() {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let token = "";
+    const bytes = new Uint8Array(24);
+    window.crypto.getRandomValues(bytes);
+    for (let i = 0; i < bytes.length; i++) {
+      token += chars[bytes[i] % chars.length];
+    }
+    setData((prev) => ({ ...prev, webhookToken: token }));
   }
 
   async function handleTestNotification() {
@@ -175,6 +214,102 @@ export function SettingsModal({
                   >
                     🇬🇧 English
                   </button>
+                </div>
+              </div>
+
+              <hr className="border-slate-800" />
+
+              {/* Security & Access Protection */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-300 font-medium">
+                    <Shield className="w-4 h-4 text-amber-400" />
+                    <span>{t("Sicherheit & Zugriffsschutz", "Security & Access Protection")}</span>
+                  </div>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      data.authEnabled && !disableAppPassword
+                        ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                        : "border border-slate-700 bg-slate-800/80 text-slate-400"
+                    }`}
+                  >
+                    {data.authEnabled && !disableAppPassword
+                      ? t("Passwortschutz aktiv", "Password active")
+                      : t("Kein Passwort", "No password")}
+                  </span>
+                </div>
+
+                <div className="text-xs text-slate-400 leading-relaxed">
+                  {t(
+                    "Schützt die Web-Oberfläche und alle API-Befehle mit einem Passwort oder einer PIN. Kamera-Passwörter werden zudem mit AES-256 verschlüsselt gespeichert.",
+                    "Protects the web interface and all API commands with a password or PIN. Camera passwords are also stored encrypted with AES-256."
+                  )}
+                </div>
+
+                <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
+                  <KeyRound className="w-4 h-4 text-slate-500 shrink-0" />
+                  <input
+                    type="password"
+                    className="grow text-slate-200 text-sm"
+                    placeholder={
+                      data.authEnabled
+                        ? t("Neues App-Passwort / PIN (leer = unverändert)", "New App Password / PIN (empty = keep)")
+                        : t("App-Passwort oder PIN festlegen...", "Set App Password or PIN...")
+                    }
+                    value={newAppPassword}
+                    onChange={(e) => {
+                      setNewAppPassword(e.target.value);
+                      if (e.target.value.trim()) setDisableAppPassword(false);
+                    }}
+                  />
+                </label>
+
+                {data.authEnabled && !data.envAuthLocked && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-xs checkbox-warning"
+                        checked={disableAppPassword}
+                        onChange={(e) => {
+                          setDisableAppPassword(e.target.checked);
+                          if (e.target.checked) setNewAppPassword("");
+                        }}
+                      />
+                      <span>
+                        {t("App-Passwortschutz beim Speichern deaktivieren", "Disable app password protection on save")}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>{t("Sitzung jetzt sperren", "Lock session now")}</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                    <span>{t("Webhook-Token (optional für /api/events/webhook?token=...)", "Webhook Token (optional for /api/events/webhook?token=...)")}</span>
+                    <button
+                      type="button"
+                      onClick={generateRandomToken}
+                      className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-medium"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>{t("Generieren", "Generate")}</span>
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm w-full bg-slate-950 border-slate-800 text-slate-200 font-mono text-xs"
+                    placeholder={t("Leer = kein Token erforderlich", "Empty = no token required")}
+                    value={data.webhookToken}
+                    onChange={(e) => setData({ ...data, webhookToken: e.target.value })}
+                  />
                 </div>
               </div>
 

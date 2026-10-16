@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { isPrivateIpv4 } from "@/lib/net/ip";
+import { decryptSecret } from "@/lib/security";
 import { onvifSoapCall } from "@/lib/onvif/soap";
 import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
 
@@ -30,6 +32,21 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
+function isSafeCameraHttpUrl(rawUrl: string, cameraIp: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.hostname !== cameraIp) return false;
+    const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+    // Block internal control ports
+    if (port === 9997 || port === 3000) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function resolvePtzSession(camera: {
   id: string;
   ip: string;
@@ -42,9 +59,10 @@ async function resolvePtzSession(camera: {
     return cached;
   }
 
+  const plainPassword = decryptSecret(camera.password);
   const credentials =
-    camera.username || camera.password
-      ? { username: camera.username ?? "admin", password: camera.password ?? "" }
+    camera.username || plainPassword
+      ? { username: camera.username ?? "admin", password: plainPassword }
       : { username: "admin", password: "" };
 
   // Infer preferred ports from snapshotUris if available
@@ -55,7 +73,10 @@ async function resolvePtzSession(camera: {
       for (const s of snaps) {
         if (typeof s === "string") {
           const u = new URL(s);
-          if (u.port) ports.add(Number(u.port));
+          if (u.port) {
+            const p = Number(u.port);
+            if (p > 0 && p <= 65535 && p !== 9997 && p !== 3000) ports.add(p);
+          }
         }
       }
     }
@@ -78,8 +99,10 @@ async function resolvePtzSession(camera: {
   });
 
   const ptzUrls: string[] = [];
-  if (probe.ptzServiceUrl) ptzUrls.push(probe.ptzServiceUrl);
-  if (probe.deviceServiceUrl) {
+  if (probe.ptzServiceUrl && isSafeCameraHttpUrl(probe.ptzServiceUrl, camera.ip)) {
+    ptzUrls.push(probe.ptzServiceUrl);
+  }
+  if (probe.deviceServiceUrl && isSafeCameraHttpUrl(probe.deviceServiceUrl, camera.ip)) {
     try {
       const u = new URL(probe.deviceServiceUrl);
       const base = `${u.protocol}//${u.host}`;
@@ -96,7 +119,7 @@ async function resolvePtzSession(camera: {
     ptzUrls.push(`http://${hostPort}/onvif/device_service`);
   }
 
-  const uniqueUrls = Array.from(new Set(ptzUrls));
+  const uniqueUrls = Array.from(new Set(ptzUrls)).filter((u) => isSafeCameraHttpUrl(u, camera.ip));
   const profileToken =
     probe.rtspUris?.[0]?.profileToken ??
     probe.snapshotUris?.[0]?.profileToken ??
@@ -130,6 +153,14 @@ export async function POST(request: Request) {
     const camera = await prisma.camera.findUnique({ where: { id: cameraId } });
     if (!camera) {
       return NextResponse.json({ error: "Kamera nicht gefunden." }, { status: 404 });
+    }
+
+    const allowPublic = (process.env.ALLOW_PUBLIC_SCAN ?? "false") === "true";
+    if (!allowPublic && !isPrivateIpv4(camera.ip)) {
+      return NextResponse.json(
+        { error: "PTZ ist nur für lokale Netzwerk-Kameras erlaubt." },
+        { status: 400 }
+      );
     }
 
     const session = await resolvePtzSession(camera);

@@ -664,6 +664,7 @@ export default function CameraWallPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          cameraId: camera.id,
           urls,
           size: isHighRes ? 1920 : 512,
           quality: isHighRes ? 85 : 68,

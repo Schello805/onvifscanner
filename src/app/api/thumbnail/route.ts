@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchWithDigestAuth } from "@/lib/http/digestFetch";
 import { sanitizeUrlString } from "@/lib/util/url";
 import { isPrivateIpv4 } from "@/lib/net/ip";
+import { prisma } from "@/lib/db";
+import { decryptSecret, ENC_PREFIX, MASKED_PASSWORD } from "@/lib/security";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -10,6 +12,7 @@ const execFileAsync = promisify(execFile);
 export const runtime = "nodejs";
 
 type Body = {
+  cameraId?: string;
   url?: string;
   urls?: string[];
   size?: number;
@@ -156,14 +159,59 @@ export async function POST(req: Request) {
     let attempts = 0;
     let authFailures = 0;
 
+    // Resolve masked or server-stored credentials if needed
+    let resolvedDirectCreds = body.credentials;
+    if (resolvedDirectCreds?.password?.startsWith(ENC_PREFIX)) {
+      resolvedDirectCreds = {
+        username: resolvedDirectCreds.username,
+        password: decryptSecret(resolvedDirectCreds.password),
+      };
+    } else if (
+      body.cameraId ||
+      resolvedDirectCreds?.password === MASKED_PASSWORD ||
+      !resolvedDirectCreds
+    ) {
+      try {
+        const hostIp = parsedCandidates[0]?.hostname;
+        const dbCam = body.cameraId
+          ? await prisma.camera.findUnique({
+              where: { id: body.cameraId },
+              select: { username: true, password: true },
+            })
+          : hostIp
+          ? await prisma.camera.findFirst({
+              where: { ip: hostIp },
+              select: { username: true, password: true },
+            })
+          : null;
+        if (dbCam?.username) {
+          resolvedDirectCreds = {
+            username: resolvedDirectCreds?.username || dbCam.username,
+            password:
+              resolvedDirectCreds &&
+              resolvedDirectCreds.password !== MASKED_PASSWORD &&
+              resolvedDirectCreds.password !== ""
+                ? decryptSecret(resolvedDirectCreds.password)
+                : decryptSecret(dbCam.password),
+          };
+        }
+      } catch {
+        // ignore DB lookup failure
+      }
+    }
+
     const credCandidates: Array<{ username: string; password: string } | undefined> = [];
-    if (body.credentials?.username || body.credentials?.password) {
-      credCandidates.push(body.credentials);
+    if (resolvedDirectCreds?.username || resolvedDirectCreds?.password) {
+      if (resolvedDirectCreds.password !== MASKED_PASSWORD) {
+        credCandidates.push(resolvedDirectCreds);
+      }
     }
     if (body.credentialsList?.length) {
       for (const c of body.credentialsList) {
-        if (!credCandidates.some((x) => x?.username === c.username && x?.password === c.password)) {
-          credCandidates.push(c);
+        const cleanPass = c.password?.startsWith(ENC_PREFIX) ? decryptSecret(c.password) : c.password;
+        if (cleanPass === MASKED_PASSWORD) continue;
+        if (!credCandidates.some((x) => x?.username === c.username && x?.password === cleanPass)) {
+          credCandidates.push({ username: c.username, password: cleanPass });
         }
       }
     }
@@ -175,7 +223,7 @@ export async function POST(req: Request) {
     acquired = true;
 
     for (const url of parsedCandidates) {
-      const cacheKey = `${url.toString()}|s=${size}|h=${outputHeight ?? 0}|q=${quality}|o=${outputMode}|u=${body.credentials?.username ?? ""}`;
+      const cacheKey = `${url.toString()}|s=${size}|h=${outputHeight ?? 0}|q=${quality}|o=${outputMode}|u=${resolvedDirectCreds?.username ?? ""}`;
       const cached = cache.get(cacheKey);
       if (!body.fresh && cached && cacheTtlMs > 0 && Date.now() - cached.ts <= cacheTtlMs) {
         return new NextResponse(cached.bytes as unknown as BodyInit, {

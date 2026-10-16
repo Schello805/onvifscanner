@@ -1,7 +1,30 @@
+const { decryptSecret } = require('./security');
+
 function normalizeNtfyServer(value) {
   const trimmed = String(value || '').trim().replace(/\/+$/, '');
   if (!trimmed) return 'https://ntfy.sh';
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const raw = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Ungültiges ntfy-Protokoll.');
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
+      host === '::1' ||
+      host === '[::1]' ||
+      host.startsWith('127.') ||
+      host.startsWith('169.254.')
+    ) {
+      throw new Error('Loopback-Adressen sind als ntfy-Server nicht erlaubt.');
+    }
+    return parsed.origin + parsed.pathname.replace(/\/+$/, '');
+  } catch (err) {
+    throw new Error(err?.message || 'Ungültige ntfy-Server-URL.');
+  }
 }
 
 function encodeHeaderValue(value) {
@@ -35,13 +58,14 @@ async function fetchCameraImage(camera) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        cameraId: camera.id,
         urls,
         size: imageWidth,
         quality: imageQuality,
         timeoutMs: 4_500,
         fastAuth: true,
         fresh: true,
-        credentials: camera.username ? { username: camera.username, password: camera.password || '' } : undefined,
+        credentials: camera.username ? { username: camera.username, password: decryptSecret(camera.password) } : undefined,
       }),
       signal: controller.signal,
     });

@@ -21,7 +21,29 @@ function encodeHeaderValue(value: string): string {
 export function normalizeNtfyServer(value?: string | null): string {
   const trimmed = (value || "").trim().replace(/\/+$/, "");
   if (!trimmed) return "https://ntfy.sh";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const raw = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("Ungültige ntfy-Server-URL.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Nur http:// oder https:// sind für ntfy erlaubt.");
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host.startsWith("127.") ||
+    host.startsWith("169.254.")
+  ) {
+    throw new Error("Lokale Loopback-Adressen sind als ntfy-Server nicht erlaubt.");
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
 
 export async function sendNtfyMessage(input: NtfyMessage): Promise<void> {
