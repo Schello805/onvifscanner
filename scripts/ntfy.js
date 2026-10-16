@@ -107,44 +107,95 @@ async function publishNtfy(url, notification, attachment, options = {}) {
   }
 }
 
+const { sendTelegramNotification } = require('./telegram');
+
 async function sendCameraNotification(prisma, camera, message, options = {}) {
   if (!camera?.notificationsEnabled && !options.force) return { sent: false, reason: 'disabled' };
 
   const settings = await prisma.settings.findUnique({ where: { id: 'default' } });
-  if (options.statusNotification && !settings?.ntfyCameraStatusEnabled) {
-    return { sent: false, reason: 'status-notifications-disabled' };
+
+  // Evaluate ntfy eligibility
+  const ntfyTopic = String(settings?.ntfyTopic || '').trim();
+  const ntfyEligible = Boolean(ntfyTopic) && (!options.statusNotification || Boolean(settings?.ntfyCameraStatusEnabled));
+
+  // Evaluate Telegram eligibility
+  const telegramBotToken = String(settings?.telegramBotToken || '').trim();
+  const telegramChatId = String(settings?.telegramChatId || '').trim();
+  const telegramEnabled = settings?.telegramEnabled !== false;
+  const telegramEligible = Boolean(telegramBotToken && telegramChatId && telegramEnabled) &&
+    (!options.statusNotification || Boolean(settings?.telegramCameraStatusEnabled));
+
+  if (!ntfyEligible && !telegramEligible) {
+    if (options.statusNotification) {
+      return { sent: false, reason: 'status-notifications-disabled' };
+    }
+    console.warn(`🔕 Push for ${camera.name} skipped: no notification provider (ntfy / telegram) configured.`);
+    return { sent: false, reason: 'missing-provider' };
   }
-  const topic = String(settings?.ntfyTopic || '').trim();
-  if (!topic) {
-    console.warn(`🔕 Push for ${camera.name} skipped: no ntfy topic configured.`);
-    return { sent: false, reason: 'missing-topic' };
+
+  // Pre-fetch camera image if needed
+  let fetchedImage = null;
+  if (options.includeImage !== false) {
+    if (options.imageBuffer?.length) {
+      fetchedImage = { data: options.imageBuffer, contentType: options.contentType || 'image/jpeg' };
+    } else {
+      fetchedImage = await fetchCameraImage(camera);
+    }
   }
 
   const notification = `Kamera: ${camera.name}\nEreignis: ${message}`;
-  const ntfyUrl = `${normalizeNtfyServer(settings?.ntfyServer)}/${encodeURIComponent(topic)}`;
-  try {
-    const fetchedImage = options.includeImage === false
-      ? null
-      : options.imageBuffer?.length
-      ? { data: options.imageBuffer, contentType: options.contentType || 'image/jpeg' }
-      : await fetchCameraImage(camera);
-    let imageAttached = Boolean(fetchedImage);
-    let response = await publishNtfy(ntfyUrl, notification, fetchedImage ? { ...fetchedImage, camera } : null, options);
-    if (!response.ok && fetchedImage) {
-      console.warn(`🔕 Image push for ${camera.name} returned HTTP ${response.status}; retrying without image.`);
-      response = await publishNtfy(ntfyUrl, notification, null, options);
-      imageAttached = false;
+  const results = { ntfy: null, telegram: null };
+
+  // Dispatch ntfy
+  if (ntfyEligible) {
+    const ntfyUrl = `${normalizeNtfyServer(settings?.ntfyServer)}/${encodeURIComponent(ntfyTopic)}`;
+    try {
+      let imageAttached = Boolean(fetchedImage);
+      let response = await publishNtfy(ntfyUrl, notification, fetchedImage ? { ...fetchedImage, camera } : null, options);
+      if (!response.ok && fetchedImage) {
+        console.warn(`🔕 Image push for ${camera.name} returned HTTP ${response.status}; retrying without image.`);
+        response = await publishNtfy(ntfyUrl, notification, null, options);
+        imageAttached = false;
+      }
+      if (!response.ok) {
+        const detail = (await response.text().catch(() => '')).trim().slice(0, 240);
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      }
+      console.log(`🔔 ntfy push sent for ${camera.name}${imageAttached ? ' with image' : ''}.`);
+      results.ntfy = { sent: true, imageAttached };
+    } catch (error) {
+      console.error(`🔕 ntfy push for ${camera.name} failed:`, error?.message || error);
+      results.ntfy = { sent: false, error: error?.message || String(error) };
     }
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => '')).trim().slice(0, 240);
-      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
-    }
-    console.log(`🔔 Push sent for ${camera.name}${imageAttached ? ' with image' : ''}.`);
-    return { sent: true, imageAttached };
-  } catch (error) {
-    console.error(`🔕 Push for ${camera.name} failed:`, error?.message || error);
-    return { sent: false, reason: error?.message || String(error) };
   }
+
+  // Dispatch Telegram
+  if (telegramEligible) {
+    try {
+      const tgRes = await sendTelegramNotification({
+        botToken: telegramBotToken,
+        chatId: telegramChatId,
+        text: notification,
+        imageBuffer: fetchedImage?.data,
+        contentType: fetchedImage?.contentType || 'image/jpeg',
+        filename: notificationFilename(camera),
+      });
+      if (tgRes.sent) {
+        console.log(`🔔 Telegram push sent for ${camera.name}${tgRes.withImage ? ' with image' : ''}.`);
+        results.telegram = { sent: true, imageAttached: tgRes.withImage };
+      } else {
+        console.error(`🔕 Telegram push for ${camera.name} failed:`, tgRes.error || tgRes.reason);
+        results.telegram = { sent: false, error: tgRes.error || tgRes.reason };
+      }
+    } catch (error) {
+      console.error(`🔕 Telegram push for ${camera.name} failed:`, error?.message || error);
+      results.telegram = { sent: false, error: error?.message || String(error) };
+    }
+  }
+
+  const anySent = Boolean(results.ntfy?.sent || results.telegram?.sent);
+  return { sent: anySent, ...results };
 }
 
 module.exports = { sendCameraNotification };
+

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
+import { sendTelegramMessage } from "@/lib/telegram";
 import { decryptSecret, getWebhookToken } from "@/lib/security";
 import {
   motionCooldownSeconds,
@@ -185,15 +186,36 @@ export async function POST(req: Request) {
                 };
               }
             } catch {}
-            await sendNtfyMessage({
-              server: settings?.ntfyServer,
-              topic: settings?.ntfyTopic,
-              title: "ONVIFscanner NVR Alarm",
-              message: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
-              attachment,
-            });
+            if (settings?.ntfyTopic?.trim()) {
+              try {
+                await sendNtfyMessage({
+                  server: settings?.ntfyServer,
+                  topic: settings?.ntfyTopic,
+                  title: "ONVIFscanner NVR Alarm",
+                  message: `Kamera: ${matchedCamera.name}\nEreignis: ${message}`,
+                  attachment,
+                });
+              } catch (pushErr) {
+                console.error(`ntfy notification for ${matchedCamera.name} failed:`, pushErr);
+              }
+            }
+
+            if (settings?.telegramBotToken?.trim() && settings?.telegramChatId?.trim() && settings?.telegramEnabled !== false) {
+              try {
+                await sendTelegramMessage({
+                  botToken: settings.telegramBotToken,
+                  chatId: settings.telegramChatId,
+                  text: `🚨 <b>ONVIFscanner Alarm</b>\nKamera: <b>${matchedCamera.name}</b>\nEreignis: ${message}`,
+                  caption: `🚨 <b>ONVIFscanner Alarm</b>\nKamera: <b>${matchedCamera.name}</b>\nEreignis: ${message}`,
+                  parseMode: "HTML",
+                  attachment,
+                });
+              } catch (tgErr) {
+                console.error(`telegram notification for ${matchedCamera.name} failed:`, tgErr);
+              }
+            }
           } catch (pushErr) {
-            console.error(`ntfy notification for ${matchedCamera.name} failed:`, pushErr);
+            console.error(`notification processing for ${matchedCamera.name} failed:`, pushErr);
           }
         }
       }

@@ -97,6 +97,10 @@ model Settings {
   ntfyTopic                   String?
   ntfyServer                  String?
   ntfyCameraStatusEnabled     Boolean  @default(false)
+  telegramBotToken            String?
+  telegramChatId              String?
+  telegramEnabled             Boolean  @default(false)
+  telegramCameraStatusEnabled Boolean  @default(false)
   motionSensitivityV3Migrated Boolean  @default(false)
 }
 

@@ -10,6 +10,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 
 ## Features
 
+- **Telegram- & ntfy-Alarmierung**: Push-Benachrichtigungen inklusive Live-Vorschaubild bei Bewegungen oder Statuswechseln direkt aufs Smartphone (Bot-Token/Chat-ID für Telegram oder Topic für ntfy).
 - **Zweisprachige Oberfläche**: Vollständige Unterstützung für Deutsch und Englisch mit 1-Klick-Umschaltung im Header und in den Einstellungen.
 - **Cybersecurity & Zugriffsschutz**: Integriertes AuthGate für Passwort- oder PIN-Schutz der Web-App mit Brute-Force-Sperre, sicherem Session-Cookie und AES-256-GCM-Verschlüsselung gespeicherter Kamera-Passwörter (Zero-Plaintext on Disk).
 - **Notfall-Reset via CLI**: Passwort oder PIN jederzeit direkt über die Konsole zurücksetzen oder deaktivieren (`npm run reset-password`).
@@ -33,7 +34,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 - **Flexible Aufnahme-Strategien**: Dauer- und Bewegungsaufnahme lassen sich pro Kamera rund um die Uhr, nur in einem Zeitfenster oder als automatische Kombination konfigurieren.
 - **Tageszusammenfassung**: Die Wiedergabe fasst Ereignisse und erkannte Objekte pro Tag und Kamera zusammen.
 - **Kamera-Protokoll**: Zeigt mit Zeitstempel, welche Kamera eine Bewegung gemeldet hat oder offline beziehungsweise wieder online gegangen ist.
-- **Optionale Status-Pushs**: Meldet Kamera-Wechsel zwischen online und offline auf Wunsch zusätzlich über das konfigurierte ntfy-Topic.
+- **Optionale Status-Pushs**: Meldet Kamera-Wechsel zwischen online und offline auf Wunsch per Telegram und/oder ntfy.
 - **Zentraler Aufnahme-Kalender**: Monatsansicht mit markierten Aufnahmetagen, Clip-Anzahl und direkter Auswahl der an diesem Tag aktiven Kameras.
 - **Gestengesteuerte Wiedergabe**: Doppeltippen links oder rechts springt zehn Sekunden, längeres Halten spult schnell; weitere Player-Funktionen bleiben in einem kompakten Optionsbereich verborgen.
 - **Filterbares Aufnahme-Archiv**: Sortiert Aufnahmen direkt über die Tabellenspalten und filtert nach Kamera, Datum, Uhrzeit, Bewegung, Speicherort, Dateigröße oder Freitext.

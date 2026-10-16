@@ -54,6 +54,10 @@ export async function POST(req: Request) {
     if (body.ntfyTopic !== undefined) updateData.ntfyTopic = body.ntfyTopic || null;
     if (body.ntfyServer !== undefined) updateData.ntfyServer = body.ntfyServer || null;
     if (body.ntfyCameraStatusEnabled !== undefined) updateData.ntfyCameraStatusEnabled = Boolean(body.ntfyCameraStatusEnabled);
+    if (body.telegramBotToken !== undefined) updateData.telegramBotToken = body.telegramBotToken || null;
+    if (body.telegramChatId !== undefined) updateData.telegramChatId = body.telegramChatId || null;
+    if (body.telegramEnabled !== undefined) updateData.telegramEnabled = Boolean(body.telegramEnabled);
+    if (body.telegramCameraStatusEnabled !== undefined) updateData.telegramCameraStatusEnabled = Boolean(body.telegramCameraStatusEnabled);
     if (body.columns !== undefined) updateData.columns = body.columns;
     if (body.autoCleanup !== undefined) updateData.autoCleanup = body.autoCleanup;
 
