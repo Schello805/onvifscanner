@@ -35,8 +35,9 @@ async function probeVideoCodec(source: string): Promise<string | null> {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { cameraId?: string };
+    const body = (await request.json()) as { cameraId?: string; quality?: "main" | "sub" };
     const cameraId = body.cameraId?.trim();
+    const preferredQuality = body.quality === "sub" ? "sub" : "main";
     if (!cameraId) return NextResponse.json({ error: "Kamera-ID fehlt." }, { status: 400 });
 
     const camera = await prisma.camera.findUnique({ where: { id: cameraId } });
@@ -48,50 +49,98 @@ export async function POST(request: Request) {
     } catch {
       streamUris = [];
     }
-    const streamUri = Array.isArray(streamUris)
-      ? streamUris.find((value): value is string =>
-          typeof value === "string" && /^rtsps?:\/\//i.test(value.trim())
+    const rtspCandidates = Array.isArray(streamUris)
+      ? streamUris.filter(
+          (value): value is string =>
+            typeof value === "string" && /^rtsps?:\/\//i.test(value.trim())
         )
-      : undefined;
-    if (!streamUri) {
+      : [];
+    if (!rtspCandidates.length) {
       return NextResponse.json({ error: "Für diese Kamera ist keine RTSP-Stream-URL gespeichert." }, { status: 400 });
     }
 
-    let source: URL;
-    try {
-      source = new URL(streamUri);
-    } catch {
+    const isLikelySubStream = (uri: string, index: number) => {
+      const lower = uri.toLowerCase();
+      if (
+        lower.includes("subtype=1") ||
+        lower.includes("/102") ||
+        lower.includes("stream2") ||
+        lower.includes("stream=1") ||
+        lower.includes("_sub") ||
+        lower.includes("/sub") ||
+        lower.includes("/video2") ||
+        lower.includes("/s2/live")
+      ) {
+        return true;
+      }
+      return index > 0;
+    };
+
+    const orderedCandidates = [...rtspCandidates].sort((a, b) => {
+      const idxA = rtspCandidates.indexOf(a);
+      const idxB = rtspCandidates.indexOf(b);
+      const subA = isLikelySubStream(a, idxA) ? 1 : 0;
+      const subB = isLikelySubStream(b, idxB) ? 1 : 0;
+      if (preferredQuality === "sub" && subA !== subB) return subB - subA;
+      if (preferredQuality === "main" && subA !== subB) return subA - subB;
+      return idxA - idxB;
+    });
+
+    const allowPublic = (process.env.ALLOW_PUBLIC_SCAN ?? "false") === "true";
+    let chosenSource: URL | null = null;
+    let chosenCodec: string | null = null;
+    let chosenIsSub = false;
+    let unsupportedCodecSeen: string | null = null;
+
+    for (const candidate of orderedCandidates) {
+      let parsed: URL;
+      try {
+        parsed = new URL(candidate);
+      } catch {
+        continue;
+      }
+      if (parsed.protocol !== "rtsp:" && parsed.protocol !== "rtsps:") continue;
+      if (!allowPublic && !isPrivateIpv4(parsed.hostname)) continue;
+
+      if (camera.username) {
+        parsed.username = camera.username;
+        parsed.password = camera.password ?? "";
+      }
+
+      const codec = await probeVideoCodec(parsed.toString());
+      if (codec && !["h264", "vp8", "vp9", "av1"].includes(codec)) {
+        unsupportedCodecSeen = codec;
+        continue;
+      }
+
+      chosenSource = parsed;
+      chosenCodec = codec;
+      chosenIsSub = isLikelySubStream(candidate, rtspCandidates.indexOf(candidate));
+      break;
+    }
+
+    if (!chosenSource) {
+      if (unsupportedCodecSeen) {
+        const codecLabel =
+          unsupportedCodecSeen === "hevc" || unsupportedCodecSeen === "h265"
+            ? "H.265/HEVC"
+            : unsupportedCodecSeen.toUpperCase();
+        return NextResponse.json(
+          {
+            error: `${codecLabel} kann auf diesem Gerät nicht zuverlässig als WebRTC wiedergegeben werden. Die Snapshot-Ansicht bleibt aktiv.`,
+            code: "UNSUPPORTED_WEBRTC_CODEC",
+            codec: unsupportedCodecSeen,
+            fallback: "snapshot",
+          },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: "Die gespeicherte Stream-URL ist ungültig." }, { status: 400 });
     }
-    if (source.protocol !== "rtsp:" && source.protocol !== "rtsps:") {
-      return NextResponse.json({ error: "Live-Ansicht unterstützt derzeit RTSP-Streams." }, { status: 400 });
-    }
-    if ((process.env.ALLOW_PUBLIC_SCAN ?? "false") !== "true" && !isPrivateIpv4(source.hostname)) {
-      return NextResponse.json({ error: "Die Stream-URL muss auf eine private Netzwerkadresse zeigen." }, { status: 400 });
-    }
 
-    if (camera.username) {
-      source.username = camera.username;
-      source.password = camera.password ?? "";
-    }
-
-    const codec = await probeVideoCodec(source.toString());
-    if (codec && !["h264", "vp8", "vp9", "av1"].includes(codec)) {
-      const codecLabel = codec === "hevc" || codec === "h265" ? "H.265/HEVC" : codec.toUpperCase();
-      return NextResponse.json(
-        {
-          error: `${codecLabel} kann auf diesem Gerät nicht zuverlässig als WebRTC wiedergegeben werden. Die Snapshot-Ansicht bleibt aktiv.`,
-          code: "UNSUPPORTED_WEBRTC_CODEC",
-          codec,
-          fallback: "snapshot",
-        },
-        { status: 409 }
-      );
-    }
-
-    const pathName = camera.id;
+    const pathName = chosenIsSub && rtspCandidates.length > 1 ? `${camera.id}_sub` : `${camera.id}_live`;
     const encodedPath = encodeURIComponent(pathName);
-    const config = { source: source.toString(), sourceOnDemand: true, rtspTransport: "tcp" };
+    const config = { source: chosenSource.toString(), sourceOnDemand: true, rtspTransport: "tcp" };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
 
@@ -127,7 +176,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      codec,
+      codec: chosenCodec,
+      quality: chosenIsSub ? "sub" : "main",
+      whepUrl: `/api/webrtc/${encodeURIComponent(pathName)}/whep`,
       playbackUrl: `/api/webrtc/${encodeURIComponent(pathName)}/?controls=false&muted=true&autoplay=true&playsInline=true`
     });
   } catch (error) {

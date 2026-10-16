@@ -7,6 +7,7 @@ import { SplashScreen } from "@/components/SplashScreen";
 import { ConnectionWatcher } from "@/components/ConnectionWatcher";
 import { PullToRefresh } from "@/components/PullToRefresh";
 import { ToastProvider } from "@/components/ToastProvider";
+import { LanguageProvider } from "@/components/LanguageProvider";
 import { Navigation } from "@/components/Navigation";
 import { SystemStatus } from "@/components/SystemStatus";
 
@@ -75,19 +76,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="de" data-theme="dracula">
       <body>
-        <ToastProvider>
-          <SplashScreen />
-          <ConnectionWatcher />
-          <PullToRefresh>
-            <div className="min-h-screen flex flex-col">
-              <Navigation repoUrl={repoUrl} />
-              <main className="mx-auto flex-1 w-full max-w-none px-2 py-4 sm:w-[94%] sm:px-5 sm:py-6 lg:w-[90%] lg:py-8 pb-24 md:pb-8">
-                {children}
-              </main>
-              <Footer />
-            </div>
-          </PullToRefresh>
-        </ToastProvider>
+        <LanguageProvider>
+          <ToastProvider>
+            <SplashScreen />
+            <ConnectionWatcher />
+            <PullToRefresh>
+              <div className="min-h-screen flex flex-col">
+                <Navigation repoUrl={repoUrl} />
+                <main className="mx-auto flex-1 w-full max-w-none px-2 py-4 sm:w-[94%] sm:px-5 sm:py-6 lg:w-[90%] lg:py-8 pb-24 md:pb-8">
+                  {children}
+                </main>
+                <Footer />
+              </div>
+            </PullToRefresh>
+          </ToastProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

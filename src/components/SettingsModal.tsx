@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { X, Settings2, Bell, Save, Send } from "lucide-react";
+import { X, Settings2, Bell, Save, Send, Languages } from "lucide-react";
 import { useToast } from "./ToastProvider";
+import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 
 type SettingsData = {
@@ -20,6 +21,7 @@ export function SettingsModal({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const { lang, setLang, t } = useLanguage();
   const [data, setData] = useState<SettingsData>({
     ntfyTopic: "",
     ntfyServer: "",
@@ -43,12 +45,12 @@ export function SettingsModal({
         ntfyCameraStatusEnabled: Boolean(json.ntfyCameraStatusEnabled),
         autoCleanup: json.autoCleanup ?? true,
       });
-    } catch (e) {
-      toast.error("Fehler beim Laden der Einstellungen.");
+    } catch {
+      toast.error(t("Fehler beim Laden der Einstellungen.", "Failed to load settings."));
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, t]);
 
   useEffect(() => {
     if (isOpen) {
@@ -71,10 +73,10 @@ export function SettingsModal({
       });
 
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Einstellungen gespeichert!");
+      toast.success(t("Einstellungen gespeichert!", "Settings saved!"));
       onClose();
-    } catch (e) {
-      toast.error("Fehler beim Speichern.");
+    } catch {
+      toast.error(t("Fehler beim Speichern.", "Failed to save."));
     } finally {
       setIsSaving(false);
     }
@@ -82,7 +84,7 @@ export function SettingsModal({
 
   async function handleTestNotification() {
     if (!data.ntfyTopic?.trim()) {
-      toast.error("Bitte zuerst ein ntfy-Topic eingeben.");
+      toast.error(t("Bitte zuerst ein ntfy-Topic eingeben.", "Please enter an ntfy topic first."));
       return;
     }
     setIsTestingNotification(true);
@@ -96,10 +98,10 @@ export function SettingsModal({
         }),
       });
       const response = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(response.error || "Testnachricht konnte nicht gesendet werden.");
-      toast.success("Testnachricht wurde erfolgreich gesendet.");
+      if (!res.ok) throw new Error(response.error || t("Testnachricht konnte nicht gesendet werden.", "Test notification could not be sent."));
+      toast.success(t("Testnachricht wurde erfolgreich gesendet.", "Test notification sent successfully."));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Testnachricht konnte nicht gesendet werden.");
+      toast.error(error instanceof Error ? error.message : t("Testnachricht konnte nicht gesendet werden.", "Test notification could not be sent."));
     } finally {
       setIsTestingNotification(false);
     }
@@ -124,7 +126,9 @@ export function SettingsModal({
             <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
               <Settings2 className="w-5 h-5" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-100">Globale Einstellungen</h2>
+            <h2 className="text-lg font-semibold text-slate-100">
+              {t("Globale Einstellungen", "Global Settings")}
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -142,14 +146,51 @@ export function SettingsModal({
             </div>
           ) : (
             <>
+              {/* Language Selector */}
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2 text-slate-300 font-medium">
+                  <Languages className="w-4 h-4 text-indigo-400" />
+                  <span>{t("Sprache / Language", "Language / Sprache")}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLang("de")}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+                      lang === "de"
+                        ? "border-indigo-500/60 bg-indigo-500/20 text-indigo-200 shadow-sm"
+                        : "border-slate-800 bg-slate-950/60 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🇩🇪 Deutsch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLang("en")}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold transition-all ${
+                      lang === "en"
+                        ? "border-indigo-500/60 bg-indigo-500/20 text-indigo-200 shadow-sm"
+                        : "border-slate-800 bg-slate-950/60 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🇬🇧 English
+                  </button>
+                </div>
+              </div>
+
+              <hr className="border-slate-800" />
+
               {/* Ntfy Push Settings */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-slate-300 font-medium mb-1">
                   <Bell className="w-4 h-4 text-emerald-400" />
-                  <span>Push-Benachrichtigungen (ntfy)</span>
+                  <span>{t("Push-Benachrichtigungen (ntfy)", "Push Notifications (ntfy)")}</span>
                 </div>
                 <div className="text-sm text-slate-400 mb-2 leading-relaxed">
-                  Trage deinen ntfy-Server und das Topic ein. Push wird anschließend für jede gewünschte Kamera einzeln in deren Bearbeiten-Dialog aktiviert. Bei Bewegungen wird nach Möglichkeit ein aktuelles Kamerabild mitgesendet. Ohne Server wird ntfy.sh verwendet.
+                  {t(
+                    "Trage deinen ntfy-Server und das Topic ein. Push wird anschließend für jede gewünschte Kamera einzeln in deren Bearbeiten-Dialog aktiviert. Bei Bewegungen wird nach Möglichkeit ein aktuelles Kamerabild mitgesendet. Ohne Server wird ntfy.sh verwendet.",
+                    "Enter your ntfy server and topic. Push notifications can then be enabled individually for each camera in its edit dialog. When motion is detected, a current snapshot is attached if available. Defaults to ntfy.sh if server is left empty."
+                  )}
                 </div>
                 <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
                   <span className="text-slate-500 select-none">Server</span>
@@ -166,7 +207,7 @@ export function SettingsModal({
                   <input
                     type="text"
                     className="grow text-slate-200"
-                    placeholder="mein-geheimes-topic-123"
+                    placeholder={t("mein-geheimes-topic-123", "my-secret-topic-123")}
                     value={data.ntfyTopic || ""}
                     onChange={(e) => setData({ ...data, ntfyTopic: e.target.value })}
                   />
@@ -182,7 +223,7 @@ export function SettingsModal({
                   ) : (
                     <Send className="h-3.5 w-3.5" />
                   )}
-                  Testnachricht senden
+                  {t("Testnachricht senden", "Send test notification")}
                 </button>
                 <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-slate-950/60 p-3.5">
                   <input
@@ -192,9 +233,14 @@ export function SettingsModal({
                     onChange={(event) => setData({ ...data, ntfyCameraStatusEnabled: event.target.checked })}
                   />
                   <span>
-                    <strong className="block text-sm font-medium text-slate-200">Online-/Offline-Meldungen</strong>
+                    <strong className="block text-sm font-medium text-slate-200">
+                      {t("Online-/Offline-Meldungen", "Online / Offline Alerts")}
+                    </strong>
                     <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
-                      Sendet über ntfy eine Nachricht, wenn eine Kamera offline oder wieder online geht. Gilt für alle gespeicherten Kameras.
+                      {t(
+                        "Sendet über ntfy eine Nachricht, wenn eine Kamera offline oder wieder online geht. Gilt für alle gespeicherten Kameras.",
+                        "Sends an ntfy notification whenever a camera goes offline or comes back online. Applies to all saved cameras."
+                      )}
                     </span>
                   </span>
                 </label>
@@ -206,7 +252,7 @@ export function SettingsModal({
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-slate-300 font-medium mb-1">
                   <Settings2 className="w-4 h-4 text-sky-400" />
-                  <span>Speicher & System</span>
+                  <span>{t("Speicher & System", "Storage & System")}</span>
                 </div>
                 
                 <label className="label cursor-pointer justify-start gap-4 p-0">
@@ -216,10 +262,15 @@ export function SettingsModal({
                     checked={data.autoCleanup}
                     onChange={(e) => setData({ ...data, autoCleanup: e.target.checked })}
                   />
-                  <span className="label-text text-slate-300 font-medium">Automatischer Cleanup</span>
+                  <span className="label-text text-slate-300 font-medium">
+                    {t("Automatischer Cleanup", "Automatic Cleanup")}
+                  </span>
                 </label>
                 <div className="text-xs text-slate-500 pl-14">
-                  Löscht alte Aufnahmen automatisch, wenn der Speicherplatz knapp wird.
+                  {t(
+                    "Löscht alte Aufnahmen automatisch, wenn der Speicherplatz knapp wird.",
+                    "Automatically deletes old recordings when disk space runs low."
+                  )}
                 </div>
               </div>
             </>
@@ -232,7 +283,7 @@ export function SettingsModal({
             className="btn btn-ghost text-slate-300 hover:text-white"
             onClick={onClose}
           >
-            Abbrechen
+            {t("Abbrechen", "Cancel")}
           </button>
           <button 
             className="btn bg-indigo-600 hover:bg-indigo-500 text-white border-none min-w-[120px]"
@@ -242,7 +293,7 @@ export function SettingsModal({
             {isSaving ? (
               <span className="loading loading-spinner loading-sm"></span>
             ) : (
-              <><Save className="w-4 h-4 mr-1" /> Speichern</>
+              <><Save className="w-4 h-4 mr-1" /> {t("Speichern", "Save")}</>
             )}
           </button>
         </div>

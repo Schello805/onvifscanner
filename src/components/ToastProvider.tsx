@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo } from "react";
 import { Toaster, toast as sonnerToast } from "sonner";
+import { useLanguage } from "./LanguageProvider";
 
 type ToastContextType = {
   toast: {
@@ -23,12 +24,17 @@ export function useToast() {
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const toastMethods = {
-    success: (msg: string, dur?: number) => sonnerToast.success(msg, { duration: dur }),
-    error: (msg: string, dur?: number) => sonnerToast.error(msg, { duration: dur }),
-    warning: (msg: string, dur?: number) => sonnerToast.warning(msg, { duration: dur }),
-    info: (msg: string, dur?: number) => sonnerToast.info(msg, { duration: dur }),
-  };
+  const { tr } = useLanguage();
+
+  const toastMethods = useMemo(
+    () => ({
+      success: (msg: string, dur?: number) => sonnerToast.success(tr(msg), { duration: dur }),
+      error: (msg: string, dur?: number) => sonnerToast.error(tr(msg), { duration: dur }),
+      warning: (msg: string, dur?: number) => sonnerToast.warning(tr(msg), { duration: dur }),
+      info: (msg: string, dur?: number) => sonnerToast.info(tr(msg), { duration: dur }),
+    }),
+    [tr]
+  );
 
   return (
     <ToastContext.Provider value={{ toast: toastMethods }}>

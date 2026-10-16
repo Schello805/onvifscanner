@@ -141,9 +141,9 @@ export async function POST(req: Request) {
     }
   }
 
-  const size = clampInt(body.size ?? 200, 64, 1280);
-  const outputHeight = body.height === undefined ? undefined : clampInt(body.height, 36, 1280);
-  const quality = clampInt(body.quality ?? 65, 45, 90);
+  const size = clampInt(body.size ?? 200, 64, 2560);
+  const outputHeight = body.height === undefined ? undefined : clampInt(body.height, 36, 2560);
+  const quality = clampInt(body.quality ?? 65, 45, 92);
   const outputMode = body.output === "gray" ? "gray" : "jpeg";
   const timeoutMs = clampInt(body.timeoutMs ?? 1500, 300, 8000);
   const fastAuth = body.fastAuth !== false;

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Poin
 import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type MotionRegion, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
+import { WebRtcPlayer } from "@/components/WebRtcPlayer";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -298,8 +299,12 @@ export default function CameraWallPage() {
   const [mediaTransform, setMediaTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [liveCameras, setLiveCameras] = useState<Set<string>>(new Set());
   const [livePlaybackUrls, setLivePlaybackUrls] = useState<Record<string, string>>({});
+  const [liveWhepUrls, setLiveWhepUrls] = useState<Record<string, string>>({});
+  const [liveQualities, setLiveQualities] = useState<Record<string, "main" | "sub">>({});
   const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
   const [liveLoading, setLiveLoading] = useState<Set<string>>(new Set());
+  const [ptzPadOpen, setPtzPadOpen] = useState(false);
+  const [ptzBusy, setPtzBusy] = useState(false);
   const [recordLoading, setRecordLoading] = useState<Set<string>>(new Set());
   const [batchRecordLoading, setBatchRecordLoading] = useState(false);
   const [storageTargets, setStorageTargets] = useState<Array<{ id: string; name: string; path: string; isDefault: boolean }>>([]);
@@ -352,6 +357,8 @@ export default function CameraWallPage() {
   const runningRef = useRef<Set<string>>(new Set());
   const refreshRunningRef = useRef(false);
   const liveCamerasRef = useRef<Set<string>>(new Set());
+  const expandedCameraIdRef = useRef<string | null>(null);
+  const prevExpandedCameraIdRef = useRef<string | null>(null);
   const initialRefreshDoneRef = useRef(false);
   const lastClickRef = useRef<{ id: string, time: number }>({ id: "", time: 0 });
   const lastGestureTimeRef = useRef(0);
@@ -399,6 +406,8 @@ export default function CameraWallPage() {
   }, [mediaTransform]);
 
   useEffect(() => {
+    expandedCameraIdRef.current = expandedCameraId;
+    setPtzPadOpen(false);
     mediaPointersRef.current.clear();
     mediaGestureRef.current = {
       startScale: 1,
@@ -629,8 +638,10 @@ export default function CameraWallPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editingCameraId, expandedCameraId, closeExpanded]);
 
-  const loadCamera = useCallback(async (camera: WallCamera, fresh = false) => {
-    if ((!camera.snapshotUris.length && !camera.streamUris.length) || runningRef.current.has(camera.id)) return;
+  const loadCamera = useCallback(async (camera: WallCamera, fresh = false, forceHighRes = false) => {
+    if (!camera.snapshotUris.length && !camera.streamUris.length) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden" && !forceHighRes) return;
+    if (runningRef.current.has(camera.id) && !forceHighRes) return;
     
     // Don't hammer the API if the background ping detected it as offline
     if (camera.status?.isOnline === false) {
@@ -641,6 +652,7 @@ export default function CameraWallPage() {
        return;
     }
 
+    const isHighRes = forceHighRes || expandedCameraIdRef.current === camera.id;
     runningRef.current.add(camera.id);
     setImages((current) => ({ ...current, [camera.id]: { ...current[camera.id], state: "loading" } }));
 
@@ -653,10 +665,11 @@ export default function CameraWallPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           urls,
-          size: 512,
-          timeoutMs: 3000,
+          size: isHighRes ? 1920 : 512,
+          quality: isHighRes ? 85 : 68,
+          timeoutMs: isHighRes ? 4500 : 3000,
           fastAuth: true,
-          fresh,
+          fresh: fresh || isHighRes,
           credentials: camera.credentials
         }),
         signal: controller.signal
@@ -701,6 +714,7 @@ export default function CameraWallPage() {
 
   const refreshCameraList = useCallback(async (cameraList: WallCamera[], fresh = false) => {
     if (refreshRunningRef.current) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     refreshRunningRef.current = true;
     let nextIndex = 0;
     const workers = Array.from({ length: Math.min(2, cameraList.length) }, async () => {
@@ -717,6 +731,7 @@ export default function CameraWallPage() {
   }, [loadCamera]);
 
   const refreshAll = useCallback(async (fresh = false) => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden" && !fresh) return;
     try {
       const data = await loadWallData();
       setCameras(data.cameras);
@@ -734,8 +749,21 @@ export default function CameraWallPage() {
 
   useEffect(() => {
     if (refreshSeconds <= 0 || !cameras.length) return;
-    const timer = window.setInterval(() => void refreshAll(false), refreshSeconds * 1000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshAll(false);
+      }
+    }, refreshSeconds * 1000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAll(false);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [cameras.length, refreshAll, refreshSeconds]);
 
   function persist(next: WallCamera[]) {
@@ -955,6 +983,86 @@ export default function CameraWallPage() {
     if (document.fullscreenElement) await document.exitFullscreen();
   }
 
+  const prepareLiveStream = useCallback(async (cameraId: string, quality: "main" | "sub") => {
+    const response = await fetch(apiUrl("/api/stream/prepare"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cameraId, quality })
+    });
+    const result = (await response.json().catch(() => null)) as {
+      playbackUrl?: string;
+      whepUrl?: string;
+      quality?: "main" | "sub";
+      error?: string;
+      code?: string;
+    } | null;
+    if (!response.ok || !result?.playbackUrl) {
+      throw new Error(result?.error ?? `Live-Stream konnte nicht gestartet werden (HTTP ${response.status}).`);
+    }
+    setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
+    if (result.whepUrl) {
+      setLiveWhepUrls((current) => ({ ...current, [cameraId]: result.whepUrl! }));
+    }
+    setLiveQualities((current) => ({ ...current, [cameraId]: result.quality ?? quality }));
+    return result;
+  }, []);
+
+  useEffect(() => {
+    const previousId = prevExpandedCameraIdRef.current;
+    prevExpandedCameraIdRef.current = expandedCameraId;
+
+    // When leaving fullscreen for a camera that is still live, switch it back to lightweight sub-stream
+    if (previousId && previousId !== expandedCameraId && liveCamerasRef.current.has(previousId)) {
+      if (liveQualities[previousId] === "main") {
+        void prepareLiveStream(previousId, "sub").catch(() => {});
+      }
+    }
+
+    if (!expandedCameraId) return;
+    const cam = cameras.find((c) => c.id === expandedCameraId);
+    if (!cam) return;
+
+    if (liveCamerasRef.current.has(expandedCameraId)) {
+      if (liveQualities[expandedCameraId] !== "main") {
+        void prepareLiveStream(expandedCameraId, "main").catch(() => {});
+      }
+    } else {
+      void loadCamera(cam, true, true);
+    }
+  }, [expandedCameraId, cameras, liveQualities, loadCamera, prepareLiveStream]);
+
+  async function sendPtzCommand(
+    cameraId: string,
+    action: "move" | "stop",
+    x = 0,
+    y = 0,
+    zoom = 0
+  ) {
+    setPtzBusy(action === "move");
+    try {
+      const res = await fetch(apiUrl("/api/ptz"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cameraId, action, x, y, zoom })
+      });
+      if (!res.ok && action === "move") {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error || "PTZ wird von dieser Kamera nicht unterstützt.");
+      } else if (action === "stop" && !liveCamerasRef.current.has(cameraId)) {
+        const cam = cameras.find((c) => c.id === cameraId);
+        if (cam) {
+          window.setTimeout(() => void loadCamera(cam, true, true), 450);
+        }
+      }
+    } catch {
+      if (action === "move") {
+        toast.error("PTZ-Befehl fehlgeschlagen.");
+      }
+    } finally {
+      if (action === "stop") setPtzBusy(false);
+    }
+  }
+
   async function toggleLive(cameraId: string, quiet = false): Promise<boolean> {
     const cam = cameras.find((c) => c.id === cameraId);
     if (liveCameras.has(cameraId)) {
@@ -977,16 +1085,8 @@ export default function CameraWallPage() {
     setLiveErrors((current) => ({ ...current, [cameraId]: "" }));
     setLiveLoading((current) => new Set(current).add(cameraId));
     try {
-      const response = await fetch(apiUrl("/api/stream/prepare"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cameraId })
-      });
-      const result = (await response.json().catch(() => null)) as { playbackUrl?: string; error?: string; code?: string } | null;
-      if (!response.ok || !result?.playbackUrl) {
-        throw new Error(result?.error ?? `Live-Stream konnte nicht gestartet werden (HTTP ${response.status}).`);
-      }
-      setLivePlaybackUrls((current) => ({ ...current, [cameraId]: result.playbackUrl! }));
+      const preferredQuality = expandedCameraIdRef.current === cameraId ? "main" : "sub";
+      await prepareLiveStream(cameraId, preferredQuality);
       setLiveCameras((current) => {
         const next = new Set(current).add(cameraId);
         liveCamerasRef.current = next;
@@ -1495,6 +1595,7 @@ export default function CameraWallPage() {
                   className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
                   {expandedCameraId === camera.id ? (
+                    <>
                     <div className="fixed right-[max(8px,env(safe-area-inset-right))] top-[max(8px,env(safe-area-inset-top))] z-[100000] flex items-center gap-2">
                       <button
                         type="button"
@@ -1512,6 +1613,22 @@ export default function CameraWallPage() {
                       >
                         <span>{liveLoading.has(camera.id) ? "…" : isLive ? "■" : "▶"}</span>
                         <span>{liveLoading.has(camera.id) ? "Laden" : isLive ? "Live" : "Live"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setPtzPadOpen((v) => !v);
+                        }}
+                        className={`flex h-11 min-w-11 touch-manipulation items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition-colors ${
+                          ptzPadOpen ? "bg-emerald-600/90 active:bg-emerald-500" : "bg-black/65 active:bg-black/90"
+                        }`}
+                        title="PTZ-Kamerasteuerung (Schwenken/Neigen/Zoomen)"
+                        aria-label="PTZ-Kamerasteuerung"
+                      >
+                        <span>✥</span>
+                        <span className="hidden sm:inline">PTZ</span>
                       </button>
                       <button
                         type="button"
@@ -1559,6 +1676,101 @@ export default function CameraWallPage() {
                         </svg>
                       </button>
                     </div>
+                    {ptzPadOpen ? (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-[max(12px,env(safe-area-inset-right))] z-[100000] flex flex-col items-center gap-2 rounded-2xl border border-white/15 bg-black/75 p-3 text-white shadow-2xl backdrop-blur-xl"
+                      >
+                        <div className="flex w-full items-center justify-between gap-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-300">
+                          <span>ONVIF PTZ</span>
+                          {ptzBusy ? <span className="text-emerald-400 animate-pulse">Bewegt…</span> : null}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <span />
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", 0, 0.6, 0); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/15 bg-white/10 text-base font-bold active:bg-emerald-600/80"
+                            aria-label="Nach oben neigen"
+                          >
+                            ▲
+                          </button>
+                          <span />
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", -0.6, 0, 0); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/15 bg-white/10 text-base font-bold active:bg-emerald-600/80"
+                            aria-label="Nach links schwenken"
+                          >
+                            ◀
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-slate-300 active:bg-rose-600/70"
+                            title="Bewegung stoppen"
+                            aria-label="Bewegung stoppen"
+                          >
+                            ■
+                          </button>
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", 0.6, 0, 0); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/15 bg-white/10 text-base font-bold active:bg-emerald-600/80"
+                            aria-label="Nach rechts schwenken"
+                          >
+                            ▶
+                          </button>
+                          <span />
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", 0, -0.6, 0); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/15 bg-white/10 text-base font-bold active:bg-emerald-600/80"
+                            aria-label="Nach unten neigen"
+                          >
+                            ▼
+                          </button>
+                          <span />
+                        </div>
+                        <div className="grid w-full grid-cols-2 gap-1.5 border-t border-white/10 pt-2">
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", 0, 0, -0.5); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-9 touch-manipulation items-center justify-center rounded-lg border border-white/15 bg-white/10 text-xs font-bold active:bg-emerald-600/80"
+                            aria-label="Herauszoomen"
+                          >
+                            − Zoom
+                          </button>
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "move", 0, 0, 0.5); }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); void sendPtzCommand(camera.id, "stop"); }}
+                            onPointerCancel={() => void sendPtzCommand(camera.id, "stop")}
+                            onPointerLeave={() => { if (ptzBusy) void sendPtzCommand(camera.id, "stop"); }}
+                            className="flex h-9 touch-manipulation items-center justify-center rounded-lg border border-white/15 bg-white/10 text-xs font-bold active:bg-emerald-600/80"
+                            aria-label="Hineinzoomen"
+                          >
+                            + Zoom
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                    </>
                   ) : null}
                   <div
                     ref={expandedCameraId === camera.id ? mediaSurfaceRef : undefined}
@@ -1574,11 +1786,11 @@ export default function CameraWallPage() {
                     }
                   >
                   {isLive ? (
-                     <iframe 
-                        src={livePlaybackUrls[camera.id]}
+                     <WebRtcPlayer
+                        whepUrl={liveWhepUrls[camera.id]}
+                        playbackUrl={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
                         className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
-                        allow="autoplay; fullscreen; picture-in-picture"
                      />
                   ) : image?.src ? (
                     <>
