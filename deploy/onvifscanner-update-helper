@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="/opt/onvifscanner"
 UPDATE_SCRIPT="/usr/local/libexec/onvifscanner-update"
 UNIT_NAME="onvifscanner-update"
+TARGET_VERSION="${1:-}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Der Update-Helper benötigt root-Rechte." >&2
@@ -16,7 +17,7 @@ if [[ ! -x "$UPDATE_SCRIPT" ]]; then
 fi
 
 if systemctl is-active --quiet "${UNIT_NAME}.service"; then
-  echo '{"success":true,"alreadyRunning":true,"message":"Update läuft bereits."}'
+  echo '{"success":true,"alreadyRunning":true,"message":"Update oder Rollback läuft bereits."}'
   exit 0
 fi
 
@@ -24,12 +25,24 @@ RUNTIME_SCRIPT="$(mktemp /run/onvifscanner-update.XXXXXX)"
 cp "$UPDATE_SCRIPT" "$RUNTIME_SCRIPT"
 chmod 0700 "$RUNTIME_SCRIPT"
 
-systemd-run \
-  --unit="$UNIT_NAME" \
-  --collect \
-  --no-block \
-  --property=Type=exec \
-  --property=WorkingDirectory="$APP_DIR" \
-  /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
-
-echo '{"success":true,"message":"Update wurde als Hintergrunddienst gestartet."}'
+if [[ -n "$TARGET_VERSION" ]]; then
+  systemd-run \
+    --unit="$UNIT_NAME" \
+    --collect \
+    --no-block \
+    --property=Type=exec \
+    --property=WorkingDirectory="$APP_DIR" \
+    --setenv=TARGET_VERSION="$TARGET_VERSION" \
+    --setenv=FORCE_REBUILD="true" \
+    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+  echo "{\"success\":true,\"message\":\"Rollback/Wechsel auf $TARGET_VERSION wurde im Hintergrund gestartet.\"}"
+else
+  systemd-run \
+    --unit="$UNIT_NAME" \
+    --collect \
+    --no-block \
+    --property=Type=exec \
+    --property=WorkingDirectory="$APP_DIR" \
+    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+  echo '{"success":true,"message":"Update wurde als Hintergrunddienst gestartet."}'
+fi

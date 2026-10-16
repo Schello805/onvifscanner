@@ -59,19 +59,38 @@ if [[ "${major:-0}" -lt 20 ]]; then
   apt-get install -y --no-install-recommends nodejs
 fi
 
+# Automatic pre-update database backup
+if [[ -f "$APP_DIR/data/onvifscanner.db" ]]; then
+  echo "Erstelle Sicherheits-Backup der Datenbank..."
+  cp "$APP_DIR/data/onvifscanner.db" "$APP_DIR/data/onvifscanner.db.backup-pre-update" || true
+  cp "$APP_DIR/data/onvifscanner.db" "$APP_DIR/data/onvifscanner.db.backup-$(date +%Y%m%d_%H%M%S)" || true
+  # Keep only 5 most recent timestamped backups
+  ls -1t "$APP_DIR/data"/onvifscanner.db.backup-[0-9]* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+fi
+
 previous_commit=""
 if [[ ! -d "$APP_DIR/.git" ]]; then
   echo "No git repo found in $APP_DIR. Installing fresh..." >&2
   rm -rf "$APP_DIR"
   install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git clone '$REPO_URL' '$APP_DIR'"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
+  if [[ -n "${TARGET_VERSION:-}" ]]; then
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f '$TARGET_VERSION'"
+  else
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
+  fi
 else
   chown -R "$APP_USER:$APP_USER" "$APP_DIR" || true
-  previous_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD)"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' fetch --all --prune"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' pull --ff-only"
+  previous_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || echo "")"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' fetch --all --tags --prune"
+  if [[ -n "${TARGET_VERSION:-}" ]]; then
+    echo "Führe Rollback / Wechsel auf Version '$TARGET_VERSION' durch..."
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f '$TARGET_VERSION'"
+    FORCE_REBUILD=true
+  else
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' pull --ff-only"
+  fi
 fi
 current_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD)"
 

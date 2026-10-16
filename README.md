@@ -10,6 +10,7 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 
 ## Features
 
+- **Versionsverwaltung & Rollback**: Schnelles Zurücksetzen auf vorherige Release-Versionen per 1-Klick im Web-Interface oder über die CLI (`npm run rollback`), inklusive automatischem SQLite-Datenbank-Backup.
 - **Telegram- & ntfy-Alarmierung**: Push-Benachrichtigungen inklusive Live-Vorschaubild bei Bewegungen oder Statuswechseln direkt aufs Smartphone (Bot-Token/Chat-ID für Telegram oder Topic für ntfy).
 - **Zweisprachige Oberfläche**: Vollständige Unterstützung für Deutsch und Englisch mit 1-Klick-Umschaltung im Header und in den Einstellungen.
 - **Cybersecurity & Zugriffsschutz**: Integriertes AuthGate für Passwort- oder PIN-Schutz der Web-App mit Brute-Force-Sperre, sicherem Session-Cookie und AES-256-GCM-Verschlüsselung gespeicherter Kamera-Passwörter (Zero-Plaintext on Disk).
@@ -214,6 +215,27 @@ Ab Version `0.13.2` installiert das LXC-Skript außerdem einen eng begrenzten sy
 
 ```bash
 FORCE_SYSTEM_PACKAGES=true FORCE_REBUILD=true curl -fsSL https://raw.githubusercontent.com/Schello805/onvifscanner/main/scripts/debian-lxc/auto.sh | bash
+```
+
+## Updates & Versions-Rollback
+
+ONVIFscanner nutzt offizielle Git-Tags und GitHub-Releases (`v0.16.0`, `v0.15.14`, etc.). Sollte ein Update unerwartet Probleme bereiten, kann jederzeit auf eine vorherige Version zurückgesetzt werden.
+
+### 1-Klick Update & Rollback (Web-Oberfläche)
+Im Footer zeigt die Versionsanzeige (z. B. `Rev. v0.16.0`) den aktuellen Versionsstatus an:
+- **1-Klick Update:** Aktualisiert auf die neueste Version von GitHub.
+- **Rollback / Version wechseln:** Aus einem Dropdown kann direkt eine beliebige vorherige Release-Version (oder `main`) ausgewählt und per Klick aktiviert werden.
+- **Automatisches Datenbank-Backup:** Vor jedem Update oder Rollback wird die SQLite-Datenbank automatisch gesichert (`data/onvifscanner.db.backup-*`).
+
+### Rollback über das Terminal (CLI)
+Sollte die Web-App nach einem fehlerhaften Stand nicht mehr erreichbar sein, steht ein interaktives CLI-Tool bereit:
+
+```bash
+# Interaktives Rollback-Menü (zeigt die letzten Tags zur Auswahl):
+npm run rollback
+
+# Oder direkt mit Zielversion aufrufen:
+npm run rollback v0.15.14
 ```
 
 ## Konfiguration (Environment)

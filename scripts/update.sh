@@ -52,6 +52,8 @@ if [[ ! -d ".git" ]]; then
   exit 1
 fi
 
+TARGET_VERSION="${1:-${TARGET_VERSION:-}}"
+
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")"
 log_info "Aktueller Git-Branch: ${CURRENT_BRANCH}"
 
@@ -62,24 +64,37 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
   git stash push -m "Auto-stash vor update.sh ($(date +%Y-%m-%d_%H-%M-%S))" || true
 fi
 
-# 5. Pull latest changes from GitHub
-log_step "Lade neueste Änderungen von GitHub herunter…"
-git fetch --all --prune
+# 4b. Backup SQLite database before touching code
+if [[ -f "data/onvifscanner.db" ]]; then
+  log_step "Erstelle automatisches DB-Backup vor Update/Rollback..."
+  cp data/onvifscanner.db data/onvifscanner.db.backup-pre-update || true
+  cp data/onvifscanner.db "data/onvifscanner.db.backup-$(date +%Y%m%d_%H%M%S)" || true
+  ls -1t data/onvifscanner.db.backup-[0-9]* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+fi
 
-REMOTE_BRANCH="origin/${CURRENT_BRANCH}"
-if git rev-parse --verify "${REMOTE_BRANCH}" >/dev/null 2>&1; then
-  git pull --rebase origin "${CURRENT_BRANCH}" || {
-    log_warn "Rebase fehlgeschlagen, versuche Standard-Pull…"
-    git rebase --abort 2>/dev/null || true
-    git pull origin "${CURRENT_BRANCH}"
-  }
+# 5. Pull latest changes or checkout requested version from GitHub
+log_step "Lade Änderungen und Tags von GitHub herunter…"
+git fetch --all --tags --prune
+
+if [[ -n "$TARGET_VERSION" ]]; then
+  log_step "Schalte um auf Zielversion / Tag: ${TARGET_VERSION}..."
+  git checkout -f "${TARGET_VERSION}"
 else
-  log_warn "Kein Remote-Branch '${REMOTE_BRANCH}' gefunden, versuche 'git pull'…"
-  git pull
+  REMOTE_BRANCH="origin/${CURRENT_BRANCH}"
+  if git rev-parse --verify "${REMOTE_BRANCH}" >/dev/null 2>&1; then
+    git pull --rebase origin "${CURRENT_BRANCH}" || {
+      log_warn "Rebase fehlgeschlagen, versuche Standard-Pull…"
+      git rebase --abort 2>/dev/null || true
+      git pull origin "${CURRENT_BRANCH}"
+    }
+  else
+    log_warn "Kein Remote-Branch '${REMOTE_BRANCH}' gefunden, versuche 'git pull'…"
+    git pull
+  fi
 fi
 
 NEW_COMMIT="$(git rev-parse --short HEAD)"
-log_ok "Projekt aktualisiert auf Commit: ${NEW_COMMIT}"
+log_ok "Projekt aktualisiert auf Commit / Tag: ${NEW_COMMIT}"
 
 # 6. Install / Update Node.js dependencies
 log_step "Aktualisiere npm-Pakete…"
