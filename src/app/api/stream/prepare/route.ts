@@ -142,9 +142,14 @@ export async function POST(request: Request) {
 
     const pathName = chosenIsSub && rtspCandidates.length > 1 ? `${camera.id}_sub` : `${camera.id}_live`;
     const encodedPath = encodeURIComponent(pathName);
-    const config = { source: chosenSource.toString(), sourceOnDemand: true, rtspTransport: "tcp" };
+    const config = {
+      source: chosenSource.toString(),
+      sourceOnDemand: true,
+      sourceOnDemandCloseAfter: "30s",
+      rtspTransport: "tcp",
+    };
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    const timeout = setTimeout(() => controller.abort(), 4000);
 
     try {
       const existing = await fetch(`${MEDIA_MTX_API}/v3/config/paths/get/${encodedPath}`, {

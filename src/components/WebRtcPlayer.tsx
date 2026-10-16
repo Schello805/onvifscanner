@@ -21,7 +21,8 @@ export function WebRtcPlayer({
   const [useIframeFallback, setUseIframeFallback] = useState(!whepUrl);
 
   useEffect(() => {
-    if (!whepUrl) {
+    // Only use iframe fallback if whepUrl is missing or RTCPeerConnection is unsupported
+    if (!whepUrl || typeof window === "undefined" || !("RTCPeerConnection" in window)) {
       setUseIframeFallback(true);
       return;
     }
@@ -31,18 +32,52 @@ export function WebRtcPlayer({
     let pc: RTCPeerConnection | null = null;
     let sessionUrl: string | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attemptCount = 0;
 
-    const connectWhep = async (attempt = 0) => {
+    const cleanupCurrentPc = () => {
+      if (pc) {
+        try {
+          pc.ontrack = null;
+          pc.onconnectionstatechange = null;
+          pc.oniceconnectionstatechange = null;
+          pc.close();
+        } catch {}
+        pc = null;
+      }
+      if (sessionUrl) {
+        const urlToDelete = sessionUrl;
+        sessionUrl = null;
+        fetch(urlToDelete, { method: "DELETE" }).catch(() => {});
+      }
+    };
+
+    const scheduleReconnect = () => {
       if (cancelled) return;
+      cleanupCurrentPc();
+      if (retryTimer) clearTimeout(retryTimer);
+      attemptCount++;
+      // Progressive backoff: 1s, 2s, 3s, capped at 5s
+      const delay = Math.min(1000 * Math.min(attemptCount, 5), 5000);
+      retryTimer = setTimeout(() => {
+        if (!cancelled) void connectWhep();
+      }, delay);
+    };
+
+    const connectWhep = async () => {
+      if (cancelled) return;
+      cleanupCurrentPc();
+
       try {
-        pc = new RTCPeerConnection({
+        const peer = new RTCPeerConnection({
           iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
+        pc = peer;
 
-        pc.addTransceiver("video", { direction: "recvonly" });
-        pc.addTransceiver("audio", { direction: "recvonly" });
+        peer.addTransceiver("video", { direction: "recvonly" });
+        peer.addTransceiver("audio", { direction: "recvonly" });
 
-        pc.ontrack = (event) => {
+        peer.ontrack = (event) => {
+          attemptCount = 0; // Stream received successfully, reset backoff
           const videoEl = videoRef.current;
           if (!videoEl || !event.streams[0]) return;
           if (videoEl.srcObject !== event.streams[0]) {
@@ -51,55 +86,57 @@ export function WebRtcPlayer({
           }
         };
 
-        pc.onconnectionstatechange = () => {
-          if (cancelled || !pc) return;
-          if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-            if (attempt < 2) {
-              pc.close();
-              retryTimer = setTimeout(() => void connectWhep(attempt + 1), 900);
-            } else {
-              setUseIframeFallback(true);
-            }
+        const handleDisconnect = () => {
+          if (cancelled || pc !== peer) return;
+          const state = peer.connectionState;
+          const iceState = peer.iceConnectionState;
+          if (
+            state === "failed" ||
+            state === "disconnected" ||
+            iceState === "failed" ||
+            iceState === "disconnected"
+          ) {
+            scheduleReconnect();
           }
         };
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        peer.onconnectionstatechange = handleDisconnect;
+        peer.oniceconnectionstatechange = handleDisconnect;
+
+        const offer = await peer.createOffer();
+        if (cancelled || pc !== peer) return;
+        await peer.setLocalDescription(offer);
 
         await new Promise<void>((resolve) => {
-          if (!pc || pc.iceGatheringState === "complete") {
+          if (peer.iceGatheringState === "complete") {
             resolve();
             return;
           }
           const timeout = setTimeout(() => {
-            pc?.removeEventListener("icegatheringstatechange", checkState);
+            peer.removeEventListener("icegatheringstatechange", checkState);
             resolve();
-          }, 1200);
+          }, 1000);
           const checkState = () => {
-            if (pc?.iceGatheringState === "complete") {
+            if (peer.iceGatheringState === "complete") {
               clearTimeout(timeout);
-              pc.removeEventListener("icegatheringstatechange", checkState);
+              peer.removeEventListener("icegatheringstatechange", checkState);
               resolve();
             }
           };
-          pc.addEventListener("icegatheringstatechange", checkState);
+          peer.addEventListener("icegatheringstatechange", checkState);
         });
 
-        if (cancelled || !pc.localDescription) return;
+        if (cancelled || pc !== peer || !peer.localDescription) return;
 
         const res = await fetch(whepUrl, {
           method: "POST",
           headers: { "Content-Type": "application/sdp" },
-          body: pc.localDescription.sdp,
+          body: peer.localDescription.sdp,
         });
 
         if (!res.ok) {
-          if (attempt < 2) {
-            pc.close();
-            retryTimer = setTimeout(() => void connectWhep(attempt + 1), 800);
-            return;
-          }
-          throw new Error(`WHEP HTTP ${res.status}`);
+          scheduleReconnect();
+          return;
         }
 
         const locationHeader = res.headers.get("location");
@@ -108,32 +145,35 @@ export function WebRtcPlayer({
         }
 
         const answerSdp = await res.text();
-        if (cancelled) return;
+        if (cancelled || pc !== peer) return;
 
-        await pc.setRemoteDescription({
+        await peer.setRemoteDescription({
           type: "answer",
           sdp: answerSdp,
         });
       } catch {
         if (!cancelled) {
-          setUseIframeFallback(true);
+          scheduleReconnect();
         }
       }
     };
 
     void connectWhep();
 
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        if (!pc || pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          void connectWhep();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibility);
       if (retryTimer) clearTimeout(retryTimer);
-      if (pc) {
-        try {
-          pc.close();
-        } catch {}
-      }
-      if (sessionUrl) {
-        fetch(sessionUrl, { method: "DELETE" }).catch(() => {});
-      }
+      cleanupCurrentPc();
     };
   }, [whepUrl]);
 

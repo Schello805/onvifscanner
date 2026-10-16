@@ -36,7 +36,17 @@ async function proxy(request: Request, context: RouteContext) {
       const parsed = new URL(location, MEDIA_MTX_WEBRTC);
       responseHeaders.set("location", `/api/webrtc${parsed.pathname}${parsed.search}`);
     }
-    responseHeaders.set("cache-control", "no-store");
+    if (request.method === "DELETE" && response.status === 404) {
+      return new NextResponse(null, { status: 204 });
+    }
+
+    if (!response.ok && response.status >= 400 && response.status !== 404) {
+      const cloned = response.clone();
+      const text = await cloned.text().catch(() => "");
+      if (text) {
+        console.warn(`[WebRTC Proxy] Upstream ${request.method} ${upstreamUrl} returned HTTP ${response.status}: ${text.slice(0, 300)}`);
+      }
+    }
 
     return new NextResponse(response.body, {
       status: response.status,

@@ -766,7 +766,17 @@ async function syncMediaMtxPaths(cameras) {
     }
     
     for (const p of currentPaths) {
-       if (p.name !== 'all_others' && p.name !== '~^.*$' && !desiredPaths[p.name]) {
+       // Never delete MediaMTX internal default paths
+       if (p.name === 'all_others' || p.name === '~^.*$') continue;
+
+       // Never delete active WebRTC live / sub stream paths for existing cameras
+       if (p.name.endsWith('_live') || p.name.endsWith('_sub')) {
+          const baseId = p.name.replace(/_(live|sub)$/, '');
+          const cameraExists = cameras.some(c => c.id === baseId);
+          if (cameraExists) continue;
+       }
+
+       if (!desiredPaths[p.name]) {
           await fetch(`http://127.0.0.1:9997/v3/config/paths/delete/${encodeURIComponent(p.name)}`, { method: 'DELETE' }).catch(()=>null);
        }
     }
