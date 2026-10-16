@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { X, Settings2, Bell, Save, Send, Languages, Shield, KeyRound, LogOut, RefreshCw } from "lucide-react";
+import { X, Settings2, Bell, Save, Send, Languages, Shield, KeyRound, LogOut, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -35,6 +35,7 @@ export function SettingsModal({
     webhookToken: "",
   });
   const [newAppPassword, setNewAppPassword] = useState("");
+  const [showAppPassword, setShowAppPassword] = useState(false);
   const [disableAppPassword, setDisableAppPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -249,7 +250,7 @@ export function SettingsModal({
                 <label className="input input-bordered flex items-center gap-2 bg-slate-950 border-slate-800 focus-within:border-indigo-500">
                   <KeyRound className="w-4 h-4 text-slate-500 shrink-0" />
                   <input
-                    type="password"
+                    type={showAppPassword ? "text" : "password"}
                     className="grow text-slate-200 text-sm"
                     placeholder={
                       data.authEnabled
@@ -262,6 +263,16 @@ export function SettingsModal({
                       if (e.target.value.trim()) setDisableAppPassword(false);
                     }}
                   />
+                  {newAppPassword && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAppPassword((s) => !s)}
+                      className="text-slate-500 hover:text-slate-300 transition-colors"
+                      title={showAppPassword ? t("Passwort verbergen", "Hide password") : t("Passwort anzeigen", "Show password")}
+                    >
+                      {showAppPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  )}
                 </label>
 
                 {data.authEnabled && !data.envAuthLocked && (

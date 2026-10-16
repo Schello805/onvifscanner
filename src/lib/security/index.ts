@@ -158,24 +158,30 @@ export function isAppAuthEnabled(): boolean {
 }
 
 export function verifyAppPassword(candidate: string): boolean {
-  const input = String(candidate || "");
-  if (!input) return false;
+  const raw = String(candidate ?? "");
+  const trimmed = raw.trim();
+  if (!raw && !trimmed) return false;
 
   const envPass = process.env.APP_PASSWORD?.trim();
   if (envPass) {
-    const a = Buffer.from(input);
-    const b = Buffer.from(envPass);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+    if (raw === envPass || trimmed === envPass) {
       return true;
     }
   }
 
   const cfg = loadSecurityConfig();
   if (!cfg.appPasswordHash || !cfg.appPasswordSalt) return false;
-  const { hash } = hashPassword(input, cfg.appPasswordSalt);
-  const a = Buffer.from(hash, "hex");
-  const b = Buffer.from(cfg.appPasswordHash, "hex");
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+
+  for (const candidateStr of [trimmed, raw]) {
+    if (!candidateStr) continue;
+    const { hash } = hashPassword(candidateStr, cfg.appPasswordSalt);
+    const a = Buffer.from(hash, "hex");
+    const b = Buffer.from(cfg.appPasswordHash, "hex");
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function setAppPassword(newPassword: string | null | undefined): void {
