@@ -53,8 +53,7 @@
 .camera-card-actions {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(0.25rem);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 160ms ease;
 }
 
 .camera-card:hover .camera-card-actions,
@@ -62,7 +61,6 @@
 .camera-card-actions.is-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
 }
 
 @container (max-width: 360px) {
