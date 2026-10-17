@@ -108,6 +108,7 @@ async function publishNtfy(url, notification, attachment, options = {}) {
 }
 
 const { sendTelegramNotification } = require('./telegram');
+const { hasSubscriptions, sendWebPushNotification } = require('./webpush');
 
 async function sendCameraNotification(prisma, camera, message, options = {}) {
   if (!camera?.notificationsEnabled && !options.force) return { sent: false, reason: 'disabled' };
@@ -125,11 +126,14 @@ async function sendCameraNotification(prisma, camera, message, options = {}) {
   const telegramEligible = Boolean(telegramBotToken && telegramChatId && telegramEnabled) &&
     (!options.statusNotification || Boolean(settings?.telegramCameraStatusEnabled));
 
-  if (!ntfyEligible && !telegramEligible) {
+  // Evaluate Web-Push eligibility
+  const webpushEligible = hasSubscriptions() && (!options.statusNotification);
+
+  if (!ntfyEligible && !telegramEligible && !webpushEligible) {
     if (options.statusNotification) {
       return { sent: false, reason: 'status-notifications-disabled' };
     }
-    console.warn(`🔕 Push for ${camera.name} skipped: no notification provider (ntfy / telegram) configured.`);
+    console.warn(`🔕 Push for ${camera.name} skipped: no notification provider (webpush / ntfy / telegram) configured.`);
     return { sent: false, reason: 'missing-provider' };
   }
 
@@ -193,7 +197,28 @@ async function sendCameraNotification(prisma, camera, message, options = {}) {
     }
   }
 
-  const anySent = Boolean(results.ntfy?.sent || results.telegram?.sent);
+  // Dispatch Web-Push
+  if (webpushEligible) {
+    try {
+      const wpRes = await sendWebPushNotification({
+        title: `🚨 ${camera.name}`,
+        body: message,
+        url: '/',
+        tag: `cam-${camera.id}`,
+      });
+      if (wpRes.sentCount > 0) {
+        console.log(`🔔 Web-Push sent for ${camera.name} to ${wpRes.sentCount} device(s).`);
+        results.webpush = { sent: true, count: wpRes.sentCount };
+      } else {
+        results.webpush = { sent: false, count: 0 };
+      }
+    } catch (error) {
+      console.error(`🔕 Web-Push for ${camera.name} failed:`, error?.message || error);
+      results.webpush = { sent: false, error: error?.message || String(error) };
+    }
+  }
+
+  const anySent = Boolean(results.ntfy?.sent || results.telegram?.sent || results.webpush?.sent);
   return { sent: anySent, ...results };
 }
 

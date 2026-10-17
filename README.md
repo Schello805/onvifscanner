@@ -10,6 +10,8 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 
 ## Features
 
+- **Web-Push Benachrichtigungen**: Direkte Browser- und Smartphone-Push-Nachrichten (PWA) bei Alarmen ohne externe Dienste wie Telegram oder ntfy; automatische VAPID-Schlüsselverwaltung und Bereinigung inaktiver Abonnements.
+- **Konfigurations-Backup & Wiederherstellung**: Kameras, Zugangsdaten, Speicherziele und Einstellungen mit 1-Klick als portables JSON exportieren und wieder einspielen (Merge- und Replace-Modus).
 - **Versionsverwaltung & Rollback**: Schnelles Zurücksetzen auf vorherige Release-Versionen per 1-Klick im Web-Interface oder über die CLI (`npm run rollback`), inklusive automatischem SQLite-Datenbank-Backup.
 - **Telegram- & ntfy-Alarmierung**: Push-Benachrichtigungen inklusive Live-Vorschaubild bei Bewegungen oder Statuswechseln direkt aufs Smartphone (Bot-Token/Chat-ID für Telegram oder Topic für ntfy).
 - **Zweisprachige Oberfläche**: Vollständige Unterstützung für Deutsch und Englisch mit 1-Klick-Umschaltung im Header und in den Einstellungen.

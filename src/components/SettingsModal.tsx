@@ -17,10 +17,27 @@ import {
   MessageSquare,
   HardDrive,
   CheckCircle2,
+  Download,
+  Upload,
+  BellRing,
+  Smartphone,
+  Database,
+  FileJson,
 } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 type SettingsData = {
   ntfyTopic: string | null;
@@ -66,7 +83,48 @@ export function SettingsModal({
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingNtfy, setIsTestingNtfy] = useState(false);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+
+  // Web-Push
+  const [isPushSupported, setIsPushSupported] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [pushDeviceCount, setPushDeviceCount] = useState<number | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
+
+  // Backup & Restore
+  const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [backupParsed, setBackupParsed] = useState<any | null>(null);
+  const [restoreMode, setRestoreMode] = useState<"merge" | "replace">("merge");
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
+
   useBodyScrollLock(isOpen);
+
+  const checkPushStatus = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const supported =
+      "serviceWorker" in navigator &&
+      "PushManager" in window &&
+      "Notification" in window;
+    setIsPushSupported(supported);
+    if (!supported) return;
+
+    try {
+      const res = await fetch("/api/push");
+      if (res.ok) {
+        const json = await res.json();
+        setPushDeviceCount(json.activeCount ?? 0);
+      }
+
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        setIsSubscribed(Boolean(sub));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
@@ -99,8 +157,9 @@ export function SettingsModal({
   useEffect(() => {
     if (isOpen) {
       void loadSettings();
+      void checkPushStatus();
     }
-  }, [isOpen, loadSettings]);
+  }, [isOpen, loadSettings, checkPushStatus]);
 
   async function handleSave() {
     setIsSaving(true);
@@ -205,6 +264,257 @@ export function SettingsModal({
       toast.error(error instanceof Error ? error.message : t("Testnachricht konnte nicht gesendet werden.", "Test notification could not be sent."));
     } finally {
       setIsTestingTelegram(false);
+    }
+  }
+
+  // Web-Push Handlers
+  async function handleSubscribePush() {
+    setPushLoading(true);
+    try {
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+        throw new Error(
+          t(
+            "Push-Benachrichtigungen werden von diesem Browser nicht unterstützt.",
+            "Push notifications are not supported by this browser."
+          )
+        );
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        throw new Error(
+          t(
+            "Berechtigung für Benachrichtigungen wurde im Browser verweigert.",
+            "Notification permission was denied in your browser."
+          )
+        );
+      }
+
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+
+      const res = await fetch("/api/push");
+      const json = await res.json();
+      if (!res.ok || !json.vapidPublicKey) {
+        throw new Error(
+          json.error ||
+            t(
+              "VAPID Public Key konnte nicht abgerufen werden.",
+              "Failed to fetch VAPID key."
+            )
+        );
+      }
+
+      const appServerKey = urlBase64ToUint8Array(json.vapidPublicKey);
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey,
+      });
+
+      const saveRes = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "subscribe",
+          subscription: sub.toJSON(),
+          userAgent: navigator.userAgent,
+        }),
+      });
+      const saveJson = await saveRes.json();
+      if (!saveRes.ok)
+        throw new Error(saveJson.error || "Fehler beim Speichern des Push-Abonnements.");
+
+      setIsSubscribed(true);
+      setPushDeviceCount(saveJson.activeCount ?? ((pushDeviceCount || 0) + 1));
+      toast.success(
+        t(
+          "Web-Push für dieses Gerät erfolgreich aktiviert!",
+          "Web push successfully enabled for this device!"
+        )
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("Fehler bei der Push-Aktivierung.", "Error enabling push.")
+      );
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function handleUnsubscribePush() {
+    setPushLoading(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          const endpoint = sub.endpoint;
+          await sub.unsubscribe();
+          await fetch("/api/push", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "unsubscribe", endpoint }),
+          });
+        }
+      }
+      setIsSubscribed(false);
+      setPushDeviceCount((prev) => Math.max(0, (prev || 1) - 1));
+      toast.success(
+        t("Web-Push für dieses Gerät deaktiviert.", "Web push disabled for this device.")
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("Fehler beim Deaktivieren.", "Error disabling push.")
+      );
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function handleTestPush() {
+    setPushTesting(true);
+    try {
+      const res = await fetch("/api/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test" }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Test fehlgeschlagen");
+      if (json.sentCount === 0) {
+        toast.warning(
+          t(
+            "Kein aktives Push-Gerät registriert. Bitte aktiviere Push zuerst auf diesem Gerät.",
+            "No active push devices registered. Please enable push on this device first."
+          )
+        );
+      } else {
+        toast.success(
+          t(
+            `Test-Push an ${json.sentCount} Gerät(e) gesendet!`,
+            `Test push sent to ${json.sentCount} device(s)!`
+          )
+        );
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("Test-Push fehlgeschlagen.", "Test push failed.")
+      );
+    } finally {
+      setPushTesting(false);
+    }
+  }
+
+  // Backup & Restore Handlers
+  async function handleDownloadBackup() {
+    setIsDownloadingBackup(true);
+    try {
+      const res = await fetch("/api/system/backup");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Backup fehlgeschlagen");
+      }
+      const blob = await res.blob();
+      const dateStr = new Date().toISOString().split("T")[0];
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `onvifscanner-backup-${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(
+        t("Backup erfolgreich heruntergeladen!", "Backup downloaded successfully!")
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("Backup-Download fehlgeschlagen.", "Backup download failed.")
+      );
+    } finally {
+      setIsDownloadingBackup(false);
+    }
+  }
+
+  function handleBackupFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setBackupFile(null);
+      setBackupParsed(null);
+      return;
+    }
+    setBackupFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        const json = JSON.parse(text);
+        if (!json || typeof json !== "object" || !Array.isArray(json.cameras)) {
+          throw new Error(
+            t(
+              "Ungültiges Backup-Format: Keine Kameras gefunden.",
+              "Invalid backup format: No cameras found."
+            )
+          );
+        }
+        setBackupParsed(json);
+        toast.info(
+          t(
+            `Backup-Datei geladen: ${json.cameras.length} Kamera(s) gefunden.`,
+            `Backup loaded: ${json.cameras.length} camera(s) found.`
+          )
+        );
+      } catch (err) {
+        setBackupFile(null);
+        setBackupParsed(null);
+        toast.error(
+          err instanceof Error ? err.message : t("Konnte Datei nicht parsen.", "Failed to parse file.")
+        );
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleRestoreBackup() {
+    if (!backupParsed) return;
+    if (restoreMode === "replace") {
+      const ok = window.confirm(
+        t(
+          "Achtung: Im Modus 'Ersetzen' werden alle aktuellen Kameras, die nicht in der Sicherung enthalten sind, gelöscht! Fortfahren?",
+          "Warning: In 'Replace' mode, all current cameras not present in the backup will be deleted! Proceed?"
+        )
+      );
+      if (!ok) return;
+    }
+    setIsRestoring(true);
+    try {
+      const res = await fetch("/api/system/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: restoreMode,
+          backup: backupParsed,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Wiederherstellung fehlgeschlagen");
+
+      toast.success(
+        t(
+          `Erfolgreich ${json.count} Kamera(s) wiederhergestellt!`,
+          `Successfully restored ${json.count} camera(s)!`
+        )
+      );
+      setBackupFile(null);
+      setBackupParsed(null);
+      window.dispatchEvent(new CustomEvent("onvifscanner:wall-updated"));
+      await loadSettings();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t("Wiederherstellung fehlgeschlagen.", "Restore failed.")
+      );
+    } finally {
+      setIsRestoring(false);
     }
   }
 
@@ -442,9 +752,168 @@ export function SettingsModal({
                   </label>
                 </div>
 
+                {/* Backup & Wiederherstellung Card */}
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 space-y-4 shadow-sm relative overflow-hidden">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                        <Database className="w-4 h-4" />
+                      </div>
+                      <span className="font-semibold text-slate-200 text-sm">
+                        {t("Backup & Wiederherstellung", "Backup & Restore")}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {t(
+                      "Sichere alle Kameras, Zugangsdaten, Speicherziele und Einstellungen als JSON-Datei oder stelle sie wieder her.",
+                      "Backup or restore all cameras, credentials, storage targets, and settings as a JSON file."
+                    )}
+                  </p>
+
+                  <div className="space-y-3 pt-1 border-t border-slate-800/60">
+                    {/* Backup Download */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <span className="block text-xs font-medium text-slate-200">
+                          {t("Konfiguration sichern", "Backup Configuration")}
+                        </span>
+                        <span className="block text-[11px] text-slate-500">
+                          {t("JSON-Export aller Daten & Passwörter", "JSON export of all data & passwords")}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDownloadBackup}
+                        disabled={isDownloadingBackup}
+                        className="btn btn-xs border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg gap-1.5 shrink-0"
+                      >
+                        {isDownloadingBackup ? (
+                          <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>{t("Backup herunterladen", "Download Backup")}</span>
+                      </button>
+                    </div>
+
+                    {/* Restore Backup */}
+                    <div className="pt-2 border-t border-slate-800/40 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="block text-xs font-medium text-slate-200">
+                            {t("Backup einspielen", "Restore Backup")}
+                          </span>
+                          <span className="block text-[11px] text-slate-500">
+                            {t("JSON-Sicherungsdatei auswählen", "Select JSON backup file")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="btn btn-xs border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-lg gap-1.5 cursor-pointer max-w-full truncate">
+                          <Upload className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                          <span className="truncate max-w-[200px]">
+                            {backupFile ? backupFile.name : t("Datei wählen...", "Choose file...")}
+                          </span>
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            className="hidden"
+                            onChange={handleBackupFileChange}
+                          />
+                        </label>
+                        {backupFile && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBackupFile(null);
+                              setBackupParsed(null);
+                            }}
+                            className="btn btn-xs btn-ghost text-slate-500 hover:text-slate-300 px-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {backupParsed && (
+                        <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-3 space-y-2">
+                          <div className="flex items-center justify-between text-xs text-indigo-200">
+                            <span className="font-semibold flex items-center gap-1.5">
+                              <FileJson className="w-4 h-4 text-indigo-400" />
+                              {t("Sicherung geladen", "Backup Loaded")}
+                            </span>
+                            <span className="text-[11px] text-indigo-300/80">
+                              {backupParsed.cameras?.length || 0} {t("Kameras", "cameras")}, {backupParsed.storageTargets?.length || 0} {t("Speicher", "storage")}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 pt-1">
+                            <label className="text-[11px] font-medium text-slate-400 block">
+                              {t("Wiederherstellungs-Modus", "Restore Mode")}
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setRestoreMode("merge")}
+                                className={`py-1.5 px-2 text-left rounded-lg border text-xs transition-all ${
+                                  restoreMode === "merge"
+                                    ? "border-indigo-500/60 bg-indigo-600/20 text-indigo-200 font-medium"
+                                    : "border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-300"
+                                }`}
+                              >
+                                <div className="font-semibold text-[11px]">{t("Zusammenführen", "Merge")}</div>
+                                <div className="text-[10px] text-slate-400">{t("Aktualisiert & fügt hinzu", "Updates & adds")}</div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRestoreMode("replace")}
+                                className={`py-1.5 px-2 text-left rounded-lg border text-xs transition-all ${
+                                  restoreMode === "replace"
+                                    ? "border-rose-500/60 bg-rose-600/20 text-rose-200 font-medium"
+                                    : "border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-300"
+                                }`}
+                              >
+                                <div className="font-semibold text-[11px]">{t("Ersetzen", "Replace")}</div>
+                                <div className="text-[10px] text-slate-400">{t("Überschreibt alle Kameras", "Overwrites all cameras")}</div>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={handleRestoreBackup}
+                              disabled={isRestoring}
+                              className={`btn btn-xs rounded-lg gap-1.5 text-white font-medium ${
+                                restoreMode === "replace"
+                                  ? "bg-rose-600 hover:bg-rose-500"
+                                  : "bg-indigo-600 hover:bg-indigo-500"
+                              }`}
+                            >
+                              {isRestoring ? (
+                                <span className="loading loading-spinner loading-xs" />
+                              ) : (
+                                <Upload className="w-3 h-3" />
+                              )}
+                              <span>
+                                {restoreMode === "replace"
+                                  ? t("Alles ersetzen & importieren", "Replace all & import")
+                                  : t("Jetzt wiederherstellen", "Restore now")}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
-              {/* RIGHT COLUMN: Notifications (Telegram & ntfy) */}
+              {/* RIGHT COLUMN: Notifications (Web-Push, Telegram & ntfy) */}
               <div className="space-y-6">
 
                 {/* Section Header */}
@@ -458,6 +927,103 @@ export function SettingsModal({
                   <span className="text-[11px] text-slate-500">
                     {t("Push & Alarmierung", "Push & Alerts")}
                   </span>
+                </div>
+
+                {/* WEB-PUSH CARD */}
+                <div className="rounded-2xl border border-purple-500/30 bg-slate-950/40 p-5 space-y-4 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/5 rounded-full blur-2xl pointer-events-none" />
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                        <BellRing className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-200 text-sm flex items-center gap-1.5">
+                          Web-Push (Browser & PWA)
+                          {isSubscribed && (
+                            <span className="inline-block w-2 h-2 rounded-full bg-purple-400"></span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        isSubscribed
+                          ? "border border-purple-500/40 bg-purple-500/15 text-purple-300"
+                          : "border border-slate-700 bg-slate-800/80 text-slate-400"
+                      }`}
+                    >
+                      {isSubscribed ? (
+                        <>
+                          <CheckCircle2 className="w-3 h-3 text-purple-400" />
+                          {t("Aktiv auf diesem Gerät", "Active on this device")}
+                        </>
+                      ) : (
+                        t("Nicht abonniert", "Not subscribed")
+                      )}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {t(
+                      "Erhalte direkte Push-Mitteilungen bei Alarmen im Browser oder auf dem Smartphone (PWA) ohne Telegram oder ntfy. Auf iOS: Einmalig über 'Zum Home-Bildschirm' installieren.",
+                      "Receive instant push notifications for camera motion in your browser or phone (PWA) without needing Telegram or ntfy. On iOS: Install via 'Add to Home Screen' first."
+                    )}
+                  </p>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
+                    <div className="text-[11px] text-slate-400">
+                      {pushDeviceCount !== null && (
+                        <span>
+                          {t("Registrierte Geräte:", "Registered devices:")}{" "}
+                          <strong className="text-slate-200 font-semibold">{pushDeviceCount}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {isSubscribed ? (
+                        <button
+                          type="button"
+                          onClick={handleUnsubscribePush}
+                          disabled={pushLoading}
+                          className="btn btn-xs border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 disabled:opacity-40 rounded-lg"
+                        >
+                          {pushLoading ? <span className="loading loading-spinner loading-xs" /> : t("Deaktivieren", "Disable")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSubscribePush}
+                          disabled={pushLoading || !isPushSupported}
+                          className="btn btn-xs border border-purple-500/40 bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 rounded-lg gap-1.5 shadow-sm"
+                        >
+                          {pushLoading ? (
+                            <span className="loading loading-spinner loading-xs" />
+                          ) : (
+                            <BellRing className="w-3 h-3" />
+                          )}
+                          <span>{t("Auf diesem Gerät aktivieren", "Enable on this device")}</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleTestPush}
+                        disabled={pushTesting || (pushDeviceCount === 0 && !isSubscribed)}
+                        className="btn btn-xs border border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 disabled:opacity-40 rounded-lg gap-1.5"
+                      >
+                        {pushTesting ? (
+                          <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                          <Send className="h-3 w-3" />
+                        )}
+                        <span>{t("Test-Push", "Test Push")}</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* TELEGRAM CARD */}
