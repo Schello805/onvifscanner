@@ -1382,7 +1382,17 @@ export default function CameraWallPage() {
                 className={`camera-card group overflow-hidden flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl transition-all ${isRecordingNow ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]' : isOffline ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : isLive ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]' : 'border-white/10'} ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
+                    : `relative rounded-2xl border bg-black shadow-2xl transition-all ${
+                        cameraMenuId === camera.id
+                          ? 'z-40 ring-2 ring-indigo-500/80 shadow-[0_0_25px_rgba(99,102,241,0.35)]'
+                          : isRecordingNow
+                          ? 'border-rose-500/80 ring-1 ring-rose-500/45 shadow-[0_0_10px_rgba(244,63,94,0.18)]'
+                          : isOffline
+                          ? 'border-red-500 ring-2 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                          : isLive
+                          ? 'border-sky-500 ring-2 ring-sky-500/50 shadow-[0_0_15px_rgba(14,165,233,0.3)]'
+                          : 'border-white/10'
+                      } ${dragOverIndex === index ? 'opacity-50 scale-105 border-indigo-500' : ''}`
                 }`}
               >
                 <div 
@@ -1644,6 +1654,148 @@ export default function CameraWallPage() {
                     </div>
                   </div>
                 ) : null}
+
+                {/* In-Camera Quick Actions Overlay */}
+                {cameraMenuId === camera.id ? (
+                  <div
+                    data-pull-to-refresh-ignore="true"
+                    className="absolute inset-0 z-40 flex flex-col justify-between p-2 sm:p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-indigo-500/50 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Header: Camera Name + X */}
+                    <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1.5 px-0.5">
+                      <div className="min-w-0 flex items-center gap-1.5">
+                        <span className="truncate font-bold text-white text-xs sm:text-sm">{camera.name}</span>
+                        <span className="hidden sm:inline font-mono text-[10px] text-slate-400">{camera.ip}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                        }}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                        aria-label="Schließen"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Action Icons Grid */}
+                    <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-center gap-1.5 sm:gap-2 my-auto">
+                      {/* 1. Stift bearbeiten */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                          openEditor(camera);
+                        }}
+                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 active:scale-95 transition-all shadow-sm"
+                        title="Kamera bearbeiten"
+                        aria-label="Kamera bearbeiten"
+                      >
+                        <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+
+                      {/* 2. Aufnahme starten / stoppen */}
+                      <button
+                        type="button"
+                        disabled={recordLoading.has(camera.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                          void toggleRecord(camera);
+                        }}
+                        className={`flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
+                          camera.recordEnabled
+                            ? "border-rose-500/40 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                            : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                        }`}
+                        title={camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
+                        aria-label={camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
+                      >
+                        {camera.recordEnabled ? (
+                          <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-rose-400 text-rose-400" />
+                        ) : (
+                          <CircleDot className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" />
+                        )}
+                      </button>
+
+                      {/* 3. Aufnahmen öffnen (Display / Film Symbol) */}
+                      {camera.recordEnabled ? (
+                        <Link
+                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCameraMenuId(null);
+                            setActiveCameraControlsId(null);
+                          }}
+                          className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
+                          title="Aufnahmen öffnen"
+                          aria-label="Aufnahmen öffnen"
+                        >
+                          <Film className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </Link>
+                      ) : null}
+
+                      {/* 4. Nach links / vorne verschieben */}
+                      <button
+                        type="button"
+                        disabled={index <= 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveCamera(index, -1);
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                        }}
+                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all shadow-sm"
+                        title="Nach links verschieben"
+                        aria-label="Nach links verschieben"
+                      >
+                        <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+
+                      {/* 5. Nach rechts / hinten verschieben */}
+                      <button
+                        type="button"
+                        disabled={index >= cameras.length - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          moveCamera(index, 1);
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                        }}
+                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all shadow-sm"
+                        title="Nach rechts verschieben"
+                        aria-label="Nach rechts verschieben"
+                      >
+                        <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+
+                      {/* 6. Mülleimer (Entfernen) */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
+                            removeCamera(camera.id);
+                          }
+                        }}
+                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
+                        title="Von Monitoren entfernen"
+                        aria-label="Von Monitoren entfernen"
+                      >
+                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </article>
                 );
               })}
@@ -1787,159 +1939,17 @@ export default function CameraWallPage() {
         document.body
       ) : null}
 
-      {/* Compact Camera Action Modal via Portal (for Mobile, Tablet & Desktop) */}
-      {cameraMenuId && mounted && cameras.find((c) => c.id === cameraMenuId) ? (
+      {/* Dim backdrop when any camera menu is open */}
+      {cameraMenuId && mounted ? (
         createPortal(
-          <div className="fixed inset-0 z-[100015] flex items-end sm:items-center justify-center p-3 sm:p-4">
-            {/* Backdrop */}
-            <button
-              type="button"
-              className="fixed inset-0 z-0 bg-black/50 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-100"
-              onClick={() => {
-                setCameraMenuId(null);
-                setActiveCameraControlsId(null);
-              }}
-              aria-label="Kameraaktionen schließen"
-            />
-
-            {/* Compact Action Pill / Card */}
-            <div
-              data-pull-to-refresh-ignore="true"
-              className="relative z-10 w-full max-w-xs sm:max-w-sm mb-16 sm:mb-0 overflow-hidden rounded-2xl border border-white/20 bg-slate-950/95 p-3 shadow-2xl backdrop-blur-xl animate-in zoom-in-95 duration-150"
-            >
-              {(() => {
-                const menuCamera = cameras.find((c) => c.id === cameraMenuId)!;
-                const menuIndex = cameras.findIndex((c) => c.id === cameraMenuId);
-                return (
-                  <>
-                    <div className="flex items-center justify-between gap-3 pb-2 mb-2.5 border-b border-white/10 px-1">
-                      <div className="min-w-0 flex items-center gap-2">
-                        <span className="truncate font-bold text-white text-xs sm:text-sm">{menuCamera.name}</span>
-                        <span className="font-mono text-[10px] text-slate-400">{menuCamera.ip}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-                        aria-label="Schließen"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-1.5 sm:gap-2">
-                      {/* 1. Stift bearbeiten */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                          openEditor(menuCamera);
-                        }}
-                        className="flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 active:scale-95 transition-all shadow-sm"
-                        title="Kamera bearbeiten"
-                        aria-label="Kamera bearbeiten"
-                      >
-                        <Pencil className="w-5 h-5" />
-                      </button>
-
-                      {/* 2. Aufnahme starten / stoppen */}
-                      <button
-                        type="button"
-                        disabled={recordLoading.has(menuCamera.id)}
-                        onClick={() => {
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                          void toggleRecord(menuCamera);
-                        }}
-                        className={`flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
-                          menuCamera.recordEnabled
-                            ? "border-rose-500/40 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-                            : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
-                        }`}
-                        title={menuCamera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
-                        aria-label={menuCamera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
-                      >
-                        {menuCamera.recordEnabled ? (
-                          <Square className="w-4 h-4 fill-rose-400 text-rose-400" />
-                        ) : (
-                          <CircleDot className="w-5 h-5 text-rose-500" />
-                        )}
-                      </button>
-
-                      {/* 3. Aufnahmen öffnen (Display / Film Symbol) */}
-                      {menuCamera.recordEnabled ? (
-                        <Link
-                          href={`/wiedergabe?cameraId=${encodeURIComponent(menuCamera.id)}`}
-                          onClick={() => {
-                            setCameraMenuId(null);
-                            setActiveCameraControlsId(null);
-                          }}
-                          className="flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
-                          title="Aufnahmen öffnen"
-                          aria-label="Aufnahmen öffnen"
-                        >
-                          <Film className="w-5 h-5" />
-                        </Link>
-                      ) : null}
-
-                      {/* 4. Nach links / vorne verschieben */}
-                      <button
-                        type="button"
-                        disabled={menuIndex <= 0}
-                        onClick={() => {
-                          moveCamera(menuIndex, -1);
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
-                        title="Nach links verschieben"
-                        aria-label="Nach links verschieben"
-                      >
-                        <ArrowLeft className="w-5 h-5" />
-                      </button>
-
-                      {/* 5. Nach rechts / hinten verschieben */}
-                      <button
-                        type="button"
-                        disabled={menuIndex >= cameras.length - 1}
-                        onClick={() => {
-                          moveCamera(menuIndex, 1);
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all shadow-sm"
-                        title="Nach rechts verschieben"
-                        aria-label="Nach rechts verschieben"
-                      >
-                        <ArrowRight className="w-5 h-5" />
-                      </button>
-
-                      {/* 6. Mülleimer (Entfernen) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                          if (confirm(`Möchtest du "${menuCamera.name}" wirklich von den Monitoren entfernen?`)) {
-                            removeCamera(menuCamera.id);
-                          }
-                        }}
-                        className="flex h-11 w-11 flex-1 sm:flex-initial sm:w-11 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
-                        title="Von Monitoren entfernen"
-                        aria-label="Von Monitoren entfernen"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </div>,
+          <div
+            className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] transition-opacity animate-in fade-in duration-100"
+            onClick={() => {
+              setCameraMenuId(null);
+              setActiveCameraControlsId(null);
+            }}
+            aria-label="Kameraaktionen schließen"
+          />,
           document.body
         )
       ) : null}
