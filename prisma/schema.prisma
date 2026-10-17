@@ -22,6 +22,7 @@ model Camera {
   overlayPosition String?
   savedAt         DateTime @default(now())
   sortOrder       Int      @default(0)
+  group           String?
 
   recordEnabled             Boolean        @default(false)
   recordMode                String         @default("off") // off | motion | continuous

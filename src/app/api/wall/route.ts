@@ -71,6 +71,7 @@ export async function GET() {
                 username: cam.credentials?.username,
                 password: encryptSecret(cam.credentials?.password),
                 overlayPosition: cam.overlayPosition,
+                group: cam.group || null,
                 savedAt: cam.savedAt ? new Date(cam.savedAt) : new Date(),
                 status: {
                   create: {
@@ -137,6 +138,7 @@ export async function GET() {
           ? { username: cam.username, password: hasRealPassword ? MASKED_PASSWORD : "" }
           : undefined,
         overlayPosition: cam.overlayPosition ?? undefined,
+        group: cam.group ?? undefined,
         savedAt: cam.savedAt.toISOString(),
         status: cam.status ? { isOnline: cam.status.isOnline, lastSeen: cam.status.lastSeen.toISOString() } : undefined
       };
@@ -225,6 +227,7 @@ export async function POST(req: Request) {
             username: cam.credentials?.username,
             password: resolvedEncryptedPassword,
             overlayPosition: cam.overlayPosition,
+            group: typeof cam.group === "string" ? cam.group.trim() || null : (cam.group === null ? null : undefined),
             sortOrder: i,
           },
           create: {
@@ -235,6 +238,7 @@ export async function POST(req: Request) {
             manufacturer: cam.manufacturer,
             model: cam.model,
             resolution: cam.resolution,
+            group: typeof cam.group === "string" ? cam.group.trim() || null : null,
             recordEnabled: Boolean(cam.recordEnabled),
             recordMode: RECORDING_MODES.includes(cam.recordMode) && cam.recordMode !== "off" ? cam.recordMode : (cam.recordEnabled ? 'motion' : 'off'),
             recordSegmentMinutes: typeof cam.recordSegmentMinutes === "number" ? cam.recordSegmentMinutes : 15,
