@@ -10,7 +10,7 @@ import { PtzControlPad } from "@/components/camera/PtzControlPad";
 import { CameraEditModal, type CameraEditDraft } from "@/components/camera/CameraEditModal";
 import { KioskMode } from "@/components/camera/KioskMode";
 import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
-import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, ArrowLeft, ArrowRight, X } from "lucide-react";
+import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -1682,8 +1682,8 @@ export default function CameraWallPage() {
                       </button>
                     </div>
 
-                    {/* Action Icons Grid */}
-                    <div className="grid grid-cols-3 sm:flex sm:items-center sm:justify-center gap-1.5 sm:gap-2 my-auto">
+                    {/* Action Icons Row */}
+                    <div className="flex items-center justify-center gap-2 sm:gap-3 my-auto">
                       {/* 1. Stift bearbeiten */}
                       <button
                         type="button"
@@ -1693,7 +1693,7 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           openEditor(camera);
                         }}
-                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 active:scale-95 transition-all shadow-sm"
+                        className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 active:scale-95 transition-all shadow-sm"
                         title="Kamera bearbeiten"
                         aria-label="Kamera bearbeiten"
                       >
@@ -1710,7 +1710,7 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           void toggleRecord(camera);
                         }}
-                        className={`flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
+                        className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
                           camera.recordEnabled
                             ? "border-rose-500/40 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
                             : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
@@ -1734,7 +1734,7 @@ export default function CameraWallPage() {
                             setCameraMenuId(null);
                             setActiveCameraControlsId(null);
                           }}
-                          className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
+                          className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
                           title="Aufnahmen öffnen"
                           aria-label="Aufnahmen öffnen"
                         >
@@ -1742,41 +1742,7 @@ export default function CameraWallPage() {
                         </Link>
                       ) : null}
 
-                      {/* 4. Nach links / vorne verschieben */}
-                      <button
-                        type="button"
-                        disabled={index <= 0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveCamera(index, -1);
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all shadow-sm"
-                        title="Nach links verschieben"
-                        aria-label="Nach links verschieben"
-                      >
-                        <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </button>
-
-                      {/* 5. Nach rechts / hinten verschieben */}
-                      <button
-                        type="button"
-                        disabled={index >= cameras.length - 1}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          moveCamera(index, 1);
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-25 disabled:pointer-events-none transition-all shadow-sm"
-                        title="Nach rechts verschieben"
-                        aria-label="Nach rechts verschieben"
-                      >
-                        <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </button>
-
-                      {/* 6. Mülleimer (Entfernen) */}
+                      {/* 4. Mülleimer (Entfernen) */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1787,7 +1753,7 @@ export default function CameraWallPage() {
                             removeCamera(camera.id);
                           }
                         }}
-                        className="flex h-10 sm:h-11 w-full sm:w-11 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
+                        className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
                         title="Von Monitoren entfernen"
                         aria-label="Von Monitoren entfernen"
                       >
