@@ -1701,7 +1701,7 @@ export default function CameraWallPage() {
                     </div>
 
                     {/* Action Icons Row */}
-                    <div className="flex items-center justify-center gap-2 sm:gap-3 my-auto">
+                    <div className="flex items-center justify-center gap-2.5 sm:gap-3.5 my-auto">
                       {/* 1. Stift bearbeiten */}
                       <button
                         type="button"
@@ -1711,11 +1711,11 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           openEditor(camera);
                         }}
-                        className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 active:scale-95 transition-all shadow-sm"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
                         title="Kamera bearbeiten"
                         aria-label="Kamera bearbeiten"
                       >
-                        <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Pencil className="w-5 h-5" />
                       </button>
 
                       {/* 2. Aufnahme starten / stoppen */}
@@ -1728,18 +1728,18 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           void toggleRecord(camera);
                         }}
-                        className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
+                        className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
                           camera.recordEnabled
-                            ? "border-rose-500/40 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-                            : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                            ? "border-rose-400 bg-rose-600 text-white hover:bg-rose-500 shadow-rose-600/40"
+                            : "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-black/40"
                         }`}
                         title={camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
                         aria-label={camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
                       >
                         {camera.recordEnabled ? (
-                          <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-rose-400 text-rose-400" />
+                          <Square className="w-4 h-4 fill-white text-white" />
                         ) : (
-                          <CircleDot className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500" />
+                          <CircleDot className="w-5 h-5 text-rose-400" />
                         )}
                       </button>
 
@@ -1752,11 +1752,11 @@ export default function CameraWallPage() {
                             setCameraMenuId(null);
                             setActiveCameraControlsId(null);
                           }}
-                          className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 active:scale-95 transition-all shadow-sm"
+                          className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-lg shadow-amber-600/40"
                           title="Aufnahmen öffnen"
                           aria-label="Aufnahmen öffnen"
                         >
-                          <Film className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <Film className="w-5 h-5 text-white" />
                         </Link>
                       ) : null}
 
@@ -1771,11 +1771,11 @@ export default function CameraWallPage() {
                             removeCamera(camera.id);
                           }
                         }}
-                        className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border border-rose-500/25 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 active:scale-95 transition-all shadow-sm"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
                         title="Von Monitoren entfernen"
                         aria-label="Von Monitoren entfernen"
                       >
-                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Trash2 className="w-5 h-5 text-white" />
                       </button>
                     </div>
                   </div>
