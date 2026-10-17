@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { findKnownEntity } from "@/lib/knownEntities";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,34 @@ export async function GET(request: Request) {
         timestamp: alarm.timestamp.toISOString(),
         message: alarm.message || "Bewegung erkannt",
         licensePlates: (() => {
-          try { return JSON.parse(alarm.licensePlates || "[]"); } catch { return []; }
+          try {
+            const raw = JSON.parse(alarm.licensePlates || "[]");
+            if (!Array.isArray(raw)) return [];
+            return raw
+              .map((item) => {
+                if (typeof item === "string") {
+                  const known = findKnownEntity(item, "plate");
+                  return {
+                    plate: item,
+                    knownName: known ? known.name : null,
+                    category: known ? known.category : "unknown",
+                  };
+                }
+                if (item && typeof item === "object") {
+                  const plateStr = String(item.plate || "");
+                  const known = findKnownEntity(plateStr, "plate");
+                  return {
+                    plate: plateStr,
+                    knownName: known ? known.name : (item.knownName || null),
+                    category: known ? known.category : (item.category || "unknown"),
+                  };
+                }
+                return null;
+              })
+              .filter(Boolean);
+          } catch {
+            return [];
+          }
         })(),
       })),
       ...statusLogs.map((entry) => ({

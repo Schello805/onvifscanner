@@ -23,10 +23,12 @@ import {
   Smartphone,
   Database,
   FileJson,
+  Car,
 } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+import { KnownEntitiesModal } from "./camera/KnownEntitiesModal";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -97,6 +99,7 @@ export function SettingsModal({
   const [restoreMode, setRestoreMode] = useState<"merge" | "replace">("merge");
   const [isRestoring, setIsRestoring] = useState(false);
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
+  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
 
   useBodyScrollLock(isOpen);
 
@@ -752,6 +755,36 @@ export function SettingsModal({
                   </label>
                 </div>
 
+                {/* Bekannte Fahrzeuge & Kennzeichen Card */}
+                <div className="rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 space-y-3.5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                        <Car className="w-4 h-4" />
+                      </div>
+                      <span className="font-semibold text-slate-200 text-sm">
+                        {t("Kennzeichen & Fahrzeuge", "License Plates & Vehicles")}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsKnownEntitiesOpen(true)}
+                      className="btn btn-xs border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 rounded-lg gap-1.5"
+                    >
+                      <Car className="w-3.5 h-3.5" />
+                      <span>{t("Verwalten...", "Manage...")}</span>
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {t(
+                      "Hinterlege eigene Fahrzeuge, Familie oder Lieferdienste für automatische Erkennung und gezielte Alarmierung bei Ankunft.",
+                      "Register family, personal, or delivery vehicles for automatic recognition and personalized arrival alerts."
+                    )}
+                  </p>
+                </div>
+
                 {/* Backup & Wiederherstellung Card */}
                 <div className="rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 space-y-4 shadow-sm relative overflow-hidden">
                   <div className="flex items-center justify-between">
@@ -1271,6 +1304,11 @@ export function SettingsModal({
         </div>
 
       </div>
+
+      <KnownEntitiesModal
+        isOpen={isKnownEntitiesOpen}
+        onClose={() => setIsKnownEntitiesOpen(false)}
+      />
     </div>
   );
 }

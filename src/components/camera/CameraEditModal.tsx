@@ -11,6 +11,8 @@ import {
   RECORDING_MODE_OPTIONS,
 } from "@/lib/recordingPolicy";
 import { MotionMaskEditor, type MotionRegion } from "./MotionMaskEditor";
+import { Car } from "lucide-react";
+import { KnownEntitiesModal } from "./KnownEntitiesModal";
 
 export type CameraEditDraft = {
   name: string;
@@ -70,9 +72,12 @@ export function CameraEditModal({
   onRemove,
 }: CameraEditModalProps) {
   const [showPassword, setShowPassword] = useState(false);
+  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
 
-  return createPortal(
-    <div
+  return (
+    <>
+      {createPortal(
+        <div
       data-pull-to-refresh-ignore="true"
       className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
       role="dialog"
@@ -500,6 +505,18 @@ export function CameraEditModal({
                             </span>
                           </span>
                         </label>
+                        {editDraft.licensePlateRecognitionEnabled && (
+                          <div className="mt-2.5 pt-2 border-t border-amber-500/20 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setIsKnownEntitiesOpen(true)}
+                              className="btn btn-xs border border-amber-500/30 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 rounded-lg gap-1.5"
+                            >
+                              <Car className="w-3.5 h-3.5" />
+                              <span>Bekannte Kennzeichen verwalten...</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <label className="grid gap-1">
                         <span className="text-slate-400 text-[11px]">Vorlauf:</span>
@@ -610,5 +627,11 @@ export function CameraEditModal({
       </form>
     </div>,
     document.body
+  )}
+  <KnownEntitiesModal
+    isOpen={isKnownEntitiesOpen}
+    onClose={() => setIsKnownEntitiesOpen(false)}
+  />
+</>
   );
 }

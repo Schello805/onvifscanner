@@ -5,6 +5,7 @@ const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBuf
 const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
 const { readLicensePlates } = require('./license-plate-reader');
+const { findKnownEntity, touchKnownEntity } = require('./known-entities');
 const { isMotionScheduleActive } = require('./motion-schedule');
 const { effectiveRecordingMode } = require('./recording-policy');
 const {
@@ -513,9 +514,35 @@ async function detectCameraMotion(cam) {
         if (vehicles.length) {
           try {
             const plates = await readLicensePlates(eventImage, result, vehicles, ignoreRegions);
-            recognizedPlates = plates.map((entry) => entry.plate);
+            const plateDetails = [];
+            for (const entry of plates) {
+              const known = findKnownEntity(entry.plate, 'plate');
+              if (known) {
+                touchKnownEntity(known.id, cam.name);
+                plateDetails.push({
+                  plate: entry.plate,
+                  knownName: known.name,
+                  category: known.category,
+                  confidence: entry.confidence,
+                });
+              } else {
+                plateDetails.push({
+                  plate: entry.plate,
+                  knownName: null,
+                  category: 'unknown',
+                  confidence: entry.confidence,
+                });
+              }
+            }
+            recognizedPlates = plateDetails;
             if (recognizedPlates.length) {
-              eventMessage += ` · Kennzeichen ${recognizedPlates.join(', ')}`;
+              const knownFound = recognizedPlates.filter((p) => p.knownName);
+              if (knownFound.length) {
+                const knownLabels = knownFound.map((p) => `${p.knownName} (${p.plate})`).join(', ');
+                eventMessage = `🚗 Bekanntes Fahrzeug: ${knownLabels}`;
+              } else {
+                eventMessage += ` · Kennzeichen ${recognizedPlates.map((p) => p.plate).join(', ')}`;
+              }
             }
           } catch (error) {
             const warningKey = `plate:${cam.id}`;

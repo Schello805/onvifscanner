@@ -10,6 +10,8 @@ Local-first Web-App zum Finden und Identifizieren von ONVIF-, RTSP- und HTTP/IP-
 
 ## Features
 
+- **Kiosk- & Wand-Tablet-Modus**: Spezieller Vollbild-Modus für Flur- und Wand-Tablets mit automatischer Display-Wachhaltung (Screen Wake-Lock API), Auto-Pop-up der aktiven Kamera bei erkannter Bewegung mit konfigurierbarem Countdown und intelligentem Bildschirmschoner (Display-Dimmer mit Digitaluhr).
+- **Kennzeichen- & Fahrzeugspeicher (LPR)**: Zentrale Verwaltung bekannter Fahrzeuge und Personen. Erkennt bei Kameras mit aktivierter OCR automatisch bekannte Kennzeichen (*„Michaels Auto“*) vs. unbekannte Fahrzeuge, sendet personalisierte Push-Benachrichtigungen und ermöglicht 1-Klick-Übernahme direkt aus dem Protokoll.
 - **Web-Push Benachrichtigungen**: Direkte Browser- und Smartphone-Push-Nachrichten (PWA) bei Alarmen ohne externe Dienste wie Telegram oder ntfy; automatische VAPID-Schlüsselverwaltung und Bereinigung inaktiver Abonnements.
 - **Konfigurations-Backup & Wiederherstellung**: Kameras, Zugangsdaten, Speicherziele und Einstellungen mit 1-Klick als portables JSON exportieren und wieder einspielen (Merge- und Replace-Modus).
 - **Versionsverwaltung & Rollback**: Schnelles Zurücksetzen auf vorherige Release-Versionen per 1-Klick im Web-Interface oder über die CLI (`npm run rollback`), inklusive automatischem SQLite-Datenbank-Backup.

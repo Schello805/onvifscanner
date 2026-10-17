@@ -8,6 +8,9 @@ import { useToast } from "@/components/ToastProvider";
 import { WebRtcPlayer } from "@/components/WebRtcPlayer";
 import { PtzControlPad } from "@/components/camera/PtzControlPad";
 import { CameraEditModal, type CameraEditDraft } from "@/components/camera/CameraEditModal";
+import { KioskMode } from "@/components/camera/KioskMode";
+import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
+import { Tv, Car } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -44,6 +47,8 @@ type MediaGesture = {
   moved: boolean;
 };
 
+type LicensePlateItem = string | { plate: string; knownName?: string | null; category?: string };
+
 type ActivityEvent = {
   id: string;
   type: "motion" | "online" | "offline";
@@ -52,7 +57,7 @@ type ActivityEvent = {
   cameraIp: string;
   timestamp: string;
   message: string;
-  licensePlates?: string[];
+  licensePlates?: LicensePlateItem[];
 };
 
 function createCameraEditDraft(camera: WallCamera): CameraEditDraft {
@@ -124,8 +129,11 @@ export default function CameraWallPage() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityType, setActivityType] = useState<"all" | "motion" | "online" | "offline">("all");
   const [activityCameraId, setActivityCameraId] = useState("");
+  const [isKioskOpen, setIsKioskOpen] = useState(false);
+  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
+  const [targetPlate, setTargetPlate] = useState<string>("");
   const [mounted, setMounted] = useState(false);
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen));
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen));
 
   useEffect(() => {
     setMounted(true);
@@ -1252,6 +1260,16 @@ export default function CameraWallPage() {
               </button>
             </div>
 
+            <button
+              type="button"
+              onClick={() => setIsKioskOpen(true)}
+              className="touch-manipulation rounded-lg border border-purple-500/40 bg-purple-600/20 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-purple-200 hover:bg-purple-600/30 transition flex items-center gap-1.5 shadow-sm"
+              title="Kiosk- & Wand-Tablet Modus mit Auto-Popup bei Bewegung"
+            >
+              <Tv className="w-3.5 h-3.5 text-purple-400" />
+              <span>Kiosk</span>
+            </button>
+
             {isFullscreen ? (
               <button
                 type="button"
@@ -1675,7 +1693,21 @@ export default function CameraWallPage() {
                 <h2 id="activity-log-title" className="text-base font-bold text-white sm:text-lg">Kamera-Protokoll</h2>
                 <p className="text-[11px] text-slate-400">Bewegungen sowie Online- und Offline-Wechsel</p>
               </div>
-              <button type="button" onClick={() => setActivityLogOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Protokoll schließen">✕</button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTargetPlate("");
+                    setIsKnownEntitiesOpen(true);
+                  }}
+                  className="btn btn-xs border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 rounded-lg gap-1.5"
+                  title="Bekannte Kennzeichen verwalten"
+                >
+                  <Car className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Bekannte Kennzeichen</span>
+                </button>
+                <button type="button" onClick={() => setActivityLogOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Protokoll schließen">✕</button>
+              </div>
             </header>
 
             <div className="grid shrink-0 grid-cols-1 gap-2 border-b border-white/10 px-4 py-3 sm:grid-cols-[1fr_1fr_auto] sm:px-5">
@@ -1728,12 +1760,39 @@ export default function CameraWallPage() {
                           <div className="truncate text-sm font-semibold text-white">{event.cameraName}</div>
                           <div className="truncate text-[11px] text-slate-400">{event.cameraIp} · {event.message}</div>
                           {event.licensePlates?.length ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {event.licensePlates.map((plate) => (
-                                <span key={plate} className="rounded border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-200">
-                                  Kennzeichen {plate}
-                                </span>
-                              ))}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              {event.licensePlates.map((item, idx) => {
+                                const plateStr = typeof item === "string" ? item : item.plate;
+                                const knownName = typeof item === "string" ? null : item.knownName;
+                                const isKnown = Boolean(knownName);
+
+                                return (
+                                  <span
+                                    key={`${plateStr}-${idx}`}
+                                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-[10px] font-bold ${
+                                      isKnown
+                                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                                        : "border-amber-400/35 bg-amber-400/10 text-amber-200"
+                                    }`}
+                                  >
+                                    <span>🚗 {isKnown ? `${knownName} (${plateStr})` : `Kennzeichen ${plateStr}`}</span>
+                                    {!isKnown && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTargetPlate(plateStr);
+                                          setIsKnownEntitiesOpen(true);
+                                        }}
+                                        className="ml-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-100 px-1 py-0.2 text-[9px] font-sans font-medium transition"
+                                        title="Als bekanntes Fahrzeug speichern"
+                                      >
+                                        + Zuordnung
+                                      </button>
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
                           ) : null}
                         </div>
@@ -1764,6 +1823,26 @@ export default function CameraWallPage() {
           onRemove={removeCamera}
         />
       ) : null}
+
+      {mounted && (
+        <>
+          <KioskMode
+            isOpen={isKioskOpen}
+            onClose={() => setIsKioskOpen(false)}
+            cameras={cameras}
+          />
+
+          <KnownEntitiesModal
+            isOpen={isKnownEntitiesOpen}
+            onClose={() => {
+              setIsKnownEntitiesOpen(false);
+              setTargetPlate("");
+              void loadActivityLog();
+            }}
+            initialPlate={targetPlate}
+          />
+        </>
+      )}
     </div>
   );
 }
