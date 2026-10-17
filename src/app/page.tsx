@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { loadWallData, saveWallData, type MotionRegion, type WallCamera } from "@/lib/cameraWall";
 import { useToast } from "@/components/ToastProvider";
@@ -134,6 +134,24 @@ export default function CameraWallPage() {
   const [targetPlate, setTargetPlate] = useState<string>("");
   const [mounted, setMounted] = useState(false);
   useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId));
+
+  const existingGroups = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    for (const c of cameras) {
+      const trimmed = c.group?.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(key, { name: trimmed, count: 1 });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "de", { sensitivity: "base" })
+    );
+  }, [cameras]);
 
   useEffect(() => {
     setMounted(true);
@@ -1924,6 +1942,7 @@ export default function CameraWallPage() {
         <CameraEditModal
           camera={cameras.find((c) => c.id === editingCameraId)!}
           editDraft={editDraft}
+          existingGroups={existingGroups}
           storageTargets={storageTargets}
           activeSourceUri={images[editingCameraId]?.sourceUri}
           previewImageSrc={images[editingCameraId]?.src}

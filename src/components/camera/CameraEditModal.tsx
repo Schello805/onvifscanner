@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { WallCamera } from "@/lib/cameraWall";
 import {
@@ -13,13 +13,22 @@ import {
 import { MotionMaskEditor, type MotionRegion } from "./MotionMaskEditor";
 import {
   Car,
+  Check,
   ChevronDown,
   Cpu,
+  Folder,
   Paintbrush,
+  Plus,
   Sliders,
   Video,
+  X,
 } from "lucide-react";
 import { KnownEntitiesModal } from "./KnownEntitiesModal";
+
+export type ExistingGroup = {
+  name: string;
+  count: number;
+};
 
 export type CameraEditDraft = {
   name: string;
@@ -58,6 +67,7 @@ type StorageTargetOption = {
 type CameraEditModalProps = {
   camera: WallCamera;
   editDraft: CameraEditDraft;
+  existingGroups?: ExistingGroup[];
   storageTargets: StorageTargetOption[];
   activeSourceUri?: string;
   previewImageSrc?: string;
@@ -72,6 +82,7 @@ type SectionKey = "general" | "recording" | "ai" | "mask";
 export function CameraEditModal({
   camera,
   editDraft,
+  existingGroups = [],
   storageTargets,
   activeSourceUri,
   previewImageSrc,
@@ -82,6 +93,39 @@ export function CameraEditModal({
 }: CameraEditModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
+  const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
+  const groupDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isGroupDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        groupDropdownRef.current &&
+        !groupDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsGroupDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isGroupDropdownOpen]);
+
+  const currentGroupQuery = (editDraft.group || "").trim().toLowerCase();
+  const filteredGroups = useMemo(() => {
+    if (!currentGroupQuery) return existingGroups;
+    return existingGroups.filter((g) =>
+      g.name.toLowerCase().includes(currentGroupQuery)
+    );
+  }, [existingGroups, currentGroupQuery]);
+
+  const hasExactGroupMatch = existingGroups.some(
+    (g) => g.name.toLowerCase() === currentGroupQuery
+  );
+
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     general: true,
     recording: false,
@@ -194,11 +238,17 @@ export function CameraEditModal({
               </div>
 
               {/* 1. ALLGEMEIN & VERBINDUNG */}
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-sm transition-all duration-200">
+              <div
+                className={`rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-sm transition-all duration-200 ${
+                  openSections.general ? "overflow-visible" : "overflow-hidden"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection("general")}
-                  className="flex w-full items-center justify-between gap-3 p-3.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                  className={`flex w-full items-center justify-between gap-3 p-3.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 rounded-t-xl ${
+                    !openSections.general ? "rounded-b-xl" : ""
+                  }`}
                   aria-expanded={openSections.general}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -238,15 +288,174 @@ export function CameraEditModal({
                           className="glass-input rounded-lg px-3 py-2 text-sm outline-none"
                         />
                       </label>
-                      <label className="grid gap-1.5">
-                        <span className="font-semibold text-slate-300">Gruppe (z. B. Garten, Haus)</span>
-                        <input
-                          value={editDraft.group}
-                          onChange={(event) => onUpdateDraft({ ...editDraft, group: event.target.value })}
-                          className="glass-input rounded-lg px-3 py-2 text-sm outline-none"
-                          placeholder="Ungruppiert"
-                        />
-                      </label>
+                      <div className="grid gap-1.5 relative" ref={groupDropdownRef}>
+                        <div className="flex items-center justify-between">
+                          <label htmlFor="camera-group-input" className="font-semibold text-slate-300 cursor-pointer">
+                            Gruppe (z. B. Garten, Haus)
+                          </label>
+                          {editDraft.group ? (
+                            <button
+                              type="button"
+                              onClick={() => onUpdateDraft({ ...editDraft, group: "" })}
+                              className="text-[11px] text-slate-400 hover:text-rose-300 transition-colors"
+                            >
+                              Gruppe leeren
+                            </button>
+                          ) : null}
+                        </div>
+
+                        <div className="relative">
+                          <input
+                            id="camera-group-input"
+                            value={editDraft.group}
+                            onChange={(event) => {
+                              onUpdateDraft({ ...editDraft, group: event.target.value });
+                              if (!isGroupDropdownOpen) setIsGroupDropdownOpen(true);
+                            }}
+                            onFocus={() => setIsGroupDropdownOpen(true)}
+                            onClick={() => setIsGroupDropdownOpen(true)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                setIsGroupDropdownOpen(false);
+                              }
+                            }}
+                            className="glass-input w-full rounded-lg pl-3 pr-9 py-2 text-sm outline-none"
+                            placeholder="Ungruppiert"
+                            autoComplete="off"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsGroupDropdownOpen((prev) => !prev)}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-200 transition-colors rounded-md"
+                            aria-label="Gruppenliste aufklappen"
+                            tabIndex={-1}
+                          >
+                            <ChevronDown
+                              className={`h-4 w-4 transition-transform duration-200 ${
+                                isGroupDropdownOpen ? "rotate-180 text-cyan-400" : ""
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Dropdown Menu */}
+                        {isGroupDropdownOpen && (
+                          <div
+                            className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 rounded-xl border border-white/20 bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in-50 slide-in-from-top-1 duration-150 max-h-60 overflow-y-auto"
+                            role="listbox"
+                          >
+                            {existingGroups.length > 0 ? (
+                              <>
+                                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                  Bestehende Gruppen
+                                </div>
+                                {filteredGroups.length > 0 ? (
+                                  filteredGroups.map((g) => {
+                                    const isSelected =
+                                      editDraft.group?.trim().toLowerCase() === g.name.toLowerCase();
+                                    return (
+                                      <button
+                                        key={g.name}
+                                        type="button"
+                                        onClick={() => {
+                                          onUpdateDraft({ ...editDraft, group: g.name });
+                                          setIsGroupDropdownOpen(false);
+                                        }}
+                                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-sm transition-colors text-left ${
+                                          isSelected
+                                            ? "bg-cyan-500/20 text-cyan-300 font-medium"
+                                            : "text-slate-200 hover:bg-white/10 active:bg-white/15"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <Folder
+                                            className={`h-4 w-4 shrink-0 ${
+                                              isSelected ? "text-cyan-400" : "text-slate-400"
+                                            }`}
+                                          />
+                                          <span className="truncate">{g.name}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-white/10 text-slate-400">
+                                            {g.count} {g.count === 1 ? "Kamera" : "Kameras"}
+                                          </span>
+                                          {isSelected && <Check className="h-4 w-4 text-cyan-400" />}
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="px-3 py-2 text-xs text-slate-400 italic">
+                                    Keine passende Gruppe gefunden.
+                                  </div>
+                                )}
+
+                                {editDraft.group.trim() !== "" && !hasExactGroupMatch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsGroupDropdownOpen(false);
+                                    }}
+                                    className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-cyan-400 hover:bg-cyan-500/10 active:bg-cyan-500/20 text-left border-t border-white/10 mt-1"
+                                  >
+                                    <Plus className="h-4 w-4 shrink-0" />
+                                    <span className="truncate">
+                                      &quot;{editDraft.group.trim()}&quot; als neue Gruppe verwenden
+                                    </span>
+                                  </button>
+                                )}
+
+                                {editDraft.group && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onUpdateDraft({ ...editDraft, group: "" });
+                                      setIsGroupDropdownOpen(false);
+                                    }}
+                                    className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 text-left transition-colors border-t border-white/5 mt-1"
+                                  >
+                                    <X className="h-3.5 w-3.5 shrink-0" />
+                                    <span>Keine Gruppe (Ungruppiert)</span>
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <div className="px-3 py-3 text-center text-xs text-slate-400">
+                                Noch keine Gruppen vorhanden. Tippe einen Namen ein (z. B. &quot;Garten&quot;), um die erste Gruppe anzulegen.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Quick Selection Chips */}
+                        {existingGroups && existingGroups.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <span className="text-[11px] text-slate-400 mr-0.5">Vorschläge:</span>
+                            {existingGroups.slice(0, 6).map((g) => {
+                              const isSelected =
+                                editDraft.group?.trim().toLowerCase() === g.name.toLowerCase();
+                              return (
+                                <button
+                                  key={g.name}
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateDraft({ ...editDraft, group: isSelected ? "" : g.name });
+                                    setIsGroupDropdownOpen(false);
+                                  }}
+                                  className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border transition-all ${
+                                    isSelected
+                                      ? "bg-cyan-500/20 border-cyan-400/50 text-cyan-300 font-medium"
+                                      : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:border-white/20 active:scale-95"
+                                  }`}
+                                >
+                                  <span>{g.name}</span>
+                                  <span className="text-[10px] opacity-60">({g.count})</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <label className="grid gap-1.5">
