@@ -287,7 +287,7 @@ async function fetchMotionEventImage(cam, uris) {
   try {
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
       body: JSON.stringify({
         urls: uris,
         size: motionSourceWidth,
@@ -344,7 +344,7 @@ async function detectCameraMotion(cam) {
     const timer = setTimeout(() => controller.abort(), 5_000);
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
       body: JSON.stringify({
         urls: uris,
         size: motionAnalysisWidth,
@@ -647,7 +647,7 @@ async function runAutoDiscovery() {
   try {
      const res = await fetch(`${appBaseUrl}/api/scan`, {
        method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
+       headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
        body: JSON.stringify({ preset: 'ws-discovery', acknowledgeAuthorizedNetwork: true, timeoutMs: 3000, fast: true })
      });
      const data = await res.json();

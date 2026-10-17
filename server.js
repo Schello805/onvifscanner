@@ -104,8 +104,12 @@ app.prepare().then(() => {
       ) {
         const isInternalWorkerCall =
           isLoopbackAddress(req.socket?.remoteAddress) &&
-          !req.headers["sec-fetch-mode"] &&
-          !req.headers.origin;
+          !req.headers.origin &&
+          (
+            req.headers["x-internal-worker"] === "true" ||
+            req.headers["user-agent"] === "node" ||
+            !req.headers["sec-ch-ua"]
+          );
 
         if (!isInternalWorkerCall) {
           const cookies = parseCookies(req.headers.cookie);

@@ -163,7 +163,7 @@ export async function POST(req: Request) {
               const streamUris = JSON.parse(matchedCamera.streamUris || "[]");
               const imageResponse = await fetch(`http://127.0.0.1:${process.env.PORT || "3000"}/api/thumbnail`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", "x-internal-worker": "true" },
                 body: JSON.stringify({
                   cameraId: matchedCamera.id,
                   urls: [...snapshotUris, ...streamUris],
