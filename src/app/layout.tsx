@@ -27,6 +27,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#020617",
 };
 
 const repoUrl =
@@ -75,17 +76,17 @@ function Footer() {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de" data-theme="dracula">
-      <body>
+    <html lang="de" data-theme="dracula" className="bg-slate-950 text-slate-100 overflow-x-hidden max-w-full">
+      <body className="bg-slate-950 text-slate-200 min-h-screen overflow-x-hidden max-w-full">
         <LanguageProvider>
           <ToastProvider>
             <AuthGate>
               <SplashScreen />
               <ConnectionWatcher />
               <PullToRefresh>
-                <div className="min-h-screen flex flex-col">
+                <div className="min-h-screen flex flex-col overflow-x-hidden w-full max-w-full">
                   <Navigation repoUrl={repoUrl} />
-                  <main className="mx-auto flex-1 w-full max-w-none px-2 py-4 sm:w-[94%] sm:px-5 sm:py-6 lg:w-[90%] lg:py-8 pb-24 md:pb-8">
+                  <main className="mx-auto flex-1 w-full max-w-none px-2 py-4 sm:w-[94%] sm:px-5 sm:py-6 lg:w-[90%] lg:py-8 pb-24 md:pb-8 overflow-x-hidden">
                     {children}
                   </main>
                   <Footer />

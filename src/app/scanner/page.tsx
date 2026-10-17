@@ -899,9 +899,9 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6">
-      <section className="glass-panel relative overflow-visible rounded-2xl p-4 sm:p-6 shadow-xl">
+      <section className="glass-panel relative overflow-hidden rounded-2xl p-4 sm:p-6 shadow-xl">
         {/* Decorative background glow */}
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
+        <div className="absolute top-0 right-0 -mt-10 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
 
         <div className="relative z-10 flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-3">
