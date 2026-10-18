@@ -1187,107 +1187,107 @@ export default function CameraWallPage() {
   return (
     <div
       ref={wallRef}
-      className={`camera-wall min-h-[70vh] rounded-3xl bg-slate-950 p-3 sm:p-6 ${mobileFocusMode ? "mobile-monitor-mode" : ""}`}
+      className={`camera-wall min-h-[70vh] rounded-2xl bg-slate-950 p-2 sm:p-4 ${mobileFocusMode ? "mobile-monitor-mode" : ""}`}
     >
-      <div className={`camera-wall-toolbar mb-4 sm:mb-6 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-white/5 pb-3">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Monitore</h1>
-            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300">
+      <div className={`camera-wall-toolbar mb-2.5 sm:mb-3.5 ${(isFullscreen && !controlsVisible) || mobileFocusMode ? "hidden" : "block"}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight whitespace-nowrap">Monitore</h1>
+            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-300 whitespace-nowrap">
               {cameras.length} {cameras.length === 1 ? "Kamera" : "Kameras"}
             </span>
             {cameras.filter((camera) => effectiveRecordingMode(camera) !== "off").length > 0 ? (
-              <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-rose-500/60 bg-rose-500/20 px-2.5 py-1 text-xs font-bold text-rose-300 shadow-sm">
-                <span className="relative flex h-2 w-2">
+              <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-rose-500/50 bg-rose-500/15 px-2.5 py-0.5 text-xs font-bold text-rose-300 shadow-sm whitespace-nowrap">
+                <span className="relative flex h-2 w-2 shrink-0">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                 </span>
-                <span>{cameras.filter((camera) => effectiveRecordingMode(camera) !== "off").length} REC aktiv</span>
+                <span className="whitespace-nowrap">
+                  {cameras.filter((camera) => effectiveRecordingMode(camera) !== "off").length} REC aktiv
+                </span>
                 <button
                   type="button"
                   disabled={batchRecordLoading}
                   onClick={() => void toggleAllRecord(false)}
-                  className="rounded bg-rose-950/70 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-500/40 hover:bg-rose-900 transition disabled:opacity-50"
+                  className="rounded bg-rose-950/80 px-2 py-0.5 text-[10px] font-semibold text-rose-200 border border-rose-500/40 hover:bg-rose-900 transition disabled:opacity-50 whitespace-nowrap shrink-0"
                   title="Alle laufenden Aufnahmen beenden"
                 >
                   Alle stoppen
                 </button>
-                <Link
-                  href="/wiedergabe"
-                  className="rounded bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-white/20 transition hidden sm:inline-block"
-                  title="Zum Video-Archiv wechseln"
-                >
-                  Archiv ↗
-                </Link>
               </div>
             ) : cameras.length > 0 ? (
               <button
                 type="button"
                 disabled={batchRecordLoading}
                 onClick={() => void toggleAllRecord(true)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 px-2.5 py-1 text-xs font-semibold text-slate-300 transition shadow-sm disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-200 px-2.5 py-0.5 text-xs font-semibold text-slate-300 transition shadow-sm disabled:opacity-50 whitespace-nowrap"
                 title="Bewegungsaufnahme für alle Kameras starten"
               >
                 <span className="text-rose-400">⏺</span>
-                <span>Alle bei Bewegung</span>
+                <span className="whitespace-nowrap">Alle bei Bewegung</span>
               </button>
             ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
-              <span className="text-slate-400">Raster:</span>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <div className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-300 whitespace-nowrap">
+              <span className="text-slate-400 text-[11px]">Raster:</span>
               <select
                 aria-label="Anzahl der Spalten"
                 value={columns}
                 onChange={(event) => changeColumns(Number(event.target.value))}
-                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+                className="bg-transparent text-white font-semibold outline-none cursor-pointer"
               >
-                {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>{value} Spalten</option>)}
+                {[1, 2, 3, 4, 5, 6].map((value) => (
+                  <option key={value} value={value} className="bg-slate-900">
+                    {value} Spalten
+                  </option>
+                ))}
               </select>
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs text-slate-300">
-              <span className="text-slate-400">Intervall:</span>
+            <div className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-slate-300 whitespace-nowrap">
+              <span className="text-slate-400 text-[11px]">Intervall:</span>
               <select
                 aria-label="Aktualisierungsintervall"
                 value={refreshSeconds}
                 onChange={(event) => changeRefresh(Number(event.target.value))}
-                className="bg-slate-900 text-white font-semibold outline-none rounded px-1"
+                className="bg-transparent text-white font-semibold outline-none cursor-pointer"
               >
-                <option value={0}>Manuell</option>
-                <option value={5}>5s</option>
-                <option value={10}>10s</option>
-                <option value={30}>30s</option>
-                <option value={60}>60s</option>
+                <option value={0} className="bg-slate-900">Manuell</option>
+                <option value={5} className="bg-slate-900">5s</option>
+                <option value={10} className="bg-slate-900">10s</option>
+                <option value={30} className="bg-slate-900">30s</option>
+                <option value={60} className="bg-slate-900">60s</option>
               </select>
             </div>
 
             <button
               type="button"
               onClick={() => void refreshAll(true)}
-              className="touch-manipulation rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/10 transition"
+              className="touch-manipulation inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-white/10 transition whitespace-nowrap shrink-0"
               title="Alle Kamerabilder jetzt aktualisieren"
             >
-              ↻ <span className="hidden sm:inline">Refresh</span>
+              <span>↻</span>
+              <span className="hidden sm:inline">Refresh</span>
             </button>
 
             <button
               type="button"
               onClick={() => void toggleAllLive()}
               disabled={cameras.length === 0}
-              className={`touch-manipulation rounded-lg px-3 py-1.5 text-xs font-semibold transition flex items-center gap-1.5 ${
+              className={`touch-manipulation inline-flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1 text-xs font-semibold transition whitespace-nowrap shrink-0 ${
                 cameras.length > 0 && cameras.every(c => liveCameras.has(c.id))
                   ? "border border-amber-500/50 bg-amber-500/15 text-amber-200"
                   : "border border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
               }`}
             >
               {cameras.length > 0 && cameras.every(c => liveCameras.has(c.id)) ? (
-                <>■ <span>Live stoppen</span></>
+                <>■ <span className="whitespace-nowrap">Live stoppen</span></>
               ) : (
                 <>
-                  ▶ <span className="hidden sm:inline">Alle Live</span>
-                  <span className="sm:hidden">{liveCameras.size > 0 ? `Live ${liveCameras.size}/4` : "Live"}</span>
+                  ▶ <span className="hidden sm:inline whitespace-nowrap">Alle Live</span>
+                  <span className="sm:hidden whitespace-nowrap">{liveCameras.size > 0 ? `Live ${liveCameras.size}/4` : "Live"}</span>
                 </>
               )}
             </button>
@@ -1295,18 +1295,19 @@ export default function CameraWallPage() {
             <button
               type="button"
               onClick={() => setActivityLogOpen(true)}
-              className="touch-manipulation rounded-lg border border-violet-500/35 bg-violet-500/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20"
+              className="touch-manipulation inline-flex items-center gap-1 rounded-lg border border-violet-500/35 bg-violet-500/10 px-2.5 py-1 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20 whitespace-nowrap shrink-0"
               title="Bewegungen und Online-/Offline-Wechsel anzeigen"
             >
-              ◷ <span className="hidden sm:inline">Protokoll</span>
-              <span className="sm:hidden">Log</span>
+              <span>◷</span>
+              <span className="hidden sm:inline whitespace-nowrap">Protokoll</span>
+              <span className="sm:hidden whitespace-nowrap">Log</span>
             </button>
 
-            <div className="flex sm:hidden items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1 text-xs text-slate-300">
+            <div className="flex sm:hidden items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-0.5 text-xs text-slate-300">
               <button
                 type="button"
                 onClick={() => changeMobileColumns(mobileColumns === 1 ? 2 : 1)}
-                className="touch-manipulation rounded px-2 py-1 font-semibold hover:bg-white/10"
+                className="touch-manipulation rounded px-1.5 py-0.5 font-semibold hover:bg-white/10"
                 title="Raster zwischen einer und zwei Spalten wechseln"
                 aria-label={`Aktuell ${mobileColumns} Spalten. Raster wechseln.`}
               >
@@ -1317,18 +1318,18 @@ export default function CameraWallPage() {
             <button
               type="button"
               onClick={() => setIsKioskOpen(true)}
-              className="touch-manipulation rounded-lg border border-purple-500/40 bg-purple-600/20 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-purple-200 hover:bg-purple-600/30 transition flex items-center gap-1.5 shadow-sm"
+              className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-purple-500/40 bg-purple-600/20 px-2.5 py-1 text-xs font-semibold text-purple-200 hover:bg-purple-600/30 transition shadow-sm whitespace-nowrap shrink-0"
               title="Kiosk- & Wand-Tablet Modus mit Auto-Popup bei Bewegung"
             >
               <Tv className="w-3.5 h-3.5 text-purple-400" />
-              <span>Kiosk</span>
+              <span className="whitespace-nowrap">Kiosk</span>
             </button>
 
             {isFullscreen ? (
               <button
                 type="button"
                 onClick={leaveFullscreen}
-                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+                className="touch-manipulation rounded-lg bg-indigo-600 px-2.5 sm:px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 transition whitespace-nowrap shrink-0"
               >
                 Vollbild beenden
               </button>
@@ -1336,11 +1337,11 @@ export default function CameraWallPage() {
               <button
                 type="button"
                 onClick={enterMonitorMode}
-                className="touch-manipulation rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition"
+                className="touch-manipulation inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 sm:px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 transition whitespace-nowrap shrink-0 shadow-sm"
                 title="Vollbild-Überwachungsmodus"
               >
-                <span className="sm:hidden">▣ Fokus</span>
-                <span className="hidden sm:inline">▣ Vollbild</span>
+                <span className="sm:hidden whitespace-nowrap">▣ Fokus</span>
+                <span className="hidden sm:inline whitespace-nowrap">▣ Vollbild</span>
               </button>
             )}
           </div>

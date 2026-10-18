@@ -86,7 +86,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <PullToRefresh>
                 <div className="min-h-screen flex flex-col overflow-x-hidden w-full max-w-full">
                   <Navigation repoUrl={repoUrl} />
-                  <main className="mx-auto flex-1 w-full max-w-none px-2 py-4 sm:w-[94%] sm:px-5 sm:py-6 lg:w-[90%] lg:py-8 pb-24 md:pb-8 overflow-x-hidden">
+                  <main className="mx-auto flex-1 w-full max-w-none px-2 pt-2 pb-24 sm:w-[94%] sm:px-5 sm:pt-3.5 sm:pb-8 lg:w-[90%] lg:pt-4 overflow-x-hidden">
                     {children}
                   </main>
                   <Footer />
