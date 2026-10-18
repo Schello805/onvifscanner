@@ -133,7 +133,12 @@ export default function CameraWallPage() {
   const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
   const [targetPlate, setTargetPlate] = useState<string>("");
   const [mounted, setMounted] = useState(false);
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId));
+  const [groupModal, setGroupModal] = useState<{
+    type: "rename" | "delete";
+    groupName: string;
+  } | null>(null);
+  const [groupNewName, setGroupNewName] = useState("");
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId || groupModal));
 
   const existingGroups = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -604,6 +609,37 @@ export default function CameraWallPage() {
   function persist(next: WallCamera[]) {
     setCameras(next);
     saveWallData({ cameras: next, columns, refresh: refreshSeconds });
+  }
+
+  function handleRenameGroup(oldName: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed.toLowerCase() === "ungruppiert" || trimmed.toLowerCase() === oldName.trim().toLowerCase()) {
+      setGroupModal(null);
+      return;
+    }
+    const next = cameras.map((c) => {
+      if (c.group?.trim().toLowerCase() === oldName.trim().toLowerCase()) {
+        return { ...c, group: trimmed };
+      }
+      return c;
+    });
+    persist(next);
+    setEditDraft((prev) => (prev && prev.group?.trim().toLowerCase() === oldName.trim().toLowerCase() ? { ...prev, group: trimmed } : prev));
+    toast.success(`Gruppe „${oldName}“ in „${trimmed}“ umbenannt.`);
+    setGroupModal(null);
+  }
+
+  function handleDeleteGroup(groupName: string) {
+    const next = cameras.map((c) => {
+      if (c.group?.trim().toLowerCase() === groupName.trim().toLowerCase()) {
+        return { ...c, group: undefined };
+      }
+      return c;
+    });
+    persist(next);
+    setEditDraft((prev) => (prev && prev.group?.trim().toLowerCase() === groupName.trim().toLowerCase() ? { ...prev, group: "" } : prev));
+    toast.info(`Gruppe „${groupName}“ gelöscht. Kameras wurden auf „Ungruppiert“ gesetzt.`);
+    setGroupModal(null);
   }
 
   function changeColumns(value: number) {
@@ -1353,10 +1389,40 @@ export default function CameraWallPage() {
           ).sort((a, b) => a[0] === "Ungruppiert" ? 1 : b[0] === "Ungruppiert" ? -1 : a[0].localeCompare(b[0])).map(([groupName, groupCameras]) => (
             <div key={groupName} className="camera-group flex flex-col gap-3">
               {groupName !== "Ungruppiert" && (
-                <h2 className="camera-group-title px-2 text-lg font-semibold text-white/90 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                  {groupName}
-                </h2>
+                <div className="flex items-center justify-between px-2">
+                  <h2 className="camera-group-title text-lg font-semibold text-white/90 flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50"></div>
+                    <span>{groupName}</span>
+                    <span className="text-xs font-normal text-slate-400">
+                      ({groupCameras.length})
+                    </span>
+                  </h2>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupNewName(groupName);
+                        setGroupModal({ type: "rename", groupName });
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700/60 transition-all active:scale-95 shadow-sm"
+                      title={`Gruppe „${groupName}“ umbenennen`}
+                    >
+                      <Pencil className="h-3 w-3 text-cyan-400" />
+                      <span className="hidden sm:inline">Umbenennen</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupModal({ type: "delete", groupName });
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/50 border border-slate-700/60 transition-all active:scale-95 shadow-sm"
+                      title={`Gruppe „${groupName}“ löschen`}
+                    >
+                      <Trash2 className="h-3 w-3 text-rose-400" />
+                      <span className="hidden sm:inline">Löschen</span>
+                    </button>
+                  </div>
+                </div>
               )}
               <div className="wall-grid" style={{ "--wall-columns": columns, "--wall-columns-mobile": mobileColumns } as CSSProperties}>
                 {groupCameras.map((camera) => {
@@ -1950,6 +2016,13 @@ export default function CameraWallPage() {
           onSave={saveCameraDetails}
           onClose={closeEditor}
           onRemove={removeCamera}
+          onTriggerRenameGroup={(name) => {
+            setGroupNewName(name);
+            setGroupModal({ type: "rename", groupName: name });
+          }}
+          onTriggerDeleteGroup={(name) => {
+            setGroupModal({ type: "delete", groupName: name });
+          }}
         />
       ) : null}
 
@@ -1970,6 +2043,117 @@ export default function CameraWallPage() {
             }}
             initialPlate={targetPlate}
           />
+
+          {groupModal && typeof document !== "undefined" && createPortal(
+            <div
+              className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
+              onClick={() => setGroupModal(null)}
+            >
+              <div
+                className="relative w-full max-w-md rounded-2xl border border-white/20 bg-slate-900 p-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={() => setGroupModal(null)}
+                  className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
+                  aria-label="Schließen"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+
+                {groupModal.type === "rename" ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleRenameGroup(groupModal.groupName, groupNewName);
+                    }}
+                    className="space-y-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400">
+                        <Pencil className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-white">Gruppe umbenennen</h3>
+                        <p className="text-xs text-slate-400">Aktueller Name: „{groupModal.groupName}“</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label htmlFor="group-new-name" className="text-xs font-medium text-slate-300">
+                        Neuer Gruppenname
+                      </label>
+                      <input
+                        id="group-new-name"
+                        type="text"
+                        autoFocus
+                        value={groupNewName}
+                        onChange={(e) => setGroupNewName(e.target.value)}
+                        className="glass-input w-full rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-cyan-500/50"
+                        placeholder="z. B. Garten & Terrasse"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setGroupModal(null)}
+                        className="rounded-lg px-4 py-2 text-xs font-medium text-slate-300 hover:bg-white/10 transition-colors"
+                      >
+                        Abbrechen
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={
+                          !groupNewName.trim() ||
+                          groupNewName.trim().toLowerCase() === "ungruppiert" ||
+                          groupNewName.trim().toLowerCase() === groupModal.groupName.toLowerCase()
+                        }
+                        className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md shadow-cyan-600/30"
+                      >
+                        Speichern
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400">
+                        <Trash2 className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-semibold text-white">Gruppe löschen?</h3>
+                        <p className="text-xs text-slate-400">Gruppe: „{groupModal.groupName}“</p>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-slate-300">
+                      Möchtest du die Gruppe <span className="font-semibold text-white">„{groupModal.groupName}“</span> wirklich auflösen? Die Kameras bleiben erhalten und werden als <span className="font-semibold text-white">„Ungruppiert“</span> angezeigt.
+                    </p>
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setGroupModal(null)}
+                        className="rounded-lg px-4 py-2 text-xs font-medium text-slate-300 hover:bg-white/10 transition-colors"
+                      >
+                        Abbrechen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGroup(groupModal.groupName)}
+                        className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-500 transition-all shadow-md shadow-rose-600/30"
+                      >
+                        Gruppe löschen
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
         </>
       )}
     </div>

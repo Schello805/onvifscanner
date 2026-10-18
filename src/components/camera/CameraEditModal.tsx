@@ -18,8 +18,10 @@ import {
   Cpu,
   Folder,
   Paintbrush,
+  Pencil,
   Plus,
   Sliders,
+  Trash2,
   Video,
   X,
 } from "lucide-react";
@@ -75,6 +77,8 @@ type CameraEditModalProps = {
   onSave: () => void;
   onClose: () => void;
   onRemove: (cameraId: string) => void;
+  onTriggerRenameGroup?: (groupName: string) => void;
+  onTriggerDeleteGroup?: (groupName: string) => void;
 };
 
 type SectionKey = "general" | "recording" | "ai" | "mask";
@@ -90,6 +94,8 @@ export function CameraEditModal({
   onSave,
   onClose,
   onRemove,
+  onTriggerRenameGroup,
+  onTriggerDeleteGroup,
 }: CameraEditModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
@@ -354,34 +360,67 @@ export function CameraEditModal({
                                     const isSelected =
                                       editDraft.group?.trim().toLowerCase() === g.name.toLowerCase();
                                     return (
-                                      <button
+                                      <div
                                         key={g.name}
-                                        type="button"
-                                        onClick={() => {
-                                          onUpdateDraft({ ...editDraft, group: g.name });
-                                          setIsGroupDropdownOpen(false);
-                                        }}
-                                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-sm transition-colors text-left ${
+                                        className={`w-full flex items-center justify-between rounded-lg px-2 py-1.5 transition-colors ${
                                           isSelected
                                             ? "bg-cyan-500/20 text-cyan-300 font-medium"
-                                            : "text-slate-200 hover:bg-white/10 active:bg-white/15"
+                                            : "text-slate-200 hover:bg-white/10"
                                         }`}
                                       >
-                                        <div className="flex items-center gap-2 min-w-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            onUpdateDraft({ ...editDraft, group: g.name });
+                                            setIsGroupDropdownOpen(false);
+                                          }}
+                                          className="flex-1 flex items-center gap-2 min-w-0 text-left py-0.5"
+                                        >
                                           <Folder
                                             className={`h-4 w-4 shrink-0 ${
                                               isSelected ? "text-cyan-400" : "text-slate-400"
                                             }`}
                                           />
                                           <span className="truncate">{g.name}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-white/10 text-slate-400">
-                                            {g.count} {g.count === 1 ? "Kamera" : "Kameras"}
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-slate-400 shrink-0 ml-1">
+                                            {g.count}
                                           </span>
-                                          {isSelected && <Check className="h-4 w-4 text-cyan-400" />}
-                                        </div>
-                                      </button>
+                                          {isSelected && <Check className="h-3.5 w-3.5 text-cyan-400 shrink-0 ml-auto mr-1" />}
+                                        </button>
+
+                                        {(onTriggerRenameGroup || onTriggerDeleteGroup) && (
+                                          <div className="flex items-center gap-0.5 shrink-0 ml-1 pl-1.5 border-l border-white/10">
+                                            {onTriggerRenameGroup && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setIsGroupDropdownOpen(false);
+                                                  onTriggerRenameGroup(g.name);
+                                                }}
+                                                className="p-1 rounded text-slate-400 hover:text-cyan-300 hover:bg-white/10 transition-colors"
+                                                title={`Gruppe „${g.name}“ umbenennen`}
+                                              >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                            {onTriggerDeleteGroup && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setIsGroupDropdownOpen(false);
+                                                  onTriggerDeleteGroup(g.name);
+                                                }}
+                                                className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                                title={`Gruppe „${g.name}“ löschen`}
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
                                     );
                                   })
                                 ) : (
