@@ -904,24 +904,23 @@ export default function HomePage() {
         <div className="absolute top-0 right-0 -mt-10 w-48 h-48 rounded-full bg-indigo-500/10 blur-[60px] pointer-events-none" />
 
         <div className="relative z-10 flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-3">
-            <div>
+          <div className="border-b border-white/5 pb-3">
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
               <h1 className="text-xl sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70 tracking-tight">
                 Netzwerk-Scanner
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">
-                ONVIF & RTSP Kameras im lokalen Netzwerk automatisch erkennen
-              </p>
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="text-xs text-indigo-300 hover:text-white font-medium flex items-center gap-1.5 transition px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 active:scale-95 shadow-sm"
+              >
+                <span>⚙️</span>
+                <span>{showAdvanced ? "Weniger Optionen" : "Erweiterte Optionen"}</span>
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="self-start sm:self-auto text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1.5 transition"
-            >
-              <span>⚙️</span>
-              <span>{showAdvanced ? "Weniger Optionen" : "Erweiterte Optionen"}</span>
-            </button>
+            <p className="text-xs text-slate-400 mt-1">
+              ONVIF & RTSP Kameras im lokalen Netzwerk automatisch erkennen
+            </p>
           </div>
 
           {/* Primary Quick-Scan Bar */}
