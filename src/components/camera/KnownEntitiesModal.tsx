@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Car,
@@ -215,10 +216,10 @@ export function KnownEntitiesModal({
     return matchesSearch && matchesCategory;
   });
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-5">
+  return createPortal(
+    <div className="fixed inset-0 z-[100030] flex items-center justify-center p-3 sm:p-5">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in" onClick={onClose} />
 
@@ -555,6 +556,7 @@ export function KnownEntitiesModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
