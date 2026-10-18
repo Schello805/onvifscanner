@@ -229,7 +229,7 @@ export function VersionStatus(props: { currentVersion: string }) {
       ref={containerRef}
       className="relative inline-flex items-center gap-2 align-middle group/version"
     >
-      <span className="text-slate-400">Rev. v{props.currentVersion}</span>
+      <span className="text-slate-400">Rev. v{info?.currentVersion || props.currentVersion}</span>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}

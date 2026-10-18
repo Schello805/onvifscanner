@@ -281,18 +281,22 @@ async function runMotionDetection() {
   }
 }
 
-async function fetchMotionEventImage(cam, uris) {
+async function fetchMotionEventImage(cam, uris, options = {}) {
+  const highRes = Boolean(options.highRes);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6_000);
+  const timer = setTimeout(() => controller.abort(), highRes ? 8_000 : 6_000);
   try {
+    const size = highRes ? Math.max(1600, Math.min(2560, motionSourceWidth * 2)) : motionSourceWidth;
+    const quality = highRes ? 90 : 82;
+    const timeoutMs = highRes ? 5_000 : 3_500;
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
       body: JSON.stringify({
         urls: uris,
-        size: motionSourceWidth,
-        quality: 82,
-        timeoutMs: 3_500,
+        size,
+        quality,
+        timeoutMs,
         fastAuth: true,
         fresh: true,
         cameraId: cam.id,
@@ -487,7 +491,7 @@ async function detectCameraMotion(cam) {
     }
     if ((cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) && objectDetectionEnabled) {
       try {
-        eventImage = await fetchMotionEventImage(cam, uris);
+        eventImage = await fetchMotionEventImage(cam, uris, { highRes: Boolean(cam.licensePlateRecognitionEnabled) });
         if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
         const result = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
         const motionEvidence = {
@@ -516,7 +520,8 @@ async function detectCameraMotion(cam) {
             const plates = await readLicensePlates(eventImage, result, vehicles, ignoreRegions);
             const plateDetails = [];
             for (const entry of plates) {
-              const known = findKnownEntity(entry.plate, 'plate');
+              const known = findKnownEntity(entry.plate, 'plate')
+                || findKnownEntity(entry.plate.replace(/[^A-Z0-9ÄÖÜ]/g, ''), 'plate');
               if (known) {
                 touchKnownEntity(known.id, cam.name);
                 plateDetails.push({

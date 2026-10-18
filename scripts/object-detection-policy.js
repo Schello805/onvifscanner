@@ -79,7 +79,8 @@ function relevantDetections(result, camera, ignoreRegions, motionEvidence, optio
     const centerY = (Number(y) + Number(height) / 2) / Math.max(1, result.height);
     if (pointIsIgnored(centerX, centerY, ignoreRegions)) return [];
     const motionRatio = detectionMotionRatio(prediction, result, motionEvidence);
-    if (motionRatio < requiredMotionRatio(prediction)) return [];
+    const minRatio = options.vehicleOnly ? 0.005 : requiredMotionRatio(prediction);
+    if (motionRatio < minRatio) return [];
     return [{ ...prediction, group, motionRatio }];
   });
 }
