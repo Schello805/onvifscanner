@@ -1378,7 +1378,7 @@ export default function CameraWallPage() {
           <Link href="/" className="mt-5 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Scanner öffnen</Link>
         </div>
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-3.5 sm:gap-6">
           {Object.entries(
             cameras.reduce((acc, camera) => {
               const g = camera.group?.trim() || "Ungruppiert";
@@ -1387,39 +1387,41 @@ export default function CameraWallPage() {
               return acc;
             }, {} as Record<string, WallCamera[]>)
           ).sort((a, b) => a[0] === "Ungruppiert" ? 1 : b[0] === "Ungruppiert" ? -1 : a[0].localeCompare(b[0])).map(([groupName, groupCameras]) => (
-            <div key={groupName} className="camera-group flex flex-col gap-3">
+            <div key={groupName} className="camera-group flex flex-col gap-1 sm:gap-2">
               {groupName !== "Ungruppiert" && (
-                <div className="flex items-center justify-between px-2">
-                  <h2 className="camera-group-title text-lg font-semibold text-white/90 flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50"></div>
-                    <span>{groupName}</span>
-                    <span className="text-xs font-normal text-slate-400">
+                <div className="flex items-center justify-between px-1.5 pt-0.5 pb-0.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-sm shadow-indigo-500/50 shrink-0"></div>
+                    <span className="text-sm sm:text-base font-semibold text-white/90 truncate">
+                      {groupName}
+                    </span>
+                    <span className="text-[11px] font-normal text-slate-400 shrink-0">
                       ({groupCameras.length})
                     </span>
-                  </h2>
-                  <div className="flex items-center gap-1.5">
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => {
                         setGroupNewName(groupName);
                         setGroupModal({ type: "rename", groupName });
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700/60 transition-all active:scale-95 shadow-sm"
+                      className="inline-flex items-center gap-1 p-1 sm:px-2 sm:py-0.5 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-white/10 transition-colors active:scale-95"
                       title={`Gruppe „${groupName}“ umbenennen`}
                     >
-                      <Pencil className="h-3 w-3 text-cyan-400" />
-                      <span className="hidden sm:inline">Umbenennen</span>
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline text-[11px] font-medium">Umbenennen</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setGroupModal({ type: "delete", groupName });
                       }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/50 border border-slate-700/60 transition-all active:scale-95 shadow-sm"
+                      className="inline-flex items-center gap-1 p-1 sm:px-2 sm:py-0.5 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors active:scale-95"
                       title={`Gruppe „${groupName}“ löschen`}
                     >
-                      <Trash2 className="h-3 w-3 text-rose-400" />
-                      <span className="hidden sm:inline">Löschen</span>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline text-[11px] font-medium">Löschen</span>
                     </button>
                   </div>
                 </div>
