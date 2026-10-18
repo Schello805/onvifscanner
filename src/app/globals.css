@@ -178,3 +178,21 @@
   -webkit-touch-callout: none;
 }
 
+.nav-header-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.nav-header-spacer {
+  height: calc(57px + env(safe-area-inset-top, 0px));
+}
+
+@media (min-width: 640px) {
+  .nav-header-spacer {
+    height: calc(61px + env(safe-area-inset-top, 0px));
+  }
+}
+

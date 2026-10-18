@@ -155,8 +155,10 @@ export function Navigation({
   return (
     <>
       {/* ─── DESKTOP & MOBILE TOP HEADER ──────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl shadow-lg shadow-black/20">
-        <div className="mx-auto flex w-full max-w-none items-center justify-between gap-3 px-4 py-2.5 sm:w-[94%] sm:px-5 sm:py-3 lg:w-[90%]">
+      {!isFullscreen && (
+        <>
+          <header className="nav-header-fixed z-40 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-xl shadow-lg shadow-black/20">
+            <div className="mx-auto flex w-full max-w-none items-center justify-between gap-3 px-4 py-2.5 sm:w-[94%] sm:px-5 sm:py-3 lg:w-[90%]">
           {/* Brand Logo & Name */}
           <Link
             href="/"
@@ -271,7 +273,10 @@ export function Navigation({
           </div>
         </div>
 
-      </header>
+          </header>
+          <div className="nav-header-spacer shrink-0" aria-hidden="true" />
+        </>
+      )}
 
       {/* ─── MOBILE BOTTOM NAVIGATION BAR ─────────────────────────── */}
       {!isFullscreen && (
