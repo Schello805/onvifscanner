@@ -285,17 +285,19 @@ export function CameraEditModal({
 
                 {openSections.general && (
                   <div className="border-t border-white/10 p-4 space-y-4 animate-in fade-in-50 duration-150">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="grid gap-1.5">
-                        <span className="font-semibold text-slate-300">Anzeigename</span>
+                    <div className="grid gap-3 sm:grid-cols-2 items-start">
+                      <label className="flex flex-col gap-1.5">
+                        <div className="flex items-center min-h-[22px]">
+                          <span className="font-semibold text-slate-300">Anzeigename</span>
+                        </div>
                         <input
                           value={editDraft.name}
                           onChange={(event) => onUpdateDraft({ ...editDraft, name: event.target.value })}
-                          className="glass-input rounded-lg px-3 py-2 text-sm outline-none"
+                          className="glass-input h-10 w-full rounded-lg px-3 py-2 text-sm outline-none"
                         />
                       </label>
-                      <div className="grid gap-1.5 relative" ref={groupDropdownRef}>
-                        <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-1.5 relative" ref={groupDropdownRef}>
+                        <div className="flex items-center justify-between min-h-[22px]">
                           <label htmlFor="camera-group-input" className="font-semibold text-slate-300 cursor-pointer">
                             Gruppe (z. B. Garten, Haus)
                           </label>
@@ -325,7 +327,7 @@ export function CameraEditModal({
                                 setIsGroupDropdownOpen(false);
                               }
                             }}
-                            className="glass-input w-full rounded-lg pl-3 pr-9 py-2 text-sm outline-none"
+                            className="glass-input h-10 w-full rounded-lg pl-3 pr-9 py-2 text-sm outline-none"
                             placeholder="Ungruppiert"
                             autoComplete="off"
                           />
