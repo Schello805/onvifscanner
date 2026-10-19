@@ -14,6 +14,7 @@ const {
 } = require('./object-detection-policy');
 const {
   annotateDetectedObjects,
+  extractMotionBoundingBox,
   saveSnapshotFile,
   deleteSnapshotFile,
 } = require('./image-annotator');
@@ -591,15 +592,34 @@ async function detectCameraMotion(cam) {
       let snapshotUrl = null;
       const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-      if (eventImage && detectedObjects.length) {
-        try {
-          finalNotificationImage = await annotateDetectedObjects(eventImage, detectedObjects, {
-            sourceWidth: detectionResult?.width,
-            sourceHeight: detectionResult?.height,
-            plates: recognizedPlates,
-          });
-        } catch (error) {
-          console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
+      let motionBbox = null;
+      if (eventImage) {
+        if (detectedObjects.length) {
+          try {
+            finalNotificationImage = await annotateDetectedObjects(eventImage, detectedObjects, {
+              sourceWidth: detectionResult?.width,
+              sourceHeight: detectionResult?.height,
+              plates: recognizedPlates,
+            });
+          } catch (error) {
+            console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
+          }
+        } else {
+          motionBbox = extractMotionBoundingBox(changedPixelMap, info.width, info.height);
+          if (motionBbox) {
+            try {
+              finalNotificationImage = await annotateDetectedObjects(eventImage, [{
+                className: 'Bewegung',
+                score: null,
+                bbox: motionBbox,
+              }], {
+                sourceWidth: info.width,
+                sourceHeight: info.height,
+              });
+            } catch (error) {
+              console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
+            }
+          }
         }
       }
 
@@ -621,7 +641,9 @@ async function detectCameraMotion(cam) {
           objectClasses: detectedObjects.length
             ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
             : null,
-          objectDetections: detectedObjects.length ? JSON.stringify(detectedObjects) : null,
+          objectDetections: detectedObjects.length
+            ? JSON.stringify(detectedObjects)
+            : (motionBbox ? JSON.stringify([{ className: 'Bewegung', bbox: motionBbox }]) : null),
           licensePlates: recognizedPlates.length ? JSON.stringify(recognizedPlates) : null,
         },
       });

@@ -209,9 +209,82 @@ async function deleteSnapshotFile(idOrUrl) {
   }
 }
 
+/**
+ * Calculates a bounding box [x, y, width, height] for changed pixels from a binary pixel map.
+ * Filters isolated noise pixels and adds a visual padding margin.
+ *
+ * @param {Uint8Array} changedPixelMap
+ * @param {number} width
+ * @param {number} height
+ * @returns {Array<number>|null} [x, y, width, height] in the coordinate system of width/height
+ */
+function extractMotionBoundingBox(changedPixelMap, width, height) {
+  if (!changedPixelMap || !width || !height) return null;
+  const colCounts = new Int32Array(width);
+  const rowCounts = new Int32Array(height);
+  let totalChanged = 0;
+
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * width;
+    for (let x = 0; x < width; x++) {
+      if (changedPixelMap[rowOffset + x] === 1) {
+        colCounts[x]++;
+        rowCounts[y]++;
+        totalChanged++;
+      }
+    }
+  }
+
+  if (totalChanged === 0) return null;
+
+  // Filter isolated single-pixel sensor noise
+  const threshold = Math.max(1, Math.floor(totalChanged * 0.02));
+
+  let minX = 0;
+  while (minX < width && colCounts[minX] < threshold) minX++;
+
+  let maxX = width - 1;
+  while (maxX >= 0 && colCounts[maxX] < threshold) maxX--;
+
+  let minY = 0;
+  while (minY < height && rowCounts[minY] < threshold) minY++;
+
+  let maxY = height - 1;
+  while (maxY >= 0 && rowCounts[maxY] < threshold) maxY--;
+
+  if (maxX < minX || maxY < minY) {
+    minX = 0;
+    while (minX < width && colCounts[minX] === 0) minX++;
+    maxX = width - 1;
+    while (maxX >= 0 && colCounts[maxX] === 0) maxX--;
+    minY = 0;
+    while (minY < height && rowCounts[minY] === 0) minY++;
+    maxY = height - 1;
+    while (maxY >= 0 && rowCounts[maxY] === 0) maxY--;
+  }
+
+  if (maxX < minX || maxY < minY) return null;
+
+  // Add 5% margin around moving area for visual framing
+  const marginX = Math.max(2, Math.round((maxX - minX + 1) * 0.06));
+  const marginY = Math.max(2, Math.round((maxY - minY + 1) * 0.06));
+  const clampedMinX = Math.max(0, minX - marginX);
+  const clampedMinY = Math.max(0, minY - marginY);
+  const clampedMaxX = Math.min(width - 1, maxX + marginX);
+  const clampedMaxY = Math.min(height - 1, maxY + marginY);
+
+  return [
+    clampedMinX,
+    clampedMinY,
+    clampedMaxX - clampedMinX + 1,
+    clampedMaxY - clampedMinY + 1,
+  ];
+}
+
 module.exports = {
   annotateDetectedObjects,
   createAnnotatedThumbnail,
+  extractMotionBoundingBox,
   saveSnapshotFile,
   deleteSnapshotFile,
   escapeXml,

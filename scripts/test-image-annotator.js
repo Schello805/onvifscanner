@@ -5,6 +5,7 @@ const sharp = require('sharp');
 const {
   annotateDetectedObjects,
   createAnnotatedThumbnail,
+  extractMotionBoundingBox,
   saveSnapshotFile,
   deleteSnapshotFile,
   escapeXml,
@@ -66,6 +67,31 @@ async function runTests() {
   assert.ok(fs.existsSync(savedFile2));
   await deleteSnapshotFile(`/api/snapshots/${testId2}`);
   assert.ok(!fs.existsSync(savedFile2));
+
+  // Test 7: extractMotionBoundingBox
+  const testW = 100;
+  const testH = 50;
+  const testMap = new Uint8Array(testW * testH);
+  for (let y = 10; y <= 25; y++) {
+    for (let x = 20; x <= 40; x++) {
+      testMap[y * testW + x] = 1;
+    }
+  }
+  const bbox = extractMotionBoundingBox(testMap, testW, testH);
+  assert.ok(Array.isArray(bbox));
+  assert.equal(bbox.length, 4);
+  assert.ok(bbox[0] <= 20 && bbox[1] <= 10);
+  assert.ok(bbox[0] + bbox[2] >= 40 && bbox[1] + bbox[3] >= 25);
+
+  // Test 8: Annotate raw motion with "Bewegung" badge
+  const motionAnnotated = await annotateDetectedObjects(baseImage, [{
+    className: 'Bewegung',
+    bbox: [20, 10, 20, 15],
+  }], { sourceWidth: testW, sourceHeight: testH });
+  assert.ok(Buffer.isBuffer(motionAnnotated));
+  const motionMeta = await sharp(motionAnnotated).metadata();
+  assert.equal(motionMeta.width, 640);
+  assert.equal(motionMeta.height, 480);
 
   console.log('✅ All image annotator tests passed successfully!');
 }

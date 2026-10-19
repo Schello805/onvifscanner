@@ -21,6 +21,8 @@ const objectClassLabels = {
   bear: 'Bär',
   zebra: 'Zebra',
   giraffe: 'Giraffe',
+  Bewegung: 'Bewegung',
+  motion: 'Bewegung',
 };
 
 function parseObjectGroups(value) {
