@@ -462,7 +462,9 @@ async function detectCameraMotion(cam) {
     }
 
     const confirmationCount = (previous.confirmationCount || 0) + 1;
-    if (confirmationCount < motionConfirmationFrames) {
+    const isDistinctMotion = changedArea >= requiredArea * 1.4 && meanDifference >= requiredMean * 1.4;
+    const requiredConfirmations = isDistinctMotion ? 1 : motionConfirmationFrames;
+    if (confirmationCount < requiredConfirmations) {
       motionFrames.set(cam.id, {
         ...previous,
         confirmationCount,
@@ -578,6 +580,13 @@ async function detectCameraMotion(cam) {
           motionFailureLogTimes.set(warningKey, Date.now());
         }
         if (cam.objectDetectionEnabled) return;
+      }
+    }
+    if (!eventImage) {
+      try {
+        eventImage = await fetchMotionEventImage(cam, uris, { highRes: false });
+      } catch {
+        // quiet
       }
     }
 

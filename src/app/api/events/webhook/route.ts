@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -146,46 +148,59 @@ export async function POST(req: Request) {
       });
 
       if (!recent) {
+        const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        let snapshotUrl: string | null = null;
+        let attachment: { data: Uint8Array; contentType: string; filename: string } | undefined;
+
+        try {
+          const snapshotUris = JSON.parse(matchedCamera.snapshotUris || "[]");
+          const streamUris = JSON.parse(matchedCamera.streamUris || "[]");
+          const imageResponse = await fetch(`http://127.0.0.1:${process.env.PORT || "3000"}/api/thumbnail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-internal-worker": "true" },
+            body: JSON.stringify({
+              cameraId: matchedCamera.id,
+              urls: [...snapshotUris, ...streamUris],
+              size: 960,
+              timeoutMs: 3_500,
+              fastAuth: true,
+              fresh: true,
+              credentials: matchedCamera.username
+                ? { username: matchedCamera.username, password: decryptSecret(matchedCamera.password) }
+                : undefined,
+            }),
+            signal: AbortSignal.timeout(5_000),
+          });
+          const imageContentType = imageResponse.headers.get("content-type") || "";
+          if (imageResponse.ok && imageContentType.toLowerCase().startsWith("image/")) {
+            const buffer = Buffer.from(await imageResponse.arrayBuffer());
+            attachment = {
+              data: new Uint8Array(buffer),
+              contentType: imageContentType,
+              filename: `kamera-${matchedCamera.ip}-${Date.now()}.jpg`,
+            };
+            const snapshotsDir = path.join(process.cwd(), "data", "snapshots");
+            if (!fs.existsSync(snapshotsDir)) {
+              fs.mkdirSync(snapshotsDir, { recursive: true });
+            }
+            await fs.promises.writeFile(path.join(snapshotsDir, `${alarmId}.jpg`), buffer);
+            snapshotUrl = `/api/snapshots/${alarmId}`;
+          }
+        } catch {}
+
         await prisma.alarmLog.create({
           data: {
+            id: alarmId,
             cameraId: matchedCamera.id,
             message,
             timestamp: eventTime,
+            imageUrl: snapshotUrl,
           },
         });
 
         if (matchedCamera.notificationsEnabled) {
           try {
             const settings = await prisma.settings.findUnique({ where: { id: "default" } });
-            let attachment: { data: Uint8Array; contentType: string; filename: string } | undefined;
-            try {
-              const snapshotUris = JSON.parse(matchedCamera.snapshotUris || "[]");
-              const streamUris = JSON.parse(matchedCamera.streamUris || "[]");
-              const imageResponse = await fetch(`http://127.0.0.1:${process.env.PORT || "3000"}/api/thumbnail`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-internal-worker": "true" },
-                body: JSON.stringify({
-                  cameraId: matchedCamera.id,
-                  urls: [...snapshotUris, ...streamUris],
-                  size: 480,
-                  timeoutMs: 3_000,
-                  fastAuth: true,
-                  fresh: true,
-                  credentials: matchedCamera.username
-                    ? { username: matchedCamera.username, password: decryptSecret(matchedCamera.password) }
-                    : undefined,
-                }),
-                signal: AbortSignal.timeout(5_000),
-              });
-              const imageContentType = imageResponse.headers.get("content-type") || "";
-              if (imageResponse.ok && imageContentType.toLowerCase().startsWith("image/")) {
-                attachment = {
-                  data: new Uint8Array(await imageResponse.arrayBuffer()),
-                  contentType: imageContentType,
-                  filename: `kamera-${matchedCamera.ip}-${Date.now()}.jpg`,
-                };
-              }
-            } catch {}
             if (settings?.ntfyTopic?.trim()) {
               try {
                 await sendNtfyMessage({

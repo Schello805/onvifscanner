@@ -222,5 +222,5 @@ async function sendCameraNotification(prisma, camera, message, options = {}) {
   return { sent: anySent, ...results };
 }
 
-module.exports = { sendCameraNotification };
+module.exports = { sendCameraNotification, fetchCameraImage };
 

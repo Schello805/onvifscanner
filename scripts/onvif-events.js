@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { sendCameraNotification } = require('./ntfy');
+const { sendCameraNotification, fetchCameraImage } = require('./ntfy');
+const { saveSnapshotFile, deleteSnapshotFile } = require('./image-annotator');
 const { motionCooldownSeconds, shouldAcceptExternalMotion } = require('./motion-policy');
 
 function escapeXml(value) {
@@ -115,10 +116,10 @@ function extractSimpleItems(xml) {
 
 function parseMotionNotification(notificationXml) {
   const topic = decodeXml(extractXmlTag(notificationXml, 'Topic') || '').replace(/\s+/g, ' ').trim();
-  if (!/(?:^|[/.:])(?:Motion|MotionAlarm|CellMotionDetector)(?:$|[/.:])/i.test(topic)) return null;
+  if (!/(?:Motion|MotionAlarm|MotionDetection|CellMotion|LineDetector|FieldDetector|Tamper|PIR|Intrusion|VideoAnalytics)/i.test(topic)) return null;
 
   const dataXml = extractXmlTag(notificationXml, 'Data') || '';
-  const stateNames = /^(?:IsMotion|Motion|MotionAlarm|State|LogicalState|Active)$/i;
+  const stateNames = /^(?:IsMotion|Motion|MotionAlarm|State|LogicalState|Active|Inside|Crossed|Alarm)$/i;
   let state = null;
   for (const item of extractSimpleItems(dataXml)) {
     if (!stateNames.test(item.name)) continue;
@@ -127,7 +128,7 @@ function parseMotionNotification(notificationXml) {
   }
 
   if (state === null) {
-    for (const tagName of ['IsMotion', 'Motion', 'MotionAlarm', 'State', 'LogicalState', 'Active']) {
+    for (const tagName of ['IsMotion', 'Motion', 'MotionAlarm', 'State', 'LogicalState', 'Active', 'Inside', 'Crossed', 'Alarm']) {
       const value = extractXmlTag(dataXml, tagName);
       if (value === null) continue;
       state = parseBooleanState(value);
@@ -395,23 +396,49 @@ class OnvifEventManager {
         select: { id: true },
       });
       if (recentEvent) return;
+
+      const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      let snapshotUrl = null;
+      let fetchedImage = null;
+
+      try {
+        fetchedImage = await fetchCameraImage(currentCamera);
+        if (fetchedImage?.data) {
+          snapshotUrl = await saveSnapshotFile(Buffer.from(fetchedImage.data), alarmId);
+        }
+      } catch (imgErr) {
+        console.warn(`[ONVIF Events] ${cam.name}: Schnappschuss konnte nicht geladen werden:`, imgErr?.message || imgErr);
+      }
+
       await this.prisma.alarmLog.create({
         data: {
+          id: alarmId,
           cameraId: cam.id,
           message: 'Bewegung erkannt (ONVIF)',
           timestamp: effectiveTimestamp,
+          imageUrl: snapshotUrl,
         }
       });
       this.lastAlarmTimes.set(cam.id, now);
-      await sendCameraNotification(this.prisma, currentCamera, 'Bewegung erkannt (ONVIF)');
+      await sendCameraNotification(
+        this.prisma,
+        currentCamera,
+        'Bewegung erkannt (ONVIF)',
+        fetchedImage?.data ? { imageBuffer: Buffer.from(fetchedImage.data), contentType: fetchedImage.contentType || 'image/jpeg' } : {}
+      );
       await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, effectiveTimestamp);
       const oldEvents = await this.prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },
         skip: 500,
-        select: { id: true }
+        select: { id: true, imageUrl: true }
       });
       if (oldEvents.length) {
+        for (const oldEv of oldEvents) {
+          if (oldEv.imageUrl) {
+            void deleteSnapshotFile(oldEv.imageUrl);
+          }
+        }
         await this.prisma.alarmLog.deleteMany({
           where: { id: { in: oldEvents.map((event) => event.id) } }
         });
