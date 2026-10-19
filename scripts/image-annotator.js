@@ -265,6 +265,15 @@ function extractMotionBoundingBox(changedPixelMap, width, height) {
 
   if (maxX < minX || maxY < minY) return null;
 
+  // If the motion area spans almost the entire picture (>=75% width or >=75% height),
+  // it is diffuse scene-wide motion (wind across plants, contrast/light change, rain).
+  // In that case, drawing a border around the entire screen is confusing.
+  const spanW = maxX - minX + 1;
+  const spanH = maxY - minY + 1;
+  if (spanW >= width * 0.75 || spanH >= height * 0.75) {
+    return null;
+  }
+
   // Add 5% margin around moving area for visual framing
   const marginX = Math.max(2, Math.round((maxX - minX + 1) * 0.06));
   const marginY = Math.max(2, Math.round((maxY - minY + 1) * 0.06));

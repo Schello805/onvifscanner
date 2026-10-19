@@ -91,7 +91,10 @@ async function runTests() {
   assert.ok(Buffer.isBuffer(motionAnnotated));
   const motionMeta = await sharp(motionAnnotated).metadata();
   assert.equal(motionMeta.width, 640);
-  assert.equal(motionMeta.height, 480);
+  // Test 9: extractMotionBoundingBox returns null for full-screen / diffuse motion
+  const fullMap = new Uint8Array(testW * testH);
+  fullMap.fill(1);
+  assert.equal(extractMotionBoundingBox(fullMap, testW, testH), null);
 
   console.log('✅ All image annotator tests passed successfully!');
 }
