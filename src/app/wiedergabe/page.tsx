@@ -40,6 +40,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
+import { SnapshotLightboxModal } from "@/components/SnapshotLightboxModal";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   type CameraRankingItem,
@@ -3103,37 +3104,10 @@ export default function PlaybackPage() {
       )}
 
       {selectedSnapshot && (
-        <div
-          className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => setSelectedSnapshot(null)}
-        >
-          <div
-            className="relative max-h-[90vh] max-w-4xl w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-3 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2.5 flex items-center justify-between border-b border-slate-800/80 pb-2 px-1">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                <h3 className="text-sm font-semibold text-white truncate">{selectedSnapshot.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedSnapshot(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition"
-                aria-label="Schließen"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex items-center justify-center overflow-hidden rounded-xl bg-black/90 p-1">
-              <img
-                src={selectedSnapshot.url}
-                alt="Erkennungsschnappschuss"
-                className="max-h-[75vh] w-auto max-w-full object-contain rounded-lg"
-              />
-            </div>
-          </div>
-        </div>
+        <SnapshotLightboxModal
+          snapshot={selectedSnapshot}
+          onClose={() => setSelectedSnapshot(null)}
+        />
       )}
     </div>
   );

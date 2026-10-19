@@ -311,6 +311,7 @@ async function readLicensePlates(image, detectionResult, vehicleDetections, igno
         confidence: vehicleBest.confidence,
         vehicleClass: vehicle.className,
         vehicleScore: vehicle.score,
+        vehicleBbox: vehicle.bbox || null,
       });
     }
   }

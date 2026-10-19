@@ -17,3 +17,8 @@ data/
 mediamtx
 mediamtx.yml
 mediamtx.tar.gz
+
+# Scratch and ad-hoc test scripts
+test_*.js
+patch*
+scratch/

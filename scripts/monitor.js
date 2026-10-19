@@ -14,7 +14,8 @@ const {
 } = require('./object-detection-policy');
 const {
   annotateDetectedObjects,
-  createAnnotatedThumbnail,
+  saveSnapshotFile,
+  deleteSnapshotFile,
 } = require('./image-annotator');
 const {
   motionMonitoringRequested,
@@ -535,6 +536,7 @@ async function detectCameraMotion(cam) {
                   knownName: known.name,
                   category: known.category,
                   confidence: entry.confidence,
+                  vehicleBbox: entry.vehicleBbox || null,
                 });
               } else {
                 plateDetails.push({
@@ -542,6 +544,7 @@ async function detectCameraMotion(cam) {
                   knownName: null,
                   category: 'unknown',
                   confidence: entry.confidence,
+                  vehicleBbox: entry.vehicleBbox || null,
                 });
               }
             }
@@ -588,7 +591,8 @@ async function detectCameraMotion(cam) {
     });
     if (!recentEvent) {
       let finalNotificationImage = eventImage;
-      let snapshotThumbnailUrl = null;
+      let snapshotUrl = null;
+      const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       if (eventImage && detectedObjects.length) {
         try {
@@ -604,7 +608,7 @@ async function detectCameraMotion(cam) {
 
       if (finalNotificationImage) {
         try {
-          snapshotThumbnailUrl = await createAnnotatedThumbnail(finalNotificationImage, 640, 65);
+          snapshotUrl = await saveSnapshotFile(finalNotificationImage, alarmId);
         } catch {
           // quiet
         }
@@ -612,10 +616,11 @@ async function detectCameraMotion(cam) {
 
       await prisma.alarmLog.create({
         data: {
+          id: alarmId,
           cameraId: cam.id,
           message: eventMessage,
           timestamp: checkedAt,
-          imageUrl: snapshotThumbnailUrl,
+          imageUrl: snapshotUrl,
           objectClasses: detectedObjects.length
             ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
             : null,
@@ -634,9 +639,14 @@ async function detectCameraMotion(cam) {
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },
         skip: 500,
-        select: { id: true },
+        select: { id: true, imageUrl: true },
       });
       if (oldEvents.length) {
+        for (const oldEv of oldEvents) {
+          if (oldEv.imageUrl) {
+            void deleteSnapshotFile(oldEv.imageUrl);
+          }
+        }
         await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
       }
     }

@@ -1,5 +1,15 @@
+const fs = require('fs');
+const path = require('path');
 const sharp = require('sharp');
 const { objectClassLabels } = require('./object-detection-policy');
+
+const SNAPSHOTS_DIR = path.join(process.cwd(), 'data', 'snapshots');
+
+function ensureSnapshotsDir() {
+  if (!fs.existsSync(SNAPSHOTS_DIR)) {
+    fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+  }
+}
 
 function escapeXml(unsafe) {
   return String(unsafe || '').replace(/[<>&'"]/g, (c) => {
@@ -46,8 +56,10 @@ async function annotateDetectedObjects(imageBuffer, detections = [], options = {
     const plates = Array.isArray(options.plates) ? options.plates : [];
     const svgElements = [];
 
-    // Map any recognized plates to vehicles if applicable
-    let plateIndex = 0;
+    // Find vehicles in detections
+    const vehicleDetections = detections.filter((d) =>
+      d.group === 'vehicle' || ['car', 'truck', 'bus', 'motorcycle'].includes(d.className)
+    );
 
     for (const detection of detections) {
       if (!Array.isArray(detection.bbox) || detection.bbox.length < 4) continue;
@@ -64,14 +76,23 @@ async function annotateDetectedObjects(imageBuffer, detections = [], options = {
       const confidence = typeof detection.score === 'number' ? ` ${Math.round(detection.score * 100)}%` : '';
       let label = `${baseLabel}${confidence}`;
 
-      // If vehicle and plate exists, append plate
-      if ((detection.group === 'vehicle' || ['car', 'truck', 'bus'].includes(detection.className)) && plates.length > 0) {
-        const plate = plates[plateIndex % plates.length];
-        plateIndex += 1;
-        if (plate?.knownName) {
-          label = `${plate.knownName} (${plate.plate})`;
-        } else if (plate?.plate) {
-          label += ` · ${plate.plate}`;
+      // If vehicle, match plate precisely by vehicleBbox or fallback if single vehicle
+      const isVehicle = detection.group === 'vehicle' || ['car', 'truck', 'bus'].includes(detection.className);
+      if (isVehicle && plates.length > 0) {
+        const matchingPlate = plates.find((p) => {
+          if (p.vehicleBbox && Array.isArray(p.vehicleBbox)) {
+            return Math.abs(p.vehicleBbox[0] - rawX) < 5
+              && Math.abs(p.vehicleBbox[1] - rawY) < 5
+              && Math.abs(p.vehicleBbox[2] - rawW) < 5
+              && Math.abs(p.vehicleBbox[3] - rawH) < 5;
+          }
+          return false;
+        }) || (plates.length === 1 && vehicleDetections.length === 1 ? plates[0] : null);
+
+        if (matchingPlate?.knownName) {
+          label = `${matchingPlate.knownName} (${matchingPlate.plate})`;
+        } else if (matchingPlate?.plate) {
+          label += ` · ${matchingPlate.plate}`;
         }
       }
 
@@ -123,6 +144,7 @@ async function annotateDetectedObjects(imageBuffer, detections = [], options = {
 
 /**
  * Creates a base64 data URL thumbnail from an image buffer (max 640x480).
+ * Kept for backwards compatibility if needed.
  *
  * @param {Buffer} imageBuffer
  * @param {number} [maxWidth=640]
@@ -142,8 +164,56 @@ async function createAnnotatedThumbnail(imageBuffer, maxWidth = 640, quality = 6
   }
 }
 
+/**
+ * Saves a snapshot file to disk in data/snapshots/<id>.jpg
+ * Resizes cleanly to max 1280px with quality 75.
+ *
+ * @param {Buffer} imageBuffer
+ * @param {string} id
+ * @returns {Promise<string|null>} - API URL path e.g. '/api/snapshots/<id>'
+ */
+async function saveSnapshotFile(imageBuffer, id) {
+  if (!Buffer.isBuffer(imageBuffer) || !id) return null;
+  try {
+    ensureSnapshotsDir();
+    const safeId = String(id).replace(/[^a-zA-Z0-9_\-]/g, '');
+    if (!safeId) return null;
+    const destPath = path.join(SNAPSHOTS_DIR, `${safeId}.jpg`);
+    await sharp(imageBuffer)
+      .resize(1280, null, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 75, progressive: true })
+      .toFile(destPath);
+    return `/api/snapshots/${safeId}`;
+  } catch (error) {
+    console.warn('[Snapshot] Speichern fehlgeschlagen:', error?.message || error);
+    return null;
+  }
+}
+
+/**
+ * Deletes a snapshot file from disk in data/snapshots/<id>.jpg
+ *
+ * @param {string} idOrUrl
+ */
+async function deleteSnapshotFile(idOrUrl) {
+  if (!idOrUrl) return;
+  try {
+    const safeId = String(idOrUrl).replace(/^\/api\/snapshots\//, '').replace(/[^a-zA-Z0-9_\-]/g, '');
+    if (!safeId) return;
+    const destPath = path.join(SNAPSHOTS_DIR, `${safeId}.jpg`);
+    if (fs.existsSync(destPath)) {
+      await fs.promises.unlink(destPath).catch(() => {});
+    }
+  } catch {
+    // quiet
+  }
+}
+
 module.exports = {
   annotateDetectedObjects,
   createAnnotatedThumbnail,
+  saveSnapshotFile,
+  deleteSnapshotFile,
   escapeXml,
+  SNAPSHOTS_DIR,
 };
