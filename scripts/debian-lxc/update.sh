@@ -143,6 +143,19 @@ if [[ -f "$ENV_FILE" ]] && ! grep -q '^# OBJECT_DETECTION_QUALITY_V1_APPLIED=tru
   echo "Applied higher-quality local object detection defaults in $ENV_FILE."
 fi
 
+# Ensure timezone is Europe/Berlin for system, cron and journal logs
+if [[ -f /usr/share/zoneinfo/Europe/Berlin ]]; then
+  ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+  echo "Europe/Berlin" > /etc/timezone 2>/dev/null || true
+fi
+if [[ -f "$ENV_FILE" ]] && ! grep -q '^TZ=' "$ENV_FILE"; then
+  printf 'TZ=Europe/Berlin\n' >>"$ENV_FILE"
+  chmod 0640 "$ENV_FILE"
+  chown root:"$APP_USER" "$ENV_FILE"
+  ENV_CHANGED=true
+  echo "Configured TZ=Europe/Berlin in $ENV_FILE."
+fi
+
 if [[ -n "$previous_commit" && "$previous_commit" == "$current_commit" && "$FORCE_REBUILD" != "true" && "$ENV_CHANGED" != "true" && -f "$APP_DIR/.next/BUILD_ID" && -x "$APP_DIR/mediamtx" ]] && systemctl is-active --quiet onvifscanner.service; then
   echo "ONVIFscanner is already current; skipping dependencies, build and restart."
   exit 0

@@ -124,8 +124,19 @@ export async function GET(req: Request) {
               }
               isoDate = `${dateStr}T${timeStr}Z`;
             } else {
-              dateStr = stat.mtime.toISOString().slice(0, 10);
-              timeStr = stat.mtime.toISOString().slice(11, 19);
+              const p = new Intl.DateTimeFormat("en-CA", {
+                timeZone: process.env.TZ || "Europe/Berlin",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hourCycle: "h23",
+              }).formatToParts(stat.mtime);
+              const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
+              dateStr = `${g("year")}-${g("month")}-${g("day")}`;
+              timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
             }
 
             if (filterDate && dateStr !== filterDate) continue;

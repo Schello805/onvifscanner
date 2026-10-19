@@ -101,7 +101,9 @@ export async function GET(req: Request) {
         stat.lastEventAt = alarm.timestamp.toISOString();
       }
 
-      const hour = new Date(alarm.timestamp).getHours();
+      const tz = process.env.TZ || "Europe/Berlin";
+      const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).formatToParts(new Date(alarm.timestamp));
+      const hour = Number(p.find((x) => x.type === "hour")?.value ?? new Date(alarm.timestamp).getHours());
       stat.hourly[hour] = (stat.hourly[hour] || 0) + 1;
 
       const msg = alarm.message || "Bewegung erkannt";
@@ -111,9 +113,11 @@ export async function GET(req: Request) {
     const totalEvents = alarms.length;
 
     // Hourly aggregation across ALL cameras
+    const tz = process.env.TZ || "Europe/Berlin";
     const overallHourly = new Array(24).fill(0);
     for (const alarm of alarms) {
-      const h = new Date(alarm.timestamp).getHours();
+      const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).formatToParts(new Date(alarm.timestamp));
+      const h = Number(p.find((x) => x.type === "hour")?.value ?? new Date(alarm.timestamp).getHours());
       overallHourly[h] += 1;
     }
 

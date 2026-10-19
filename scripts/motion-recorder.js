@@ -290,8 +290,19 @@ class MotionRecorder {
 }
 
 function formatLocalTimestamp(date) {
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+  const tz = process.env.TZ || 'Europe/Berlin';
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const g = (t) => p.find((x) => x.type === t)?.value ?? '00';
+  return `${g('year')}-${g('month')}-${g('day')}_${g('hour')}-${g('minute')}-${g('second')}`;
 }
 
 function motionBufferRoot() {

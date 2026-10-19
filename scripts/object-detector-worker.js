@@ -29,6 +29,7 @@ parentPort.on('message', async ({ id, image, minScore }) => {
   try {
     const model = await loadModel();
     const decoded = await sharp(Buffer.from(image), { limitInputPixels: 32_000_000 })
+      .resize(480, 480, { fit: 'inside', withoutEnlargement: true })
       .removeAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });

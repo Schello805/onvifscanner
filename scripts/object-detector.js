@@ -37,13 +37,20 @@ class ObjectDetector {
     return worker;
   }
 
+const DETECT_TIMEOUT_MS = Math.max(3000, Number(process.env.OBJECT_DETECTION_TIMEOUT_MS) || 8_000);
+
   detect(image, minScore = 0.55) {
     const task = () => new Promise((resolve, reject) => {
       const id = this.nextId++;
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        const stuckWorker = this.worker;
+        this.worker = null;
+        if (stuckWorker) {
+          try { stuckWorker.terminate(); } catch {}
+        }
         reject(new Error('Objekterkennung Timeout'));
-      }, 60_000);
+      }, DETECT_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       const payload = Buffer.from(image);
       this.ensureWorker().postMessage({ id, image: payload, minScore });

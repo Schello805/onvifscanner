@@ -55,17 +55,26 @@ export async function GET(req: Request) {
       },
     });
 
+    const tz = process.env.TZ || "Europe/Berlin";
     let formatted = events.map((ev) => {
       const d = new Date(ev.timestamp);
-      const hours = String(d.getHours()).padStart(2, "0");
-      const mins = String(d.getMinutes()).padStart(2, "0");
-      const secs = String(d.getSeconds()).padStart(2, "0");
+      const p = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(d);
+      const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
+      const hours = g("hour");
+      const mins = g("minute");
+      const secs = g("second");
       const timeStr = `${hours}:${mins}:${secs}`;
-      const totalMinutes = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const evDateStr = `${year}-${month}-${day}`;
+      const totalMinutes = Number(hours) * 60 + Number(mins) + Number(secs) / 60;
+      const evDateStr = `${g("year")}-${g("month")}-${g("day")}`;
       const recordingPath = ev.motionRecording?.status === "ready" ? ev.motionRecording.filePath : null;
       const clipId = recordingPath ? Buffer.from(recordingPath).toString("base64url") : null;
 

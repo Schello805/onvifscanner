@@ -332,15 +332,6 @@ async function detectCameraMotion(cam) {
   const ignoreRegions = parseMotionIgnoreRegions(cam.motionIgnoreRegions);
   const maskKey = JSON.stringify(ignoreRegions);
 
-  const onvifEventIsHealthy = cam.motionEventSource === 'onvif'
-    && cam.motionEventState === 'active'
-    && cam.motionEventCheckedAt
-    && Date.now() - cam.motionEventCheckedAt.getTime() < 90_000;
-  if (onvifEventIsHealthy && ignoreRegions.length === 0 && !cam.objectDetectionEnabled && !cam.licensePlateRecognitionEnabled) {
-    motionFrames.delete(cam.id);
-    return;
-  }
-
   let snapshotUris = [];
   let streamUris = [];
   try { snapshotUris = JSON.parse(cam.snapshotUris); } catch {}
@@ -573,13 +564,10 @@ async function detectCameraMotion(cam) {
         const warningKey = `object:${cam.id}`;
         const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
         if (Date.now() - lastLogged > 60_000) {
-          const fallback = cam.objectDetectionEnabled
-            ? 'Ereignis wird wegen aktivem Objektfilter verworfen.'
-            : 'Rohbewegung wird ohne Kennzeichenauswertung verwendet.';
-          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; ${fallback}`);
+          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Rohbewegung wird als Fallback verwendet.`);
           motionFailureLogTimes.set(warningKey, Date.now());
         }
-        if (cam.objectDetectionEnabled) return;
+        eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
       }
     }
     if (!eventImage) {

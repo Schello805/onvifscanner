@@ -116,7 +116,7 @@ function extractSimpleItems(xml) {
 
 function parseMotionNotification(notificationXml) {
   const topic = decodeXml(extractXmlTag(notificationXml, 'Topic') || '').replace(/\s+/g, ' ').trim();
-  if (!/(?:Motion|MotionAlarm|MotionDetection|CellMotion|LineDetector|FieldDetector|Tamper|PIR|Intrusion|VideoAnalytics)/i.test(topic)) return null;
+  if (!/(?:Motion|MotionAlarm|MotionDetection|CellMotion|LineDetector|FieldDetector|Tamper|PIR|Intrusion)(?:$|[\/.:])/i.test(topic)) return null;
 
   const dataXml = extractXmlTag(notificationXml, 'Data') || '';
   const stateNames = /^(?:IsMotion|Motion|MotionAlarm|State|LogicalState|Active|Inside|Crossed|Alarm)$/i;
@@ -443,7 +443,9 @@ class OnvifEventManager {
           where: { id: { in: oldEvents.map((event) => event.id) } }
         });
       }
-    } catch {}
+    } catch (err) {
+      console.error(`[ONVIF Events] ${cam.name}: Fehler beim Erfassen des Bewegungsereignisses:`, err);
+    }
   }
 
   async updateEventHealth(cameraId, state, source, error, force = false, lastSeen = undefined) {
