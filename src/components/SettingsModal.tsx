@@ -24,6 +24,7 @@ import {
   Database,
   FileJson,
   Car,
+  AlertTriangle,
 } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
@@ -87,6 +88,7 @@ export function SettingsModal({
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
 
   // Web-Push
+  const [isSecureContext, setIsSecureContext] = useState(true);
   const [isPushSupported, setIsPushSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [pushDeviceCount, setPushDeviceCount] = useState<number | null>(null);
@@ -105,7 +107,25 @@ export function SettingsModal({
 
   const checkPushStatus = useCallback(async () => {
     if (typeof window === "undefined") return;
+
+    // Load registered push device count from server regardless of local browser capabilities
+    try {
+      const res = await fetch("/api/push");
+      if (res.ok) {
+        const json = await res.json();
+        setPushDeviceCount(json.activeCount ?? 0);
+      } else {
+        setPushDeviceCount(0);
+      }
+    } catch {
+      setPushDeviceCount(0);
+    }
+
+    const isSecure = window.isSecureContext ?? (window.location.protocol === "https:" || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    setIsSecureContext(Boolean(isSecure));
+
     const supported =
+      Boolean(isSecure) &&
       "serviceWorker" in navigator &&
       "PushManager" in window &&
       "Notification" in window;
@@ -113,12 +133,6 @@ export function SettingsModal({
     if (!supported) return;
 
     try {
-      const res = await fetch("/api/push");
-      if (res.ok) {
-        const json = await res.json();
-        setPushDeviceCount(json.activeCount ?? 0);
-      }
-
       const reg = await navigator.serviceWorker.getRegistration();
       if (reg) {
         const sub = await reg.pushManager.getSubscription();
@@ -1006,6 +1020,37 @@ export function SettingsModal({
                     )}
                   </p>
 
+                  {!isSecureContext ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed space-y-1">
+                      <div className="font-semibold flex items-center gap-1.5 text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{t("HTTPS erforderlich für Web-Push", "HTTPS required for Web-Push")}</span>
+                      </div>
+                      <p className="text-slate-300 text-[11px]">
+                        {t(
+                          "Browser erlauben Web-Push & Service Worker aus Sicherheitsgründen ausschließlich über HTTPS (oder localhost). Bei Zugriff über unverschlüsseltes HTTP (z. B. http://192.168.x.x) sperrt der Browser die Push-Funktion.",
+                          "Browsers only allow Web-Push & Service Workers over HTTPS (or localhost) for security. When accessed via unencrypted HTTP (e.g. http://192.168.x.x), push notifications are blocked by the browser."
+                        )}
+                      </p>
+                      <p className="text-amber-200/90 text-[11px] font-medium pt-0.5">
+                        💡 {t("Tipp: Nutze für HTTP alternativ Telegram oder ntfy (unten konfigurierbar).", "Tip: Use Telegram or ntfy as an alternative over HTTP (configurable below).")}
+                      </p>
+                    </div>
+                  ) : !isPushSupported ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed space-y-1">
+                      <div className="font-semibold flex items-center gap-1.5 text-amber-300">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{t("Browser unterstützt keinen Web-Push", "Browser does not support Web-Push")}</span>
+                      </div>
+                      <p className="text-slate-300 text-[11px]">
+                        {t(
+                          "Dieser Browser unterstützt die Push-API nicht. Auf iOS (iPhone/iPad) muss die Seite zuerst über das Teilen-Menü ('Zum Home-Bildschirm') als PWA installiert und von dort geöffnet werden.",
+                          "This browser does not support the Push API. On iOS (iPhone/iPad), the web app must be added to Home Screen as a PWA first."
+                        )}
+                      </p>
+                    </div>
+                  ) : null}
+
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
                     <div className="text-[11px] text-slate-400">
                       {pushDeviceCount !== null && (
@@ -1022,7 +1067,7 @@ export function SettingsModal({
                           type="button"
                           onClick={handleUnsubscribePush}
                           disabled={pushLoading}
-                          className="btn btn-xs border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 disabled:opacity-40 rounded-lg"
+                          className="btn btn-xs border border-rose-500/30 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25 disabled:opacity-40 rounded-lg"
                         >
                           {pushLoading ? <span className="loading loading-spinner loading-xs" /> : t("Deaktivieren", "Disable")}
                         </button>
@@ -1031,12 +1076,13 @@ export function SettingsModal({
                           type="button"
                           onClick={handleSubscribePush}
                           disabled={pushLoading || !isPushSupported}
-                          className="btn btn-xs border border-purple-500/40 bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 rounded-lg gap-1.5 shadow-sm"
+                          className="btn btn-xs border border-purple-500/50 bg-purple-600 hover:bg-purple-500 !text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed rounded-lg gap-1.5 shadow-sm transition"
+                          title={!isPushSupported ? (!isSecureContext ? t("HTTPS erforderlich", "HTTPS required") : t("Nicht unterstützt", "Not supported")) : undefined}
                         >
                           {pushLoading ? (
                             <span className="loading loading-spinner loading-xs" />
                           ) : (
-                            <BellRing className="w-3 h-3" />
+                            <BellRing className="w-3 h-3 text-white" />
                           )}
                           <span>{t("Auf diesem Gerät aktivieren", "Enable on this device")}</span>
                         </button>
@@ -1045,8 +1091,9 @@ export function SettingsModal({
                       <button
                         type="button"
                         onClick={handleTestPush}
-                        disabled={pushTesting || (pushDeviceCount === 0 && !isSubscribed)}
-                        className="btn btn-xs border border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 disabled:opacity-40 rounded-lg gap-1.5"
+                        disabled={pushTesting || ((pushDeviceCount ?? 0) === 0 && !isSubscribed)}
+                        className="btn btn-xs border border-purple-500/30 bg-purple-500/15 text-purple-200 hover:bg-purple-500/25 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg gap-1.5 transition"
+                        title={((pushDeviceCount ?? 0) === 0 && !isSubscribed) ? t("Zuerst auf einem Gerät aktivieren", "Enable on a device first") : undefined}
                       >
                         {pushTesting ? (
                           <span className="loading loading-spinner loading-xs" />
