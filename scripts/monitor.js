@@ -468,10 +468,17 @@ async function detectCameraMotion(cam) {
     }
 
     const confirmationCount = (previous.confirmationCount || 0) + 1;
-    const requiredConfirmations = Math.max(2, motionConfirmationFrames);
+    const isDistinctMotion = (changedArea >= Math.max(0.018, requiredArea * 1.3) && meanDifference >= Math.max(1.2, requiredMean * 1.2))
+      || (changedArea >= 0.035);
+    const requiredConfirmations = isDistinctMotion ? 1 : Math.max(2, motionConfirmationFrames);
     if (confirmationCount < requiredConfirmations) {
       motionFrames.set(cam.id, {
-        ...previous,
+        pixels,
+        noiseArea: previous.noiseArea,
+        noiseMean: previous.noiseMean,
+        maskKey,
+        activeMask: previous.activeMask,
+        activePixelCount,
         confirmationCount,
       });
       return;
@@ -542,7 +549,7 @@ async function detectCameraMotion(cam) {
       try {
         eventImage = await fetchMotionEventImage(cam, uris, { highRes: Boolean(cam.licensePlateRecognitionEnabled) });
         if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
-        detectionResult = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
+        detectionResult = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, (Number(cam.objectMinConfidence || 50) - 10) / 100)));
         const result = detectionResult;
         const motionEvidence = {
           width: info.width,

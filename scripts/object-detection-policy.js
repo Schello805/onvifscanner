@@ -44,10 +44,13 @@ function pointIsIgnored(x, y, ignoreRegions) {
 function detectionMotionRatio(prediction, result, motionEvidence) {
   if (!motionEvidence?.changedPixels?.length) return 1;
   const [x, y, width, height] = prediction.bbox || [];
-  const left = Math.max(0, Math.floor((Number(x) / Math.max(1, result.width)) * motionEvidence.width));
-  const right = Math.min(motionEvidence.width, Math.ceil(((Number(x) + Number(width)) / Math.max(1, result.width)) * motionEvidence.width));
-  const top = Math.max(0, Math.floor((Number(y) / Math.max(1, result.height)) * motionEvidence.height));
-  const bottom = Math.min(motionEvidence.height, Math.ceil(((Number(y) + Number(height)) / Math.max(1, result.height)) * motionEvidence.height));
+  // For walking persons, expand search region to account for travel distance between analysis frame and detail image
+  const padX = prediction.className === 'person' ? Math.max(Number(width) * 0.4, (result.width || 100) * 0.08) : 0;
+  const padY = prediction.className === 'person' ? Math.max(Number(height) * 0.2, (result.height || 100) * 0.05) : 0;
+  const left = Math.max(0, Math.floor(((Number(x) - padX) / Math.max(1, result.width)) * motionEvidence.width));
+  const right = Math.min(motionEvidence.width, Math.ceil(((Number(x) + Number(width) + padX) / Math.max(1, result.width)) * motionEvidence.width));
+  const top = Math.max(0, Math.floor(((Number(y) - padY) / Math.max(1, result.height)) * motionEvidence.height));
+  const bottom = Math.min(motionEvidence.height, Math.ceil(((Number(y) + Number(height) + padY) / Math.max(1, result.height)) * motionEvidence.height));
   let boxPixels = 0;
   let changedPixels = 0;
   for (let row = top; row < bottom; row += 1) {
@@ -60,7 +63,7 @@ function detectionMotionRatio(prediction, result, motionEvidence) {
 }
 
 function requiredMotionRatio(prediction) {
-  if (prediction.className === 'person') return 0.025;
+  if (prediction.className === 'person') return 0.005;
   if (objectClassGroups.vehicle.has(prediction.className)) return 0.035;
   return 0.03;
 }

@@ -45,4 +45,16 @@ const excludedVehicleClasses = {
 assert.deepEqual(relevantDetections(excludedVehicleClasses, camera, [], relevantMotion), []);
 assert.deepEqual(relevantDetections(excludedVehicleClasses, camera, [], relevantMotion, { vehicleOnly: true }), []);
 
+const walkingPersonResult = {
+  width: 100,
+  height: 100,
+  predictions: [{ className: 'person', score: 0.88, bbox: [50, 40, 20, 40] }],
+};
+// Motion was at [35, 40] (where the person walked from a moment earlier)
+const walkingMotion = { width: 10, height: 10, changedPixels: new Uint8Array(100) };
+walkingMotion.changedPixels[4 * 10 + 4] = 1; // x=40, y=40 (within walking padding)
+const personDetections = relevantDetections(walkingPersonResult, { objectDetectionClasses: ['person'] }, [], walkingMotion);
+assert.equal(personDetections.length, 1);
+assert.equal(personDetections[0].className, 'person');
+
 console.log('Object detection policy tests passed.');
