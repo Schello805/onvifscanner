@@ -1,7 +1,7 @@
 const path = require('path');
 const { Worker } = require('worker_threads');
 
-const DETECT_TIMEOUT_MS = Math.max(3000, Number(process.env.OBJECT_DETECTION_TIMEOUT_MS) || 8_000);
+const DETECT_TIMEOUT_MS = Math.max(5000, Number(process.env.OBJECT_DETECTION_TIMEOUT_MS) || 25_000);
 
 class ObjectDetector {
   constructor() {

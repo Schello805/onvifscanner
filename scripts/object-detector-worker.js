@@ -24,6 +24,9 @@ async function loadModel() {
   return modelPromise;
 }
 
+// Eagerly preload model in the background so it is ready before the first request
+void loadModel().catch(() => {});
+
 parentPort.on('message', async ({ id, image, minScore }) => {
   let tensor;
   try {

@@ -621,9 +621,10 @@ async function detectCameraMotion(cam) {
         const warningKey = `object:${cam.id}`;
         const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
         if (Date.now() - lastLogged > 60_000) {
-          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Rohbewegung wird als Fallback verwendet.`);
+          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Ereignis wird wegen aktivem Objektfilter verworfen.`);
           motionFailureLogTimes.set(warningKey, Date.now());
         }
+        if (cam.objectDetectionEnabled) return;
         eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
       }
     }
