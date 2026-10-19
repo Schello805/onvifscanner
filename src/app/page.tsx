@@ -10,7 +10,7 @@ import { PtzControlPad } from "@/components/camera/PtzControlPad";
 import { CameraEditModal, type CameraEditDraft } from "@/components/camera/CameraEditModal";
 import { KioskMode } from "@/components/camera/KioskMode";
 import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
-import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X } from "lucide-react";
+import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -57,6 +57,8 @@ type ActivityEvent = {
   cameraIp: string;
   timestamp: string;
   message: string;
+  imageUrl?: string | null;
+  objectDetections?: Array<{ className?: string; group?: string; score?: number }>;
   licensePlates?: LicensePlateItem[];
 };
 
@@ -132,13 +134,14 @@ export default function CameraWallPage() {
   const [isKioskOpen, setIsKioskOpen] = useState(false);
   const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
   const [targetPlate, setTargetPlate] = useState<string>("");
+  const [selectedSnapshot, setSelectedSnapshot] = useState<{ url: string; title: string } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [groupModal, setGroupModal] = useState<{
     type: "rename" | "delete";
     groupName: string;
   } | null>(null);
   const [groupNewName, setGroupNewName] = useState("");
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId || groupModal));
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId || groupModal || selectedSnapshot));
 
   const existingGroups = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -1934,7 +1937,7 @@ export default function CameraWallPage() {
                         ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
                         : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
                     return (
-                      <article key={event.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                      <article key={event.id} className="grid gap-2.5 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[auto_1fr_auto_auto] sm:items-center">
                         <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold ${appearance.color}`}>
                           {appearance.icon} {appearance.label}
                         </span>
@@ -1978,6 +1981,25 @@ export default function CameraWallPage() {
                             </div>
                           ) : null}
                         </div>
+                        {event.imageUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSnapshot({ url: event.imageUrl!, title: `${event.cameraName} · ${event.message}` })}
+                            className="group relative h-11 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700/80 bg-black/60 shadow transition hover:border-red-500"
+                            title="Alarm-Schnappschuss mit rotem Erkennungsrahmen vergrößern"
+                          >
+                            <img
+                              src={event.imageUrl}
+                              alt="Erkennung"
+                              className="h-full w-full object-cover transition duration-150 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition">
+                              <Maximize2 className="h-3.5 w-3.5 text-white drop-shadow" />
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="hidden sm:block w-0" />
+                        )}
                         <time className="whitespace-nowrap font-mono text-[11px] text-slate-400" dateTime={event.timestamp}>
                           {new Date(event.timestamp).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "medium" })}
                         </time>
@@ -2153,6 +2175,41 @@ export default function CameraWallPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>,
+            document.body
+          )}
+
+          {selectedSnapshot && typeof document !== "undefined" && createPortal(
+            <div
+              className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
+              onClick={() => setSelectedSnapshot(null)}
+            >
+              <div
+                className="relative max-h-[90vh] max-w-4xl w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-3 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="mb-2.5 flex items-center justify-between border-b border-slate-800/80 pb-2 px-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                    <h3 className="text-sm font-semibold text-white truncate">{selectedSnapshot.title}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSnapshot(null)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition"
+                    aria-label="Schließen"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-center overflow-hidden rounded-xl bg-black/90 p-1">
+                  <img
+                    src={selectedSnapshot.url}
+                    alt="Erkennungsschnappschuss"
+                    className="max-h-[75vh] w-auto max-w-full object-contain rounded-lg"
+                  />
+                </div>
               </div>
             </div>,
             document.body

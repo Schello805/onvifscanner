@@ -108,6 +108,8 @@ export type MotionEvent = {
   message: string;
   objectClasses?: string[];
   objectDetections?: Array<{ className?: string; group?: string; score?: number }>;
+  licensePlates?: Array<{ plate: string; knownName?: string | null; category?: string; confidence?: number }>;
+  imageUrl?: string | null;
   motionRecordingId?: string | null;
   motionRecordingStatus?: string | null;
   motionRecordingError?: string | null;

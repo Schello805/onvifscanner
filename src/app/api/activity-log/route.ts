@@ -46,6 +46,14 @@ export async function GET(request: Request) {
         cameraIp: alarm.camera.ip,
         timestamp: alarm.timestamp.toISOString(),
         message: alarm.message || "Bewegung erkannt",
+        imageUrl: alarm.imageUrl || null,
+        objectDetections: (() => {
+          try {
+            return JSON.parse(alarm.objectDetections || "[]");
+          } catch {
+            return [];
+          }
+        })(),
         licensePlates: (() => {
           try {
             const raw = JSON.parse(alarm.licensePlates || "[]");

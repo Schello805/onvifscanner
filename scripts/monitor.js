@@ -13,6 +13,10 @@ const {
   objectDetectionMessage,
 } = require('./object-detection-policy');
 const {
+  annotateDetectedObjects,
+  createAnnotatedThumbnail,
+} = require('./image-annotator');
+const {
   motionMonitoringRequested,
   requiresServerMotionValidation,
   motionCooldownSeconds,
@@ -478,6 +482,7 @@ async function detectCameraMotion(cam) {
     let detectedObjects = [];
     let recognizedPlates = [];
     let eventImage = null;
+    let detectionResult = null;
     if (cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) {
       if (!objectDetectionEnabled) {
         const warningKey = `object-disabled:${cam.id}`;
@@ -493,7 +498,8 @@ async function detectCameraMotion(cam) {
       try {
         eventImage = await fetchMotionEventImage(cam, uris, { highRes: Boolean(cam.licensePlateRecognitionEnabled) });
         if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
-        const result = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
+        detectionResult = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, Number(cam.objectMinConfidence || 55) / 100)));
+        const result = detectionResult;
         const motionEvidence = {
           width: info.width,
           height: info.height,
@@ -581,11 +587,35 @@ async function detectCameraMotion(cam) {
       select: { id: true },
     });
     if (!recentEvent) {
+      let finalNotificationImage = eventImage;
+      let snapshotThumbnailUrl = null;
+
+      if (eventImage && detectedObjects.length) {
+        try {
+          finalNotificationImage = await annotateDetectedObjects(eventImage, detectedObjects, {
+            sourceWidth: detectionResult?.width,
+            sourceHeight: detectionResult?.height,
+            plates: recognizedPlates,
+          });
+        } catch (error) {
+          console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
+        }
+      }
+
+      if (finalNotificationImage) {
+        try {
+          snapshotThumbnailUrl = await createAnnotatedThumbnail(finalNotificationImage, 640, 65);
+        } catch {
+          // quiet
+        }
+      }
+
       await prisma.alarmLog.create({
         data: {
           cameraId: cam.id,
           message: eventMessage,
           timestamp: checkedAt,
+          imageUrl: snapshotThumbnailUrl,
           objectClasses: detectedObjects.length
             ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
             : null,
@@ -597,7 +627,7 @@ async function detectCameraMotion(cam) {
         prisma,
         cam,
         eventMessage,
-        eventImage ? { imageBuffer: eventImage, contentType: 'image/jpeg' } : {},
+        finalNotificationImage ? { imageBuffer: finalNotificationImage, contentType: 'image/jpeg' } : {},
       );
       console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({

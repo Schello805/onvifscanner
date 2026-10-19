@@ -91,6 +91,7 @@ export async function GET(req: Request) {
         licensePlates: (() => {
           try { return JSON.parse(ev.licensePlates || "[]"); } catch { return []; }
         })(),
+        imageUrl: ev.imageUrl ?? null,
         motionRecordingId: ev.motionRecording?.id ?? null,
         motionRecordingStatus: recordingStatus,
         motionRecordingError: ev.motionRecording?.error ?? null,
