@@ -31,7 +31,18 @@ function isLoopbackAddress(addr) {
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  // Zeitzone aus Einstellungen laden
+  try {
+    const { PrismaClient } = require("@prisma/client");
+    const prisma = new PrismaClient();
+    const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+    if (settings?.timezone) {
+      process.env.TZ = settings.timezone;
+    }
+    await prisma.$disconnect();
+  } catch {}
+
   let mediaMtx = null;
   let mediaRestartTimer = null;
   let monitorController = null;

@@ -103,6 +103,7 @@ model Settings {
   telegramEnabled             Boolean  @default(false)
   telegramCameraStatusEnabled Boolean  @default(false)
   motionSensitivityV3Migrated Boolean  @default(false)
+  timezone                    String?  @default("Europe/Berlin")
 }
 
 model DiscoveredDevice {

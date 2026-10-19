@@ -60,6 +60,10 @@ export async function POST(req: Request) {
     if (body.telegramCameraStatusEnabled !== undefined) updateData.telegramCameraStatusEnabled = Boolean(body.telegramCameraStatusEnabled);
     if (body.columns !== undefined) updateData.columns = body.columns;
     if (body.autoCleanup !== undefined) updateData.autoCleanup = body.autoCleanup;
+    if (body.timezone !== undefined) {
+      updateData.timezone = String(body.timezone || "Europe/Berlin").trim();
+      process.env.TZ = updateData.timezone;
+    }
 
     const settings = await prisma.settings.upsert({
       where: { id: "default" },
