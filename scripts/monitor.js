@@ -24,6 +24,7 @@ const {
   motionCooldownSeconds,
 } = require('./motion-policy');
 const { decryptSecret } = require('./security');
+const { clampCameraSensitivities } = require('./reset-sensitivity');
 
 const prisma = new PrismaClient();
 const onvifEvents = new OnvifEventManager(prisma);
@@ -48,6 +49,7 @@ let isMonitoring = false;
 let cycleRunning = false;
 const motionFrames = new Map();
 const motionFailureLogTimes = new Map();
+const lastAlarmTimes = new Map();
 let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
@@ -145,16 +147,13 @@ async function runMonitorCycle() {
     }
     if (!motionSensitivityDefaultsMigrated) {
       const settings = await prisma.settings.findUnique({ where: { id: 'default' } });
-      if (!settings?.motionSensitivityV3Migrated) {
-        await prisma.$transaction([
-          prisma.camera.updateMany({ data: { motionSensitivity: 80 } }),
-          prisma.settings.upsert({
-            where: { id: 'default' },
-            update: { motionSensitivityV3Migrated: true },
-            create: { id: 'default', motionSensitivityV3Migrated: true },
-          }),
-        ]);
-        console.log('[Motion Detection] Bewegungsempfindlichkeit bestehender Kameras auf 80 % gesetzt.');
+      if (!settings?.motionSensitivityV4Clamped) {
+        await clampCameraSensitivities(prisma);
+        await prisma.settings.upsert({
+          where: { id: 'default' },
+          update: { motionSensitivityV4Clamped: true },
+          create: { id: 'default', motionSensitivityV4Clamped: true },
+        });
       }
       motionSensitivityDefaultsMigrated = true;
     }
@@ -387,15 +386,30 @@ async function detectCameraMotion(cam) {
       signedDifferenceSum += pixels[index] - previous.pixels[index];
     }
     const globalBrightnessShift = activePixelCount > 0 ? signedDifferenceSum / activePixelCount : 0;
+
+    // Reject sudden scene-wide lighting or camera auto-exposure changes
+    if (Math.abs(globalBrightnessShift) >= 16) {
+      motionFrames.set(cam.id, {
+        pixels,
+        noiseArea: previous.noiseArea * 0.7 + 0.05,
+        noiseMean: previous.noiseMean * 0.7 + 1.0,
+        maskKey,
+        activeMask: previous.activeMask,
+        activePixelCount,
+        confirmationCount: 0,
+      });
+      return;
+    }
+
     let changedPixels = 0;
     let differenceSum = 0;
     const changedPixelMap = new Uint8Array(info.width * info.height);
     const configuredSensitivity = cam.motionScheduleEnabled && isMotionScheduleActive(cam)
       ? cam.motionScheduleSensitivity
       : cam.motionSensitivity;
-    const sensitivity = Math.min(100, Math.max(1, Number(configuredSensitivity) || 80));
-    const sensitivityFactor = 1.5 - sensitivity / 100;
-    const effectivePixelThreshold = Math.max(8, Math.round(motionPixelThreshold * sensitivityFactor));
+    const sensitivity = Math.min(90, Math.max(1, Number(configuredSensitivity) || 75));
+    const sensitivityFactor = Math.max(0.6, 1.5 - sensitivity / 100);
+    const effectivePixelThreshold = Math.max(14, Math.round(motionPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
       const pixelIndex = Math.floor(index / channels);
       if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
@@ -420,8 +434,8 @@ async function detectCameraMotion(cam) {
     }
     const changedArea = changedPixels / activePixelCount;
     const meanDifference = differenceSum / activePixelCount;
-    const requiredArea = Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.004) * sensitivityFactor;
-    const requiredMean = Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.4) * sensitivityFactor;
+    const requiredArea = Math.max(0.012, Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.005) * sensitivityFactor);
+    const requiredMean = Math.max(0.8, Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.5) * sensitivityFactor);
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
 
     const checkedAt = new Date();
@@ -454,8 +468,7 @@ async function detectCameraMotion(cam) {
     }
 
     const confirmationCount = (previous.confirmationCount || 0) + 1;
-    const isDistinctMotion = changedArea >= requiredArea * 1.4 && meanDifference >= requiredMean * 1.4;
-    const requiredConfirmations = isDistinctMotion ? 1 : motionConfirmationFrames;
+    const requiredConfirmations = Math.max(2, motionConfirmationFrames);
     if (confirmationCount < requiredConfirmations) {
       motionFrames.set(cam.id, {
         ...previous,
@@ -472,6 +485,42 @@ async function detectCameraMotion(cam) {
       activePixelCount,
       confirmationCount: 0,
     });
+
+    const cooldownSeconds = motionCooldownSeconds(cam);
+    const lastAlarm = lastAlarmTimes.get(cam.id) || 0;
+    if (Date.now() - lastAlarm < cooldownSeconds * 1000) {
+      motionFrames.set(cam.id, {
+        pixels,
+        noiseArea: previous.noiseArea * 0.9 + changedArea * 0.1,
+        noiseMean: previous.noiseMean * 0.9 + meanDifference * 0.1,
+        maskKey,
+        activeMask: previous.activeMask,
+        activePixelCount,
+        confirmationCount: 0,
+      });
+      return;
+    }
+
+    const recentEvent = await prisma.alarmLog.findFirst({
+      where: {
+        cameraId: cam.id,
+        timestamp: { gte: new Date(checkedAt.getTime() - cooldownSeconds * 1000) },
+      },
+      select: { id: true },
+    });
+    if (recentEvent) {
+      lastAlarmTimes.set(cam.id, checkedAt.getTime());
+      motionFrames.set(cam.id, {
+        pixels,
+        noiseArea: previous.noiseArea * 0.9 + changedArea * 0.1,
+        noiseMean: previous.noiseMean * 0.9 + meanDifference * 0.1,
+        maskKey,
+        activeMask: previous.activeMask,
+        activePixelCount,
+        confirmationCount: 0,
+      });
+      return;
+    }
 
     let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
     let detectedObjects = [];
@@ -579,18 +628,10 @@ async function detectCameraMotion(cam) {
       }
     }
 
-    const cooldownSeconds = motionCooldownSeconds(cam);
-    const recentEvent = await prisma.alarmLog.findFirst({
-      where: {
-        cameraId: cam.id,
-        timestamp: { gte: new Date(checkedAt.getTime() - cooldownSeconds * 1000) },
-      },
-      select: { id: true },
-    });
-    if (!recentEvent) {
-      let finalNotificationImage = eventImage;
-      let snapshotUrl = null;
-      const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let finalNotificationImage = eventImage;
+    let snapshotUrl = null;
+    const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    lastAlarmTimes.set(cam.id, checkedAt.getTime());
 
       let motionBbox = null;
       if (eventImage) {
@@ -668,7 +709,6 @@ async function detectCameraMotion(cam) {
         }
         await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
       }
-    }
     await prisma.camera.update({
       where: { id: cam.id },
       data: {

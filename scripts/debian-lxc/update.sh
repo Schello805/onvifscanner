@@ -215,6 +215,9 @@ if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"
 fi
 
+echo "Prüfe und sichere Bewegungsempfindlichkeit der Kameras..."
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; cd '$APP_DIR' && node scripts/reset-sensitivity.js" || true
+
 install -m 0755 "$APP_DIR/deploy/onvifscanner-start" /usr/local/bin/onvifscanner-start
 if [[ -f "$APP_DIR/deploy/onvifscanner-storage-helper" ]]; then
   install -m 0755 "$APP_DIR/deploy/onvifscanner-storage-helper" /usr/local/bin/onvifscanner-storage-helper

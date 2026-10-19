@@ -32,14 +32,16 @@ function isLoopbackAddress(addr) {
 }
 
 app.prepare().then(async () => {
-  // Zeitzone aus Einstellungen laden
+  // Zeitzone aus Einstellungen laden & Kamerasensitivität auf sichere Werte prüfen
   try {
     const { PrismaClient } = require("@prisma/client");
+    const { clampCameraSensitivities } = require("./scripts/reset-sensitivity");
     const prisma = new PrismaClient();
     const settings = await prisma.settings.findUnique({ where: { id: "default" } });
     if (settings?.timezone) {
       process.env.TZ = settings.timezone;
     }
+    await clampCameraSensitivities(prisma);
     await prisma.$disconnect();
   } catch {}
 
