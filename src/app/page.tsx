@@ -1769,25 +1769,44 @@ export default function CameraWallPage() {
                       </button>
                     </div>
 
-                    {/* Action Icons Row */}
+                    {/* Action Icons Row: Von rechts nach links: Bearbeiten, Stopp, Videos schauen, Löschen */}
                     <div className="flex items-center justify-center gap-2.5 sm:gap-3.5 my-auto">
-                      {/* 1. Stift bearbeiten */}
+                      {/* 1. Mülleimer (Entfernen / Löschen) */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCameraMenuId(null);
                           setActiveCameraControlsId(null);
-                          openEditor(camera);
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
+                            removeCamera(camera.id);
+                          }
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
-                        title="Kamera bearbeiten"
-                        aria-label="Kamera bearbeiten"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
+                        title="Von Monitoren entfernen"
+                        aria-label="Von Monitoren entfernen"
                       >
-                        <Pencil className="w-5 h-5" />
+                        <Trash2 className="w-5 h-5 text-white" />
                       </button>
 
-                      {/* 2. Aufnahme starten / stoppen */}
+                      {/* 2. Aufnahmen öffnen (Videos schauen) */}
+                      {camera.recordEnabled ? (
+                        <Link
+                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCameraMenuId(null);
+                            setActiveCameraControlsId(null);
+                          }}
+                          className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-lg shadow-amber-600/40"
+                          title="Aufnahmen öffnen"
+                          aria-label="Aufnahmen öffnen"
+                        >
+                          <Film className="w-5 h-5 text-white" />
+                        </Link>
+                      ) : null}
+
+                      {/* 3. Aufnahme starten / stoppen */}
                       <button
                         type="button"
                         disabled={recordLoading.has(camera.id)}
@@ -1812,39 +1831,20 @@ export default function CameraWallPage() {
                         )}
                       </button>
 
-                      {/* 3. Aufnahmen öffnen (Display / Film Symbol) */}
-                      {camera.recordEnabled ? (
-                        <Link
-                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCameraMenuId(null);
-                            setActiveCameraControlsId(null);
-                          }}
-                          className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-lg shadow-amber-600/40"
-                          title="Aufnahmen öffnen"
-                          aria-label="Aufnahmen öffnen"
-                        >
-                          <Film className="w-5 h-5 text-white" />
-                        </Link>
-                      ) : null}
-
-                      {/* 4. Mülleimer (Entfernen) */}
+                      {/* 4. Stift bearbeiten */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCameraMenuId(null);
                           setActiveCameraControlsId(null);
-                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
-                            removeCamera(camera.id);
-                          }
+                          openEditor(camera);
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
-                        title="Von Monitoren entfernen"
-                        aria-label="Von Monitoren entfernen"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
+                        title="Kamera bearbeiten"
+                        aria-label="Kamera bearbeiten"
                       >
-                        <Trash2 className="w-5 h-5 text-white" />
+                        <Pencil className="w-5 h-5" />
                       </button>
                     </div>
                   </div>
