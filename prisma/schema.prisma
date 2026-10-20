@@ -46,6 +46,7 @@ model Camera {
   motionEventCheckedAt      DateTime?
   motionEventLastError      String?
   alarmCooldownSeconds      Int            @default(30)
+  motionMinAreaPercent      Float?
   notificationsEnabled      Boolean        @default(false)
   storageTargetId           String?
   storageTarget             StorageTarget? @relation(fields: [storageTargetId], references: [id], onDelete: SetNull)
@@ -104,6 +105,8 @@ model Settings {
   telegramCameraStatusEnabled Boolean  @default(false)
   motionSensitivityV3Migrated Boolean  @default(false)
   timezone                    String?  @default("Europe/Berlin")
+  motionMinAreaPercent        Float?   @default(1.5)
+  motionPixelThreshold        Int?     @default(18)
 }
 
 model DiscoveredDevice {

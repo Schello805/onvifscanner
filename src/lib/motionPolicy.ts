@@ -13,6 +13,7 @@ type MotionPolicyCamera = {
   objectDetectionEnabled?: boolean | null;
   licensePlateRecognitionEnabled?: boolean | null;
   alarmCooldownSeconds?: number | null;
+  motionMinAreaPercent?: number | null;
   motionScheduleEnabled?: boolean;
   motionScheduleStart?: string | null;
   motionScheduleEnd?: string | null;

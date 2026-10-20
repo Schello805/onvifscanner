@@ -24,6 +24,7 @@ export type WallCamera = {
   motionPreRollSeconds?: number;
   motionPostRollSeconds?: number;
   alarmCooldownSeconds?: number;
+  motionMinAreaPercent?: number | null;
   motionSensitivity?: number;
   motionIgnoreRegions?: MotionRegion[];
   objectDetectionEnabled?: boolean;
@@ -160,6 +161,7 @@ export function upsertWallCameras(current: WallCamera[], additions: WallCamera[]
         motionPreRollSeconds: existing.motionPreRollSeconds,
         motionPostRollSeconds: existing.motionPostRollSeconds,
         alarmCooldownSeconds: existing.alarmCooldownSeconds,
+        motionMinAreaPercent: existing.motionMinAreaPercent,
         motionSensitivity: existing.motionSensitivity,
         motionIgnoreRegions: existing.motionIgnoreRegions ?? camera.motionIgnoreRegions,
         objectDetectionEnabled: existing.objectDetectionEnabled ?? camera.objectDetectionEnabled,

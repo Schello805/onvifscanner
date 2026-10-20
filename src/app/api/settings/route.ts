@@ -64,6 +64,16 @@ export async function POST(req: Request) {
       updateData.timezone = String(body.timezone || "Europe/Berlin").trim();
       process.env.TZ = updateData.timezone;
     }
+    if (body.motionMinAreaPercent !== undefined) {
+      updateData.motionMinAreaPercent = body.motionMinAreaPercent !== null && body.motionMinAreaPercent !== ""
+        ? Math.max(0.1, Math.min(50, Number(body.motionMinAreaPercent) || 1.5))
+        : 1.5;
+    }
+    if (body.motionPixelThreshold !== undefined) {
+      updateData.motionPixelThreshold = body.motionPixelThreshold !== null && body.motionPixelThreshold !== ""
+        ? Math.max(8, Math.min(80, Math.round(Number(body.motionPixelThreshold) || 18)))
+        : 18;
+    }
 
     const settings = await prisma.settings.upsert({
       where: { id: "default" },

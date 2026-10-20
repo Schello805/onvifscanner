@@ -35,6 +35,7 @@ export async function GET() {
       motionPreRollSeconds: c.motionPreRollSeconds,
       motionPostRollSeconds: c.motionPostRollSeconds,
       alarmCooldownSeconds: c.alarmCooldownSeconds,
+      motionMinAreaPercent: c.motionMinAreaPercent,
       motionSensitivity: c.motionSensitivity,
       motionIgnoreRegions: (() => {
         try { return JSON.parse(c.motionIgnoreRegions || "[]"); } catch { return []; }
@@ -158,6 +159,11 @@ export async function PATCH(req: Request) {
     }
     if (body.alarmCooldownSeconds !== undefined) {
       updateData.alarmCooldownSeconds = Math.min(3600, Math.max(10, Math.round(Number(body.alarmCooldownSeconds) || 30)));
+    }
+    if (body.motionMinAreaPercent !== undefined) {
+      updateData.motionMinAreaPercent = body.motionMinAreaPercent !== null && body.motionMinAreaPercent !== ""
+        ? Math.max(0.1, Math.min(50, Number(body.motionMinAreaPercent)))
+        : null;
     }
     if (body.storageTargetId !== undefined) {
       updateData.storageTargetId = body.storageTargetId ? String(body.storageTargetId).trim() : null;

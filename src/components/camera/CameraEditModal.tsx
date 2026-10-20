@@ -46,6 +46,7 @@ export type CameraEditDraft = {
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
   alarmCooldownSeconds: number;
+  motionMinAreaPercent?: number | null;
   motionSensitivity: number;
   motionIgnoreRegions: MotionRegion[];
   objectDetectionEnabled: boolean;
@@ -929,6 +930,41 @@ export function CameraEditModal({
                       <div className="flex justify-between text-[9px] text-slate-500">
                         <span>Weniger Fehlalarme (robuster)</span>
                         <span>Erkennt kleinste Bewegungen</span>
+                      </div>
+                    </div>
+
+                    {/* Minimum Motion Area */}
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-200">
+                            Mindest-Bewegungsfläche (% Bild)
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            Wie viel Prozent des Bildes sich bewegen müssen. Filtert wackelnde Kissen, Pflanzen oder kleine Tiere.
+                          </span>
+                        </div>
+                        <select
+                          value={editDraft.motionMinAreaPercent != null ? String(editDraft.motionMinAreaPercent) : "default"}
+                          onChange={(e) =>
+                            onUpdateDraft({
+                              ...editDraft,
+                              motionMinAreaPercent: e.target.value === "default" ? null : Number(e.target.value),
+                            })
+                          }
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white shrink-0 border border-white/10"
+                          aria-label="Mindest-Bewegungsfläche"
+                        >
+                          <option value="default">Standard (aus Gesamteinstellungen)</option>
+                          <option value="0.5">0.5% (Sehr empfindlich)</option>
+                          <option value="1.0">1.0% (Fein)</option>
+                          <option value="1.5">1.5% (Standard)</option>
+                          <option value="2.0">2.0% (Mittel)</option>
+                          <option value="3.0">3.0% (Empfohlen gegen Fehlalarme)</option>
+                          <option value="5.0">5.0% (Groß / Personen)</option>
+                          <option value="8.0">8.0% (Sehr groß)</option>
+                          <option value="10.0">10.0% (Nur massive Bewegung)</option>
+                        </select>
                       </div>
                     </div>
 

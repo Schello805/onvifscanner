@@ -320,6 +320,22 @@ async function fetchMotionEventImage(cam, uris, options = {}) {
   }
 }
 
+let cachedGlobalSettings = null;
+let lastSettingsFetchAt = 0;
+
+async function getCachedGlobalSettings() {
+  const now = Date.now();
+  if (!cachedGlobalSettings || now - lastSettingsFetchAt > 10_000) {
+    try {
+      cachedGlobalSettings = await prisma.settings.findUnique({ where: { id: 'default' } });
+      lastSettingsFetchAt = now;
+    } catch {
+      // quiet
+    }
+  }
+  return cachedGlobalSettings;
+}
+
 async function detectCameraMotion(cam) {
   if (cam.status && !cam.status.isOnline) {
     motionFrames.delete(cam.id);
@@ -329,6 +345,13 @@ async function detectCameraMotion(cam) {
     motionFrames.delete(cam.id);
     return;
   }
+
+  const globalSettings = await getCachedGlobalSettings();
+  const globalMinAreaPercent = globalSettings?.motionMinAreaPercent != null ? Number(globalSettings.motionMinAreaPercent) : 1.5;
+  const cameraMinAreaPercent = cam.motionMinAreaPercent != null ? Number(cam.motionMinAreaPercent) : globalMinAreaPercent;
+  const configuredAreaThreshold = Math.max(0.002, Math.min(0.5, cameraMinAreaPercent / 100));
+
+  const globalPixelThreshold = globalSettings?.motionPixelThreshold != null ? Number(globalSettings.motionPixelThreshold) : motionPixelThreshold;
 
   const ignoreRegions = parseMotionIgnoreRegions(cam.motionIgnoreRegions);
   const maskKey = JSON.stringify(ignoreRegions);
@@ -410,7 +433,7 @@ async function detectCameraMotion(cam) {
       : cam.motionSensitivity;
     const sensitivity = Math.min(90, Math.max(1, Number(configuredSensitivity) || 75));
     const sensitivityFactor = Math.max(0.6, 1.5 - sensitivity / 100);
-    const effectivePixelThreshold = Math.max(14, Math.round(motionPixelThreshold * sensitivityFactor));
+    const effectivePixelThreshold = Math.max(10, Math.round(globalPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
       const pixelIndex = Math.floor(index / channels);
       if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
@@ -435,7 +458,10 @@ async function detectCameraMotion(cam) {
     }
     const changedArea = changedPixels / activePixelCount;
     const meanDifference = differenceSum / activePixelCount;
-    const requiredArea = Math.max(0.012, Math.max(motionAreaThreshold, previous.noiseArea * 3 + 0.005) * sensitivityFactor);
+    const requiredArea = Math.max(
+      configuredAreaThreshold * 0.75,
+      Math.max(configuredAreaThreshold, previous.noiseArea * 3 + 0.005) * sensitivityFactor
+    );
     const requiredMean = Math.max(0.8, Math.max(motionMeanThreshold, previous.noiseMean * 2.5 + 0.5) * sensitivityFactor);
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
 
@@ -478,8 +504,8 @@ async function detectCameraMotion(cam) {
     }
 
     const confirmationCount = (previous.confirmationCount || 0) + 1;
-    const isDistinctMotion = (changedArea >= Math.max(0.018, requiredArea * 1.3) && meanDifference >= Math.max(1.2, requiredMean * 1.2))
-      || (changedArea >= 0.035);
+    const isDistinctMotion = (changedArea >= requiredArea * 1.3 && meanDifference >= Math.max(1.2, requiredMean * 1.2))
+      || (changedArea >= configuredAreaThreshold * 2.5);
     const requiredConfirmations = isDistinctMotion ? 1 : Math.max(2, motionConfirmationFrames);
     if (confirmationCount < requiredConfirmations) {
       motionFrames.set(cam.id, {
@@ -723,7 +749,7 @@ async function detectCameraMotion(cam) {
         eventMessage,
         finalNotificationImage ? { imageBuffer: finalNotificationImage, contentType: 'image/jpeg' } : {},
       );
-      console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
+      console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}% / Min ${(requiredArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
       const oldEvents = await prisma.alarmLog.findMany({
         where: { cameraId: cam.id },
         orderBy: { timestamp: 'desc' },
