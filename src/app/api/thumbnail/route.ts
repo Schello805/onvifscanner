@@ -22,6 +22,7 @@ type Body = {
   timeoutMs?: number;
   fastAuth?: boolean;
   fresh?: boolean;
+  preferCaptured?: boolean;
   credentials?: { username: string; password: string };
   credentialsList?: Array<{ username: string; password: string }>;
 };
@@ -89,6 +90,7 @@ function releaseSlot() {
 type CacheEntry = { ts: number; bytes: Buffer; contentType: string; width?: number; height?: number };
 const cache = new Map<string, CacheEntry>();
 const CACHE_MAX_ENTRIES = clampInt(process.env.THUMBNAIL_CACHE_MAX_ENTRIES ?? 256, 0, 2048);
+const latestCameraSnapshots = new Map<string, { ts: number; bytes: Buffer }>();
 
 export async function POST(req: Request) {
   let body: Body;
@@ -96,6 +98,37 @@ export async function POST(req: Request) {
     body = (await req.json()) as Body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+
+  // Fast path: if the caller prefers the exact frame captured during the motion check,
+  // return the cached camera snapshot from that exact millisecond without another network round-trip.
+  if (body.preferCaptured && body.cameraId) {
+    const recent = latestCameraSnapshots.get(body.cameraId);
+    if (recent && Date.now() - recent.ts < 8000) {
+      try {
+        const sharp = await getSharp();
+        configureSharpOnce(sharp);
+        const quality = clampInt(body.quality ?? 82, 30, 95);
+        const size = clampInt(body.size ?? 768, 128, 2560);
+        const resized = await sharp(recent.bytes, { limitInputPixels: 32_000_000 })
+          .rotate()
+          .resize({ width: size, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality })
+          .toBuffer({ resolveWithObject: true });
+        return new NextResponse(resized.data as unknown as BodyInit, {
+          status: 200,
+          headers: {
+            "content-type": "image/jpeg",
+            "cache-control": "no-store",
+            "x-image-width": String(resized.info.width),
+            "x-image-height": String(resized.info.height),
+            "x-captured-frame": "true",
+          },
+        });
+      } catch {
+        // Fall back to camera fetch if resizing fails
+      }
+    }
   }
 
   const rawUrls: string[] = [];
@@ -327,6 +360,9 @@ export async function POST(req: Request) {
       }
 
       const input = Buffer.from(ab);
+      if (body.cameraId) {
+        latestCameraSnapshots.set(body.cameraId, { ts: Date.now(), bytes: input });
+      }
       const sharp = await getSharp();
       configureSharpOnce(sharp);
 
