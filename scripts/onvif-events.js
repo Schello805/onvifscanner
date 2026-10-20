@@ -169,6 +169,7 @@ class OnvifEventManager {
     this.running = false;
     this.activeWorkers = new Map(); // cameraId -> worker state
     this.lastAlarmTimes = new Map(); // cameraId -> timestamp
+    this.cameraMotionSessions = new Map(); // cameraId -> { lastNotifiedAt: number, lastMotionSeenAt: number }
     this.eventStates = new Map();
     this.unsupportedUntil = new Map(); // cameraId -> timestamp
     this.lastHealthUpdates = new Map();
@@ -386,16 +387,32 @@ class OnvifEventManager {
       const currentCamera = await this.prisma.camera.findUnique({ where: { id: cam.id } });
       if (!currentCamera || !shouldAcceptExternalMotion(currentCamera, effectiveTimestamp)) return;
       const cooldownMs = motionCooldownSeconds(currentCamera) * 1000;
-      const last = this.lastAlarmTimes.get(cam.id) || 0;
-      if (now - last < cooldownMs) return;
+      const maxSessionDurationMs = 10 * 60 * 1000;
+
+      const session = this.cameraMotionSessions.get(cam.id);
+      if (session) {
+        const isWithinCooldown = (now - session.lastMotionSeenAt) < cooldownMs;
+        const isWithinMaxSession = (now - session.lastNotifiedAt) < maxSessionDurationMs;
+        if (isWithinCooldown && isWithinMaxSession) {
+          session.lastMotionSeenAt = now;
+          return;
+        }
+      }
+
       const recentEvent = await this.prisma.alarmLog.findFirst({
         where: {
           cameraId: cam.id,
           timestamp: { gte: new Date(now - cooldownMs) },
         },
-        select: { id: true },
+        select: { id: true, timestamp: true },
       });
-      if (recentEvent) return;
+      if (recentEvent) {
+        this.cameraMotionSessions.set(cam.id, {
+          lastNotifiedAt: recentEvent.timestamp ? recentEvent.timestamp.getTime() : now,
+          lastMotionSeenAt: now,
+        });
+        return;
+      }
 
       const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       let snapshotUrl = null;
@@ -420,6 +437,10 @@ class OnvifEventManager {
         }
       });
       this.lastAlarmTimes.set(cam.id, now);
+      this.cameraMotionSessions.set(cam.id, {
+        lastNotifiedAt: now,
+        lastMotionSeenAt: now,
+      });
       await sendCameraNotification(
         this.prisma,
         currentCamera,

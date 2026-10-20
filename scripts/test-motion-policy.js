@@ -39,7 +39,7 @@ assert.equal(motionMonitoringRequested({ recordMode: 'scheduled_motion', notific
 assert.equal(motionMonitoringRequested({ recordMode: 'scheduled_continuous_else_motion', ...overnight }, thursdayAt07), true);
 assert.equal(requiresServerMotionValidation({ motionIgnoreRegions: '[{"x":0,"y":0,"width":0.2,"height":0.2}]' }), true);
 assert.equal(requiresServerMotionValidation({ licensePlateRecognitionEnabled: true }), true);
-assert.equal(motionCooldownSeconds({ alarmCooldownSeconds: 1 }), 5);
+assert.equal(motionCooldownSeconds({ alarmCooldownSeconds: 1 }), 10);
 assert.equal(motionCooldownSeconds({ alarmCooldownSeconds: 45 }), 45);
 assert.equal(shouldAcceptExternalMotion({ recordMode: 'motion', ...overnight }, wednesdayAt23), true);
 assert.equal(shouldAcceptExternalMotion({ recordMode: 'motion', ...overnight }, thursdayAt07), false);

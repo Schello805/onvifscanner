@@ -30,7 +30,7 @@ function requiresServerMotionValidation(camera) {
 }
 
 function motionCooldownSeconds(camera) {
-  return Math.max(5, Math.min(3600, Number(camera?.alarmCooldownSeconds) || 30));
+  return Math.max(10, Math.min(3600, Number(camera?.alarmCooldownSeconds) || 30));
 }
 
 function shouldAcceptExternalMotion(camera, date = new Date()) {

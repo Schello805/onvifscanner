@@ -44,7 +44,7 @@ export function requiresServerMotionValidation(camera: MotionPolicyCamera): bool
 }
 
 export function motionCooldownSeconds(camera: MotionPolicyCamera): number {
-  return Math.max(5, Math.min(3600, Number(camera.alarmCooldownSeconds) || 30));
+  return Math.max(10, Math.min(3600, Number(camera.alarmCooldownSeconds) || 30));
 }
 
 export function shouldAcceptExternalMotion(camera: MotionPolicyCamera, date = new Date()): boolean {

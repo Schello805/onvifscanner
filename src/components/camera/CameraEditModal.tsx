@@ -45,6 +45,7 @@ export type CameraEditDraft = {
   recordSegmentMinutes: number;
   motionPreRollSeconds: number;
   motionPostRollSeconds: number;
+  alarmCooldownSeconds: number;
   motionSensitivity: number;
   motionIgnoreRegions: MotionRegion[];
   objectDetectionEnabled: boolean;
@@ -870,6 +871,36 @@ export function CameraEditModal({
                         aria-label="Push-Benachrichtigungen für diese Kamera aktivieren"
                       />
                     </label>
+
+                    {/* Notification Cooldown */}
+                    {editDraft.notificationsEnabled && (
+                      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <span className="block text-xs font-semibold text-slate-200">
+                              Wiederholungssperre (Cooldown)
+                            </span>
+                            <span className="block text-[10px] text-slate-400">
+                              Pausiert Benachrichtigungen während andauernder Bewegung. Erst nach dieser Ruhezeit wird wieder gemeldet.
+                            </span>
+                          </div>
+                          <select
+                            value={editDraft.alarmCooldownSeconds ?? 30}
+                            onChange={(e) =>
+                              onUpdateDraft({ ...editDraft, alarmCooldownSeconds: Number(e.target.value) })
+                            }
+                            className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white shrink-0 border border-white/10"
+                            aria-label="Wiederholungssperre Cooldown"
+                          >
+                            {[15, 20, 30, 45, 60, 120, 300].map((sec) => (
+                              <option key={sec} value={sec}>
+                                {sec >= 60 ? `${sec / 60} Minute${sec > 60 ? "n" : ""}` : `${sec} Sekunden`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Motion Sensitivity */}
                     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-2">

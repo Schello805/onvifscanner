@@ -49,7 +49,7 @@ let isMonitoring = false;
 let cycleRunning = false;
 const motionFrames = new Map();
 const motionFailureLogTimes = new Map();
-const lastAlarmTimes = new Map();
+const cameraMotionSessions = new Map();
 let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
@@ -440,7 +440,16 @@ async function detectCameraMotion(cam) {
     const movementDetected = changedArea >= requiredArea && meanDifference >= requiredMean;
 
     const checkedAt = new Date();
+    const now = checkedAt.getTime();
+    const cooldownSeconds = motionCooldownSeconds(cam);
+    const cooldownMs = cooldownSeconds * 1000;
+    const existingSession = cameraMotionSessions.get(cam.id);
+
     if (!movementDetected) {
+      if (existingSession && (now - existingSession.lastMotionSeenAt >= cooldownMs)) {
+        // Quiet duration has elapsed; conclude and reset motion session
+        cameraMotionSessions.delete(cam.id);
+      }
       motionFrames.set(cam.id, {
         pixels,
         noiseArea: previous.noiseArea * 0.85 + changedArea * 0.15,
@@ -494,30 +503,38 @@ async function detectCameraMotion(cam) {
       confirmationCount: 0,
     });
 
-    const cooldownSeconds = motionCooldownSeconds(cam);
-    const lastAlarm = lastAlarmTimes.get(cam.id) || 0;
-    if (Date.now() - lastAlarm < cooldownSeconds * 1000) {
-      motionFrames.set(cam.id, {
-        pixels,
-        noiseArea: previous.noiseArea * 0.9 + changedArea * 0.1,
-        noiseMean: previous.noiseMean * 0.9 + meanDifference * 0.1,
-        maskKey,
-        activeMask: previous.activeMask,
-        activePixelCount,
-        confirmationCount: 0,
-      });
-      return;
+    const maxSessionDurationMs = 10 * 60 * 1000;
+    if (existingSession) {
+      const isWithinCooldown = (now - existingSession.lastMotionSeenAt) < cooldownMs;
+      const isWithinMaxSession = (now - existingSession.lastNotifiedAt) < maxSessionDurationMs;
+      if (isWithinCooldown && isWithinMaxSession) {
+        // Continuous motion within cooldown: extend lastMotionSeenAt, do not spam notifications
+        existingSession.lastMotionSeenAt = now;
+        motionFrames.set(cam.id, {
+          pixels,
+          noiseArea: previous.noiseArea * 0.9 + changedArea * 0.1,
+          noiseMean: previous.noiseMean * 0.9 + meanDifference * 0.1,
+          maskKey,
+          activeMask: previous.activeMask,
+          activePixelCount,
+          confirmationCount: 0,
+        });
+        return;
+      }
     }
 
     const recentEvent = await prisma.alarmLog.findFirst({
       where: {
         cameraId: cam.id,
-        timestamp: { gte: new Date(checkedAt.getTime() - cooldownSeconds * 1000) },
+        timestamp: { gte: new Date(now - cooldownMs) },
       },
-      select: { id: true },
+      select: { id: true, timestamp: true },
     });
     if (recentEvent) {
-      lastAlarmTimes.set(cam.id, checkedAt.getTime());
+      cameraMotionSessions.set(cam.id, {
+        lastNotifiedAt: recentEvent.timestamp ? recentEvent.timestamp.getTime() : now,
+        lastMotionSeenAt: now,
+      });
       motionFrames.set(cam.id, {
         pixels,
         noiseArea: previous.noiseArea * 0.9 + changedArea * 0.1,
@@ -640,7 +657,10 @@ async function detectCameraMotion(cam) {
     let finalNotificationImage = eventImage;
     let snapshotUrl = null;
     const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    lastAlarmTimes.set(cam.id, checkedAt.getTime());
+    cameraMotionSessions.set(cam.id, {
+      lastNotifiedAt: checkedAt.getTime(),
+      lastMotionSeenAt: checkedAt.getTime(),
+    });
 
       let motionBbox = null;
       if (eventImage) {

@@ -34,6 +34,7 @@ export async function GET() {
       recordSegmentMinutes: c.recordSegmentMinutes,
       motionPreRollSeconds: c.motionPreRollSeconds,
       motionPostRollSeconds: c.motionPostRollSeconds,
+      alarmCooldownSeconds: c.alarmCooldownSeconds,
       motionSensitivity: c.motionSensitivity,
       motionIgnoreRegions: (() => {
         try { return JSON.parse(c.motionIgnoreRegions || "[]"); } catch { return []; }
@@ -154,6 +155,9 @@ export async function PATCH(req: Request) {
     }
     if (body.notificationsEnabled !== undefined) {
       updateData.notificationsEnabled = Boolean(body.notificationsEnabled);
+    }
+    if (body.alarmCooldownSeconds !== undefined) {
+      updateData.alarmCooldownSeconds = Math.min(3600, Math.max(10, Math.round(Number(body.alarmCooldownSeconds) || 30)));
     }
     if (body.storageTargetId !== undefined) {
       updateData.storageTargetId = body.storageTargetId ? String(body.storageTargetId).trim() : null;
