@@ -11,7 +11,7 @@ import { CameraEditModal, type CameraEditDraft } from "@/components/camera/Camer
 import { KioskMode } from "@/components/camera/KioskMode";
 import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
 import { SnapshotLightboxModal } from "@/components/SnapshotLightboxModal";
-import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon } from "lucide-react";
+import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon, Play } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -1510,19 +1510,28 @@ export default function CameraWallPage() {
                       lastClickRef.current = { id: "", time: 0 };
                       return;
                     }
-                    setCameraMenuId(null);
-                    revealCameraControls(camera.id);
+                    if (expandedCameraId === camera.id) {
+                      const last = lastClickRef.current;
+                      if (last.id === camera.id && now - last.time < 350) {
+                        toggleMediaZoom();
+                        lastClickRef.current = { id: "", time: 0 };
+                      } else {
+                        lastClickRef.current = { id: camera.id, time: now };
+                      }
+                      return;
+                    }
+
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
-                      if (expandedCameraId === camera.id) {
-                        toggleMediaZoom();
-                      } else {
-                        openExpanded(camera.id);
-                      }
+                      openExpanded(camera.id);
+                      setCameraMenuId(null);
                       lastClickRef.current = { id: "", time: 0 };
-                    } else {
-                      lastClickRef.current = { id: camera.id, time: now };
+                      return;
                     }
+
+                    lastClickRef.current = { id: camera.id, time: now };
+                    setCameraMenuId((prev) => (prev === camera.id ? null : camera.id));
+                    setActiveCameraControlsId(camera.id);
                   }}
                   className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
@@ -1759,47 +1768,87 @@ export default function CameraWallPage() {
                     className="absolute inset-0 z-40 flex flex-col justify-between p-2 sm:p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-indigo-500/50 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {/* Header: Camera Name + X */}
+                    {/* Header: Camera Name + Fullscreen + Close */}
                     <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1.5 px-0.5">
                       <div className="min-w-0 flex items-center gap-1.5">
                         <span className="truncate font-bold text-white text-xs sm:text-sm">{camera.name}</span>
                         <span className="hidden sm:inline font-mono text-[10px] text-slate-400">{camera.ip}</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCameraMenuId(null);
-                          setActiveCameraControlsId(null);
-                        }}
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-                        aria-label="Schließen"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCameraMenuId(null);
+                            openExpanded(camera.id);
+                          }}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                          title="Vollbild"
+                          aria-label="Vollbild"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCameraMenuId(null);
+                            setActiveCameraControlsId(null);
+                          }}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                          aria-label="Schließen"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Action Icons Row: Von rechts nach links: Bearbeiten, Stopp, Videos schauen, Löschen */}
-                    <div className="flex items-center justify-center gap-2.5 sm:gap-3.5 my-auto">
-                      {/* 1. Mülleimer (Entfernen / Löschen) */}
+                    {/* Action Icons Row: Live, Bearbeiten, Aufnahmen, Aufnahme, Löschen */}
+                    <div className="flex items-center justify-center gap-2 sm:gap-3 my-auto">
+                      {/* 1. Live streamen / stoppen */}
+                      <button
+                        type="button"
+                        disabled={liveLoading.has(camera.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                          void toggleLive(camera.id);
+                        }}
+                        className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
+                          isLive
+                            ? "border-sky-400 bg-sky-600 text-white hover:bg-sky-500 shadow-sky-600/40"
+                            : "border-sky-500/50 bg-sky-950/80 text-sky-300 hover:bg-sky-900 active:bg-sky-800 shadow-black/40"
+                        }`}
+                        title={isLive ? "Live-Stream stoppen" : "Live-Stream starten"}
+                        aria-label={isLive ? "Live-Stream stoppen" : "Live-Stream starten"}
+                      >
+                        {liveLoading.has(camera.id) ? (
+                          <span className="loading loading-spinner loading-xs text-white" />
+                        ) : isLive ? (
+                          <Square className="w-4 h-4 fill-white text-white" />
+                        ) : (
+                          <Play className="w-5 h-5 fill-current text-sky-400" />
+                        )}
+                      </button>
+
+                      {/* 2. Stift bearbeiten */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCameraMenuId(null);
                           setActiveCameraControlsId(null);
-                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
-                            removeCamera(camera.id);
-                          }
+                          openEditor(camera);
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
-                        title="Von Monitoren entfernen"
-                        aria-label="Von Monitoren entfernen"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
+                        title="Kamera bearbeiten"
+                        aria-label="Kamera bearbeiten"
                       >
-                        <Trash2 className="w-5 h-5 text-white" />
+                        <Pencil className="w-5 h-5" />
                       </button>
 
-                      {/* 2. Aufnahmen öffnen (Videos schauen) */}
+                      {/* 3. Aufnahmen öffnen (Videos schauen) */}
                       {camera.recordEnabled ? (
                         <Link
                           href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
@@ -1816,7 +1865,7 @@ export default function CameraWallPage() {
                         </Link>
                       ) : null}
 
-                      {/* 3. Aufnahme starten / stoppen */}
+                      {/* 4. Aufnahme starten / stoppen */}
                       <button
                         type="button"
                         disabled={recordLoading.has(camera.id)}
@@ -1841,20 +1890,22 @@ export default function CameraWallPage() {
                         )}
                       </button>
 
-                      {/* 4. Stift bearbeiten */}
+                      {/* 5. Mülleimer (Entfernen / Löschen) */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setCameraMenuId(null);
                           setActiveCameraControlsId(null);
-                          openEditor(camera);
+                          if (confirm(`Möchtest du "${camera.name}" wirklich von den Monitoren entfernen?`)) {
+                            removeCamera(camera.id);
+                          }
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
-                        title="Kamera bearbeiten"
-                        aria-label="Kamera bearbeiten"
+                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
+                        title="Von Monitoren entfernen"
+                        aria-label="Von Monitoren entfernen"
                       >
-                        <Pencil className="w-5 h-5" />
+                        <Trash2 className="w-5 h-5 text-white" />
                       </button>
                     </div>
                   </div>
