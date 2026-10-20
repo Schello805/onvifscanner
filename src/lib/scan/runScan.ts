@@ -169,7 +169,8 @@ export async function runScan(
             xaddrs,
             timeoutMs: req.timeoutMs,
             credentials: req.credentials,
-            credentialsList: credsList.length ? credsList : undefined
+            credentialsList: credsList.length ? credsList : undefined,
+            signal
           });
 
           const onvifRtsp = result.onvif.rtspUris?.map((u) => u.uri) ?? [];
@@ -251,59 +252,65 @@ export async function runScan(
     const vendorTargets = results.slice(0, vendorLimit);
     await mapLimit(vendorTargets, Math.min(4, vendorTargets.length), async (r) => {
       throwIfAborted();
-      if (!r.onvif?.ok) {
-        const onvifPortPriority = [8899, 8000, 2020, 8080, 8888, 8081, 80];
-        const portXaddrs = (r.openTcpPorts ?? [])
-          .filter((p) => onvifPortPriority.includes(p))
-          .sort((a, b) => onvifPortPriority.indexOf(a) - onvifPortPriority.indexOf(b))
-          .map((p) => `http://${r.ip}:${p}/onvif/device_service`);
-        const candidateXaddrs = Array.from(new Set([...(r.onvif?.xaddrs ?? []), ...portXaddrs]));
-        if (candidateXaddrs.length) {
-          const onvifRes = await probeOnvifFromXaddr({
-            ip: r.ip,
-            xaddrs: candidateXaddrs,
-            timeoutMs: req.timeoutMs,
-            credentials: req.credentials,
-            credentialsList: credsList.length ? credsList : undefined
-          });
-          r.onvif = preferDetailedOnvif(r.onvif, onvifRes);
-        }
-      }
-      let vendor;
       try {
-        vendor = await probeVendorUrls({
-          result: r,
-          timeoutMs: req.timeoutMs,
-          credentials: req.credentials,
-          credentialsList: credsList.length ? credsList : undefined,
-          signal
-        });
-      } catch (e) {
-        if (signal?.aborted) throw e;
-        vendor = {
-          profile: "Vendor-Katalog",
-          log: [`Vendor probe failed: ${e instanceof Error ? e.message : String(e)}`]
-        };
-      }
-      if (vendor) {
-        r.vendor = vendor;
-        if (vendor.rtspUris?.length) {
-          r.rtsp = {
-            ...(r.rtsp ?? { ok: true, port: 554 }),
-            ok: true,
-            port: r.rtsp?.port ?? 554,
-            uris: Array.from(new Set([...(r.rtsp?.uris ?? []), ...vendor.rtspUris])),
-            candidates: r.rtsp?.candidates,
-            log: r.rtsp?.log
+        if (!r.onvif?.ok) {
+          const onvifPortPriority = [8899, 8000, 2020, 8080, 8888, 8081, 80];
+          const portXaddrs = (r.openTcpPorts ?? [])
+            .filter((p) => onvifPortPriority.includes(p))
+            .sort((a, b) => onvifPortPriority.indexOf(a) - onvifPortPriority.indexOf(b))
+            .map((p) => `http://${r.ip}:${p}/onvif/device_service`);
+          const candidateXaddrs = Array.from(new Set([...(r.onvif?.xaddrs ?? []), ...portXaddrs])).slice(0, 2);
+          if (candidateXaddrs.length) {
+            const onvifRes = await probeOnvifFromXaddr({
+              ip: r.ip,
+              xaddrs: candidateXaddrs,
+              timeoutMs: Math.min(req.timeoutMs, 2000),
+              credentials: req.credentials,
+              credentialsList: credsList.length ? credsList : undefined,
+              signal
+            });
+            r.onvif = preferDetailedOnvif(r.onvif, onvifRes);
+          }
+        }
+        let vendor;
+        try {
+          vendor = await probeVendorUrls({
+            result: r,
+            timeoutMs: Math.min(req.timeoutMs, 2500),
+            credentials: req.credentials,
+            credentialsList: credsList.length ? credsList : undefined,
+            signal
+          });
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          vendor = {
+            profile: "Vendor-Katalog",
+            log: [`Vendor probe failed: ${e instanceof Error ? e.message : String(e)}`]
           };
         }
+        if (vendor) {
+          r.vendor = vendor;
+          if (vendor.rtspUris?.length) {
+            r.rtsp = {
+              ...(r.rtsp ?? { ok: true, port: 554 }),
+              ok: true,
+              port: r.rtsp?.port ?? 554,
+              uris: Array.from(new Set([...(r.rtsp?.uris ?? []), ...vendor.rtspUris])),
+              candidates: r.rtsp?.candidates,
+              log: r.rtsp?.log
+            };
+          }
+        }
+        finalizeCameraResult(r);
+        if (isConfirmedCamera(r)) {
+          onPhase?.({ type: "item", item: r });
+        }
+      } catch (e) {
+        if (signal?.aborted) throw e;
+      } finally {
+        done += 1;
+        onPhase?.({ type: "progress", phase: "vendor", done, total: vendorTargets.length, message: `${done}/${vendorTargets.length} analysiert` });
       }
-      finalizeCameraResult(r);
-      if (isConfirmedCamera(r)) {
-        onPhase?.({ type: "item", item: r });
-      }
-      done += 1;
-      onPhase?.({ type: "progress", phase: "vendor", done, total: vendorTargets.length, message: `${done}/${vendorTargets.length} analysiert` });
     });
     if (vendorTargets.length < results.length) {
       warnings.push(

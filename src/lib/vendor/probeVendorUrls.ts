@@ -142,7 +142,8 @@ export async function probeVendorUrls(args: {
         uri: url,
         timeoutMs: args.timeoutMs,
         credentials: workingCred ?? args.credentials,
-        credentialsList: args.credentialsList
+        credentialsList: args.credentialsList,
+        signal: args.signal
       });
       log.push(...(rtsp.log ?? []).slice(0, 8));
       if (rtsp.ok) {

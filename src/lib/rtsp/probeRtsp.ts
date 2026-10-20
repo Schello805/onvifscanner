@@ -10,6 +10,7 @@ export async function probeRtsp(args: {
   credentials?: { username: string; password: string };
   credentialsList?: Array<{ username: string; password: string }>;
   uri?: string;
+  signal?: AbortSignal;
 }): Promise<RtspResult> {
   const uri = args.uri ?? `rtsp://${args.ip}:${args.port}/`;
   const preferredMethod = "DESCRIBE";
@@ -34,6 +35,7 @@ export async function probeRtsp(args: {
   let lastRes: RtspResult | undefined;
 
   for (let ci = 0; ci < credCandidates.length; ci += 1) {
+    if (args.signal?.aborted) throw new Error("RTSP abgebrochen");
     const cred = credCandidates[ci];
     try {
       const res = await rtspRequestWithFallback({
@@ -43,6 +45,7 @@ export async function probeRtsp(args: {
         uri,
         method: preferredMethod,
         credentials: cred,
+        signal: args.signal,
         log
       });
       lastRes = res;
@@ -103,6 +106,7 @@ async function rtspRequest(args: {
   port: number;
   timeoutMs: number;
   request: string;
+  signal?: AbortSignal;
 }): Promise<RtspParsedResponse> {
   const raw = await rtspRoundTrip(args);
   return parseRtspResponse(raw);
@@ -115,6 +119,7 @@ async function rtspRequestWithFallback(args: {
   uri: string;
   method: "DESCRIBE" | "OPTIONS";
   credentials?: { username: string; password: string };
+  signal?: AbortSignal;
   log: string[];
 }): Promise<RtspResult> {
   const method = args.method;
@@ -124,6 +129,7 @@ async function rtspRequestWithFallback(args: {
     ip: args.ip,
     port: args.port,
     timeoutMs: args.timeoutMs,
+    signal: args.signal,
     request: buildRtspRequest({
       method,
       uri: args.uri,
@@ -176,6 +182,7 @@ async function rtspRequestWithFallback(args: {
             ip: args.ip,
             port: args.port,
             timeoutMs: args.timeoutMs,
+            signal: args.signal,
             request: buildRtspRequest({
               method,
               uri: attempt.requestUri,
@@ -206,6 +213,7 @@ async function rtspRequestWithFallback(args: {
           ip: args.ip,
           port: args.port,
           timeoutMs: args.timeoutMs,
+          signal: args.signal,
           request: buildRtspRequest({
             method,
             uri: args.uri,
@@ -247,6 +255,7 @@ async function rtspRequestWithFallback(args: {
           ip: args.ip,
           port: args.port,
           timeoutMs: args.timeoutMs,
+          signal: args.signal,
           request: buildRtspRequest({
             method,
             uri: args.uri,
@@ -356,8 +365,12 @@ function rtspRoundTrip(args: {
   port: number;
   timeoutMs: number;
   request: string;
+  signal?: AbortSignal;
 }): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (args.signal?.aborted) {
+      return reject(new Error("RTSP abgebrochen"));
+    }
     const socket = new net.Socket();
     let buffer = "";
     let done = false;
@@ -369,6 +382,10 @@ function rtspRoundTrip(args: {
       if (err) reject(err);
       else resolve(buffer);
     };
+
+    if (args.signal) {
+      args.signal.addEventListener("abort", () => finish(new Error("RTSP abgebrochen")), { once: true });
+    }
 
     socket.setTimeout(args.timeoutMs);
     socket.once("timeout", () => finish(new Error("RTSP timeout")));

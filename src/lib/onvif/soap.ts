@@ -9,6 +9,7 @@ export async function onvifSoapCall(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
   timeOffsetMs?: number;
+  signal?: AbortSignal;
 }): Promise<{ ok: boolean; status: number; text: string; soap: "1.2" | "1.1" }> {
   const wsse =
     args.credentials?.username
@@ -32,6 +33,7 @@ export async function onvifSoapCall(args: {
     method: "POST",
     timeoutMs: args.timeoutMs,
     credentials: args.credentials,
+    signal: args.signal,
     headers: {
       "content-type": 'application/soap+xml; charset="utf-8"',
       // Some devices still require SOAPAction even with SOAP 1.2.
@@ -57,6 +59,7 @@ export async function onvifSoapCall(args: {
     method: "POST",
     timeoutMs: args.timeoutMs,
     credentials: args.credentials,
+    signal: args.signal,
     headers: {
       "content-type": 'text/xml; charset="utf-8"',
       SOAPAction: `"${args.action}"`,

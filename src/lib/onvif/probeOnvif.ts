@@ -9,6 +9,7 @@ export async function probeOnvifFromXaddr(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
   credentialsList?: Array<{ username: string; password: string }>;
+  signal?: AbortSignal;
 }): Promise<OnvifResult> {
   const log: string[] = [];
   const candidateUrls = Array.from(
@@ -18,7 +19,7 @@ export async function probeOnvifFromXaddr(args: {
         .map((raw) => normalizeUriHost(raw, args.ip, log, "DeviceService"))
         .filter(Boolean)
     )
-  );
+  ).slice(0, 3);
 
   if (!candidateUrls.length) {
     return {
@@ -32,6 +33,7 @@ export async function probeOnvifFromXaddr(args: {
   let lastResult: OnvifResult | undefined;
 
   for (const deviceServiceUrl of candidateUrls) {
+    if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
     const res = await probeSingleOnvifEndpoint({
       ...args,
       deviceServiceUrl,
@@ -79,6 +81,7 @@ async function probeSingleOnvifEndpoint(args: {
   timeoutMs: number;
   credentials?: { username: string; password: string };
   credentialsList?: Array<{ username: string; password: string }>;
+  signal?: AbortSignal;
   log: string[];
 }): Promise<OnvifResult> {
   const { deviceServiceUrl, log } = args;
@@ -90,15 +93,26 @@ async function probeSingleOnvifEndpoint(args: {
     // and check whether this endpoint speaks ONVIF SOAP at all.
     let timeOffsetMs: number | undefined;
     let confirmedOnvifEndpoint = false;
+    let dateCallFailed = false;
     try {
       const timeRes = await onvifSoapCall({
         url: deviceServiceUrl,
         action: "http://www.onvif.org/ver10/device/wsdl/GetSystemDateAndTime",
         timeoutMs: Math.min(args.timeoutMs, 1500),
+        signal: args.signal,
         body: `<tds:GetSystemDateAndTime xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
       });
-      if (isOnvifSoapResponse(timeRes.text)) {
+      if (isOnvifSoapResponse(timeRes.text) || timeRes.status === 401) {
         confirmedOnvifEndpoint = true;
+      }
+      if (timeRes.status === 404 || timeRes.status === 405) {
+        return {
+          ok: false,
+          xaddrs: args.allXaddrs,
+          deviceServiceUrl,
+          log: limitLog([...log, `GetSystemDateAndTime: HTTP ${timeRes.status} (Kein ONVIF-Dienst)`]),
+          error: `HTTP ${timeRes.status}`
+        };
       }
       if (timeRes.ok) {
         const cameraDate = parseOnvifDate(timeRes.text);
@@ -112,7 +126,22 @@ async function probeSingleOnvifEndpoint(args: {
         }
       }
     } catch {
-      // ignore, proceed with local time
+      dateCallFailed = true;
+    }
+
+    if (dateCallFailed || !confirmedOnvifEndpoint) {
+      return {
+        ok: false,
+        xaddrs: args.allXaddrs,
+        deviceServiceUrl,
+        log: limitLog([
+          ...log,
+          dateCallFailed
+            ? `GetSystemDateAndTime: nicht erreichbar`
+            : `GetSystemDateAndTime: Keine ONVIF-SOAP-Antwort (Kein ONVIF-Dienst)`
+        ]),
+        error: dateCallFailed ? "Verbindung fehlgeschlagen" : "Kein ONVIF-Dienst"
+      };
     }
 
     // Prepare credentials list to try
@@ -146,6 +175,7 @@ async function probeSingleOnvifEndpoint(args: {
         timeoutMs: args.timeoutMs,
         credentials: cred,
         timeOffsetMs,
+        signal: args.signal,
         body: `<tds:GetDeviceInformation xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
       });
       log.push(
@@ -176,6 +206,7 @@ async function probeSingleOnvifEndpoint(args: {
         timeoutMs: args.timeoutMs,
         credentials: workingCreds,
         timeOffsetMs,
+        signal: args.signal,
         body: `<tds:GetHostname xmlns:tds="http://www.onvif.org/ver10/device/wsdl" />`
       });
       log.push(`GetHostname: HTTP ${host.status} (SOAP ${host.soap})`);
@@ -189,6 +220,7 @@ async function probeSingleOnvifEndpoint(args: {
       timeoutMs: args.timeoutMs,
       credentials: workingCreds,
       timeOffsetMs,
+      signal: args.signal,
       body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
     });
     log.push(`GetCapabilities: HTTP ${caps.status} (SOAP ${caps.soap})`);

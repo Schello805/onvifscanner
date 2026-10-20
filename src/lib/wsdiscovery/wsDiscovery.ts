@@ -63,16 +63,20 @@ export async function wsDiscoveryProbe(args: {
   let done = 0;
   const probed = await mapLimit(items, Math.min(32, items.length || 1), async (item) => {
     if (args.signal?.aborted) throw new Error("Scan abgebrochen.");
-    const onvif = await probeOnvifFromXaddr({
-      ip: item.ip,
-      xaddrs: item.xaddrs,
-      timeoutMs: args.timeoutMs,
-      credentials: args.credentials,
-      credentialsList: args.credentialsList
-    });
-    done += 1;
-    args.onProgress?.(done, items.length);
-    return { ip: item.ip, onvif };
+    try {
+      const onvif = await probeOnvifFromXaddr({
+        ip: item.ip,
+        xaddrs: item.xaddrs,
+        timeoutMs: args.timeoutMs,
+        credentials: args.credentials,
+        credentialsList: args.credentialsList,
+        signal: args.signal
+      });
+      return { ip: item.ip, onvif };
+    } finally {
+      done += 1;
+      args.onProgress?.(done, items.length);
+    }
   });
   args.onPhase?.({ type: "phase", phase: "onvif", status: "done" });
 
