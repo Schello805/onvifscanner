@@ -364,32 +364,16 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   })}
                 </div>
               )}
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <p className="text-[10px] text-slate-500 sm:hidden">
-                  Doppeltippen links/rechts: 10 Sek. · Halten: schnell spulen
-                </p>
-                <span className="hidden sm:block" />
-                <button
-                  type="button"
-                  onClick={() => setPlayerOptionsOpen((open) => !open)}
-                  className={`ml-auto rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${playerOptionsOpen ? "border-amber-500/40 bg-amber-500/15 text-amber-200" : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}
-                  aria-expanded={playerOptionsOpen}
-                >
-                  ⋯ Optionen
-                </button>
-              </div>
               </div>
 
-              {/* Compact playback toolbar */}
-              {playerOptionsOpen ? (
-              <div className="p-4 sm:p-5 pb-6 border-t border-slate-800/50 flex flex-col gap-3.5 text-xs shrink-0">
-              {/* Clip and motion navigation */}
-              <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex flex-wrap items-center gap-1.5">
+              {/* Permanent space-saving playback toolbar */}
+              <div className="px-3.5 py-2 border-t border-slate-800/80 bg-slate-900/60 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+                {/* Left: Clip & Motion Navigation */}
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={playPreviousClip}
                     disabled={activeClipIndex <= 0}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors text-xs"
                     title="Vorheriger Clip"
                   >
                     <SkipBack className="h-3.5 w-3.5" />
@@ -401,19 +385,19 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     <div className="flex items-center gap-1 border-l border-slate-800 pl-1.5">
                       <button
                         onClick={jumpToPrevMotion}
-                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-500/20 transition-colors text-xs"
                         title="Zur vorherigen Bewegung springen (Taste P)"
                       >
-                        <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        <span className="hidden md:inline">Vorh. Bew.</span>
+                        <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
+                        <span className="hidden md:inline">Vorh.</span>
                       </button>
                       <button
                         onClick={jumpToNextMotion}
-                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400 transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-500/20 transition-colors text-xs"
                         title="Zur nächsten Bewegung springen (Taste N oder M)"
                       >
-                        <Zap className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                        <span className="hidden md:inline">Nächste Bew.</span>
+                        <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
+                        <span className="hidden md:inline">Nächste</span>
                       </button>
                     </div>
                   )}
@@ -421,7 +405,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   <button
                     onClick={playNextClip}
                     disabled={activeClipIndex < 0 || activeClipIndex >= filteredClips.length - 1}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors text-xs"
                     title="Nächster Clip"
                   >
                     <span className="hidden sm:inline">Nächster</span>
@@ -429,25 +413,13 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   </button>
                 </div>
 
-                {/* Right side of Row 1: Delete Clip Button */}
-                <button
-                  onClick={() => handleDeleteClip(activeClip)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-rose-900/50 bg-rose-950/30 px-3 py-1.5 text-rose-300 hover:bg-rose-900/50 transition-colors shrink-0"
-                  title="Diesen Clip von der Festplatte löschen"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Diesen Clip löschen</span>
-                </button>
-              </div>
-
-              {/* Row 2: Speed, Auto-Play & Plant Sensitivity Helper */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-800/80">
-                <div className="flex flex-wrap items-center gap-3">
+                {/* Center: Tempo / Speed & Auto-Play */}
+                <div className="flex items-center gap-2">
                   {/* Auto-Play */}
                   <button
                     type="button"
                     onClick={() => setAutoPlayNext(!autoPlayNext)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
+                    className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
                       autoPlayNext
                         ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
                         : "border border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
@@ -455,21 +427,20 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     title={autoPlayNext ? "Auto-Play aktiv: Nächster Clip startet automatisch" : "Auto-Play deaktiviert"}
                   >
                     <span>🔁</span>
-                    <span>Auto-Play</span>
+                    <span className="hidden sm:inline">Auto-Play</span>
                   </button>
 
                   {/* Playback Speed */}
-                  <div className="flex items-center gap-1">
-                    <Gauge className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Tempo:</span>
+                  <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900 p-0.5">
+                    <Gauge className="h-3 w-3 text-slate-400 ml-1.5 mr-1 hidden sm:inline" />
                     {[0.5, 1, 1.5, 2, 4].map((rate) => (
                       <button
                         key={rate}
                         onClick={() => setSpeed(rate)}
-                        className={`rounded px-2 py-1 font-mono text-[11px] transition-all ${
+                        className={`rounded px-1.5 py-0.5 font-mono text-xs transition-all ${
                           playbackRate === rate
                             ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
-                            : "border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
+                            : "text-slate-400 hover:text-white"
                         }`}
                       >
                         {rate}x
@@ -478,9 +449,16 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   </div>
                 </div>
 
+                {/* Right: Delete Clip */}
+                <button
+                  onClick={() => handleDeleteClip(activeClip)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-900/40 bg-rose-950/20 px-2.5 py-1 text-rose-300 hover:bg-rose-900/40 transition-colors shrink-0 text-xs"
+                  title="Diesen Clip von der Festplatte löschen"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Diesen Clip löschen</span>
+                </button>
               </div>
-            </div>
-              ) : null}
           </div>
         </div>
       </div>
