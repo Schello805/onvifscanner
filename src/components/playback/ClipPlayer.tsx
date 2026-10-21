@@ -495,26 +495,44 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
               <Film className="h-7 w-7" />
             </div>
             {selectedCamera ? (
-              <>
-                <h3 className="text-sm sm:text-base font-semibold text-white">
-                  {loadingClips ? `Lade Aufnahmen für ${selectedCamera.name}…` : `Keine Aufnahmen für ${selectedCamera.name}`}
-                </h3>
-                <p className="mt-1 max-w-md text-xs text-slate-400">
-                  {loadingClips
-                    ? "Videoabschnitte werden vorbereitet..."
-                    : `Am ${selectedDate ? formatGermanDateLong(selectedDate) : "ausgewählten Tag"} wurden keine Aufnahmen gefunden. Wähle einen anderen Tag im Kalender oder klicke auf die Zeitleiste.`}
-                </p>
-                {!loadingClips && (
-                  <button
-                    type="button"
-                    onClick={() => setMobileCalendarOpen(true)}
-                    className="mt-3.5 inline-flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/20 transition-colors"
-                  >
-                    <Calendar className="h-3.5 w-3.5" />
-                    Aufnahme-Kalender öffnen
-                  </button>
-                )}
-              </>
+              filteredClips.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                    <h3 className="text-sm sm:text-base font-semibold text-white">
+                      {selectedCamera.name}
+                    </h3>
+                  </div>
+                  <p className="mt-1 max-w-md text-xs text-slate-300">
+                    Klicke unten auf die blaue Zeitleiste oder einen Clip, um die Wiedergabe an der gewünschten Stelle zu starten.
+                  </p>
+                  <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs">
+                    <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+                    <span>{filteredClips.length} Aufnahmen auf der Zeitleiste bereit</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm sm:text-base font-semibold text-white">
+                    {loadingClips ? `Lade Aufnahmen für ${selectedCamera.name}…` : `Keine Aufnahmen für ${selectedCamera.name}`}
+                  </h3>
+                  <p className="mt-1 max-w-md text-xs text-slate-400">
+                    {loadingClips
+                      ? "Videoabschnitte werden vorbereitet..."
+                      : `Am ${selectedDate ? formatGermanDateLong(selectedDate) : "ausgewählten Tag"} wurden keine Aufnahmen gefunden. Wähle einen anderen Tag im Kalender oder klicke auf die Zeitleiste.`}
+                  </p>
+                  {!loadingClips && (
+                    <button
+                      type="button"
+                      onClick={() => setMobileCalendarOpen(true)}
+                      className="mt-3.5 inline-flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/20 transition-colors"
+                    >
+                      <Calendar className="h-3.5 w-3.5" />
+                      Aufnahme-Kalender öffnen
+                    </button>
+                  )}
+                </>
+              )
             ) : (
               <>
                 <h3 className="text-sm sm:text-base font-semibold text-white">Keine Kamera ausgewählt</h3>

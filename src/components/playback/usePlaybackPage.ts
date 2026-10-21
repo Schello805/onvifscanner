@@ -225,23 +225,6 @@ export function usePlaybackPage() {
         if (!silent) {
           setSelectedClipIds(new Set());
           setCurrentPage(1);
-          if (camId && Array.isArray(dataClips.clips)) {
-            if (dataClips.clips.length > 0) {
-              const targetClip = dataClips.clips[0];
-              setVideoDuration(0);
-              setVideoCurrentTime(0);
-              pendingSeekRef.current = null;
-              setCompatiblePlayback(true);
-              setPlayerPreparing(false);
-              setPlayerError("");
-              setPlayerNeedsStart(false);
-              setPlaybackAttempt(0);
-              setActiveClip(targetClip);
-              setIsPlaying(true);
-            } else {
-              setActiveClip(null);
-            }
-          }
         }
       }
 
@@ -300,6 +283,8 @@ export function usePlaybackPage() {
     setTimeTo("");
     setTimePreset("all");
     setCameraPickerOpen(false);
+    setActiveClip(null);
+    setIsPlaying(false);
     void fetchClips(cameraId, selectedDate);
   }, [fetchClips, selectedDate]);
 
