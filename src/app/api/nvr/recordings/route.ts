@@ -46,10 +46,15 @@ export async function GET(req: Request) {
       where: { enabled: true },
     });
 
-    // Ensure default recording directory is always checked
+    // Ensure default recording directory is always checked and exists
     const defaultDataDir = path.resolve(process.cwd(), "data", "recordings");
+    if (!fs.existsSync(defaultDataDir)) {
+      try {
+        fs.mkdirSync(defaultDataDir, { recursive: true });
+      } catch {}
+    }
     const allTargets = [...storageTargets];
-    if (fs.existsSync(defaultDataDir) && !allTargets.some((t) => path.resolve(t.path) === defaultDataDir)) {
+    if (!allTargets.some((t) => path.resolve(t.path) === defaultDataDir)) {
       allTargets.push({
         id: "default-local-storage",
         name: "Lokaler Speicher",
@@ -103,14 +108,15 @@ export async function GET(req: Request) {
     const unavailableStorageTargets: string[] = [];
 
     for (const target of allTargets) {
-      if (!fs.existsSync(target.path)) {
+      const targetDir = path.resolve(target.path);
+      if (!fs.existsSync(targetDir)) {
         unavailableStorageTargets.push(target.name);
         continue;
       }
 
       let cameraDirs: string[] = [];
       try {
-        const entries = await fsp.readdir(target.path, { withFileTypes: true });
+        const entries = await fsp.readdir(targetDir, { withFileTypes: true });
         cameraDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
       } catch {
         unavailableStorageTargets.push(target.name);
@@ -119,7 +125,7 @@ export async function GET(req: Request) {
 
       for (const camDir of cameraDirs) {
         if (filterCameraId && camDir !== filterCameraId) continue;
-        const camPath = path.join(target.path, camDir);
+        const camPath = path.join(targetDir, camDir);
 
         let files: string[] = [];
         try {

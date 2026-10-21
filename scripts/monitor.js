@@ -953,7 +953,10 @@ function normalizeRecordPath(p) {
 async function syncMediaMtxPaths(cameras) {
   try {
     const listRes = await fetch('http://127.0.0.1:9997/v3/config/paths/list');
-    if (!listRes.ok) return;
+    if (!listRes.ok) {
+      console.warn(`[MediaMTX Sync] MediaMTX API antwortete mit HTTP ${listRes.status}`);
+      return;
+    }
     const currentPaths = (await listRes.json()).items || [];
     
     // Fetch default storage target if any
@@ -1026,14 +1029,23 @@ async function syncMediaMtxPaths(cameras) {
       }
     }
 
+    const activeRecorders = Object.values(desiredPaths).filter((p) => p.record).length;
+    console.log(`[MediaMTX Sync] ${Object.keys(desiredPaths).length} Kameras synchronisiert (${activeRecorders} mit aktiver Aufnahme).`);
+
     for (const [id, config] of Object.entries(desiredPaths)) {
       const existing = currentPaths.find(p => p.name === id);
       if (!existing) {
-        await fetch(`http://127.0.0.1:9997/v3/config/paths/add/${encodeURIComponent(id)}`, {
+        const addRes = await fetch(`http://127.0.0.1:9997/v3/config/paths/add/${encodeURIComponent(id)}`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(config)
-        }).catch(()=>null);
+        }).catch((err) => ({ ok: false, error: err }));
+        if (!addRes.ok) {
+          const text = addRes.text ? await addRes.text().catch(() => "") : String(addRes.error);
+          console.warn(`[MediaMTX Sync] Fehler beim Hinzufügen von Pfad "${id}" in MediaMTX: ${text}`);
+        } else {
+          console.log(`[MediaMTX Sync] Pfad "${id}" in MediaMTX angelegt (Aufnahme=${Boolean(config.record)}).`);
+        }
       } else {
         const segDurChanged = config.record && (
           normalizeDurationToSeconds(existing.recordSegmentDuration) !== normalizeDurationToSeconds(config.recordSegmentDuration)
@@ -1052,11 +1064,15 @@ async function syncMediaMtxPaths(cameras) {
 
         if (needsPatch) {
           console.log(`[MediaMTX Sync] Pfad ${id} wird aktualisiert (Aufnahme=${Boolean(config.record)}, Segment=${config.recordSegmentDuration}).`);
-          await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
+          const patchRes = await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(config)
-          }).catch((err) => console.warn(`[MediaMTX Sync] Fehler beim Aktualisieren von ${id}:`, err?.message || err));
+          }).catch((err) => ({ ok: false, error: err }));
+          if (!patchRes.ok) {
+            const text = patchRes.text ? await patchRes.text().catch(() => "") : String(patchRes.error);
+            console.warn(`[MediaMTX Sync] Fehler beim Aktualisieren von Pfad "${id}": ${text}`);
+          }
         }
       }
     }
@@ -1077,7 +1093,7 @@ async function syncMediaMtxPaths(cameras) {
        }
     }
   } catch (e) {
-    // Ignore if MediaMTX is not running
+    console.warn(`[MediaMTX Sync] MediaMTX API (127.0.0.1:9997) nicht erreichbar:`, e?.message || e);
   }
 }
 

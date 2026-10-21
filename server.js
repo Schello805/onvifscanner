@@ -62,10 +62,21 @@ app.prepare().then(async () => {
 
   const startMediaMtx = () => {
     if (shuttingDown || mediaMtx) return;
-    const mediamtxPath = path.join(__dirname, "mediamtx");
-    if (!fs.existsSync(mediamtxPath)) return;
+    let mediamtxPath = path.join(__dirname, "mediamtx");
+    if (!fs.existsSync(mediamtxPath)) {
+      for (const candidate of ["/usr/local/bin/mediamtx", "/usr/bin/mediamtx"]) {
+        if (fs.existsSync(candidate)) {
+          mediamtxPath = candidate;
+          break;
+        }
+      }
+    }
+    if (!fs.existsSync(mediamtxPath)) {
+      console.warn("⚠️ MediaMTX nicht gefunden (weder unter ./mediamtx noch im System-PATH). Live-Streams & NVR-Aufnahme inaktiv.");
+      return;
+    }
 
-    console.log("🚀 Starting MediaMTX...");
+    console.log(`🚀 Starting MediaMTX (${mediamtxPath})...`);
     const configPath = path.join(__dirname, "mediamtx.yml");
     mediaMtx = spawn(mediamtxPath, fs.existsSync(configPath) ? [configPath] : [], {
       cwd: __dirname,
