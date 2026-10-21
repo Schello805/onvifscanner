@@ -21,9 +21,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
               <h2 className="text-sm font-bold text-white tracking-wide">
                 Zeitleiste
               </h2>
-              <span className="rounded-full bg-slate-800/90 border border-slate-700/80 px-2 py-0.5 text-[11px] font-mono text-slate-300">
-                {selectedDate ? formatGermanDate(selectedDate) : "Alle Tage"}
-              </span>
               {motionEvents.length > 0 && (
                 <button
                   onClick={jumpToMotionCluster}
@@ -38,7 +35,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
           </div>
 
           {/* Zoom Buttons & Timeline Navigation */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
             {/* Pan Controls if zoomed */}
             {timelineWindowMinutes < 1440 && (
               <div className="flex items-center gap-1 bg-slate-950/80 border border-slate-800 rounded-lg p-0.5">
