@@ -229,6 +229,7 @@ export default function CameraWallPage() {
     moved: false,
   });
   const cameraControlsTimerRef = useRef<number | null>(null);
+  const singleClickTimerRef = useRef<number | null>(null);
 
   const revealCameraControls = useCallback((cameraId: string) => {
     if (cameraControlsTimerRef.current !== null) window.clearTimeout(cameraControlsTimerRef.current);
@@ -241,6 +242,7 @@ export default function CameraWallPage() {
 
   useEffect(() => () => {
     if (cameraControlsTimerRef.current !== null) window.clearTimeout(cameraControlsTimerRef.current);
+    if (singleClickTimerRef.current !== null) window.clearTimeout(singleClickTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -448,6 +450,10 @@ export default function CameraWallPage() {
   }, []);
 
   const openExpanded = useCallback((id: string) => {
+    if (singleClickTimerRef.current !== null) {
+      window.clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
     if (typeof window !== "undefined") {
       window.history.pushState({ modal: "camera-fullscreen", id }, "");
     }
@@ -455,6 +461,10 @@ export default function CameraWallPage() {
   }, []);
 
   const closeExpanded = useCallback(() => {
+    if (singleClickTimerRef.current !== null) {
+      window.clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
     if (typeof window !== "undefined" && window.history.state?.modal === "camera-fullscreen") {
       window.history.back();
     } else {
@@ -1523,6 +1533,10 @@ export default function CameraWallPage() {
 
                     const last = lastClickRef.current;
                     if (last.id === camera.id && now - last.time < 350) {
+                      if (singleClickTimerRef.current !== null) {
+                        window.clearTimeout(singleClickTimerRef.current);
+                        singleClickTimerRef.current = null;
+                      }
                       openExpanded(camera.id);
                       setCameraMenuId(null);
                       lastClickRef.current = { id: "", time: 0 };
@@ -1530,8 +1544,28 @@ export default function CameraWallPage() {
                     }
 
                     lastClickRef.current = { id: camera.id, time: now };
-                    setCameraMenuId((prev) => (prev === camera.id ? null : camera.id));
-                    setActiveCameraControlsId(camera.id);
+                    if (singleClickTimerRef.current !== null) {
+                      window.clearTimeout(singleClickTimerRef.current);
+                    }
+                    singleClickTimerRef.current = window.setTimeout(() => {
+                      singleClickTimerRef.current = null;
+                      setCameraMenuId((prev) => (prev === camera.id ? null : camera.id));
+                      setActiveCameraControlsId(camera.id);
+                    }, 240);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (singleClickTimerRef.current !== null) {
+                      window.clearTimeout(singleClickTimerRef.current);
+                      singleClickTimerRef.current = null;
+                    }
+                    lastClickRef.current = { id: "", time: 0 };
+                    if (expandedCameraId === camera.id) {
+                      toggleMediaZoom();
+                    } else {
+                      setCameraMenuId(null);
+                      openExpanded(camera.id);
+                    }
                   }}
                   className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
                 >
@@ -1766,7 +1800,42 @@ export default function CameraWallPage() {
                   <div
                     data-pull-to-refresh-ignore="true"
                     className="absolute inset-0 z-40 flex flex-col justify-between p-2 sm:p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-indigo-500/50 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((e.target as HTMLElement).closest("button, a")) return;
+                      const now = Date.now();
+                      const last = lastClickRef.current;
+                      if (last.id === camera.id && now - last.time < 350) {
+                        if (singleClickTimerRef.current !== null) {
+                          window.clearTimeout(singleClickTimerRef.current);
+                          singleClickTimerRef.current = null;
+                        }
+                        lastClickRef.current = { id: "", time: 0 };
+                        setCameraMenuId(null);
+                        openExpanded(camera.id);
+                        return;
+                      }
+                      lastClickRef.current = { id: camera.id, time: now };
+                      if (singleClickTimerRef.current !== null) {
+                        window.clearTimeout(singleClickTimerRef.current);
+                      }
+                      singleClickTimerRef.current = window.setTimeout(() => {
+                        singleClickTimerRef.current = null;
+                        setCameraMenuId(null);
+                        setActiveCameraControlsId(null);
+                      }, 240);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if ((e.target as HTMLElement).closest("button, a")) return;
+                      if (singleClickTimerRef.current !== null) {
+                        window.clearTimeout(singleClickTimerRef.current);
+                        singleClickTimerRef.current = null;
+                      }
+                      lastClickRef.current = { id: "", time: 0 };
+                      setCameraMenuId(null);
+                      openExpanded(camera.id);
+                    }}
                   >
                     {/* Header: Camera Name + Fullscreen + Close */}
                     <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1.5 px-0.5">
