@@ -46,7 +46,11 @@ async function fetchCameraImage(camera) {
   let streamUris = [];
   try { snapshotUris = JSON.parse(camera.snapshotUris || '[]'); } catch {}
   try { streamUris = JSON.parse(camera.streamUris || '[]'); } catch {}
-  const urls = [...snapshotUris, ...streamUris].filter((url) => typeof url === 'string' && url);
+  const subStream = streamUris.find((u) => /sub(stream|_|\/)?|102|subtype=1|stream2|profile2|channel=?2|second/i.test(u))
+    || (streamUris.length > 1 ? streamUris[1] : null);
+  const mainStream = streamUris.find((u) => /main(stream|_|\/)?|101|subtype=0|stream1|profile1|channel=?1|first/i.test(u))
+    || streamUris[0];
+  const urls = [...snapshotUris, subStream, mainStream, ...streamUris].filter((url, idx, arr) => typeof url === 'string' && url && arr.indexOf(url) === idx);
   if (!urls.length) return null;
 
   const imageWidth = Math.max(480, Math.min(1280, Number(process.env.NTFY_IMAGE_WIDTH) || 960));

@@ -19,6 +19,8 @@ export type StorageStats = {
   usagePercent: number;
   recordingsCount: number;
   recordingsSizeBytes: number;
+  estimatedDailyBytes?: number;
+  estimatedDaysRemaining?: number | null;
   error?: string;
 };
 
@@ -130,6 +132,9 @@ export async function getStorageStats(targetPath: string): Promise<StorageStats>
 
     // Scan recordings count and total size
     try {
+      let oldestMtime = Date.now();
+      let newestMtime = 0;
+
       const scanDir = async (dir: string): Promise<{ count: number; size: number }> => {
         let count = 0;
         let size = 0;
@@ -146,6 +151,9 @@ export async function getStorageStats(targetPath: string): Promise<StorageStats>
             try {
               const fileStat = await fsp.stat(fullPath);
               size += fileStat.size;
+              const mtime = fileStat.mtimeMs;
+              if (mtime < oldestMtime) oldestMtime = mtime;
+              if (mtime > newestMtime) newestMtime = mtime;
             } catch {}
           }
         }
@@ -155,6 +163,17 @@ export async function getStorageStats(targetPath: string): Promise<StorageStats>
       const { count, size } = await scanDir(targetPath);
       result.recordingsCount = count;
       result.recordingsSizeBytes = size;
+
+      if (count > 0 && size > 0 && newestMtime > 0) {
+        const timespanDays = Math.max(0.25, (newestMtime - oldestMtime) / (1000 * 60 * 60 * 24));
+        const dailyRate = Math.round(size / timespanDays);
+        result.estimatedDailyBytes = dailyRate;
+        if (dailyRate > 0 && result.freeBytes > 0) {
+          result.estimatedDaysRemaining = Math.max(1, Math.floor(result.freeBytes / dailyRate));
+        } else {
+          result.estimatedDaysRemaining = null;
+        }
+      }
     } catch {}
 
     return result;

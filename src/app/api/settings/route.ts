@@ -9,6 +9,8 @@ import {
   SESSION_TTL_MS,
   setAppPassword,
   setWebhookToken,
+  encryptSecret,
+  maskSecret,
 } from "@/lib/security";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ...settings,
+      offsiteBackupPassword: settings.offsiteBackupPassword ? maskSecret(settings.offsiteBackupPassword) : null,
       authEnabled: isAppAuthEnabled(),
       envAuthLocked: Boolean(process.env.APP_PASSWORD && process.env.APP_PASSWORD.trim().length > 0),
       webhookToken: getWebhookToken() || "",
@@ -73,6 +76,12 @@ export async function POST(req: Request) {
       updateData.motionPixelThreshold = body.motionPixelThreshold !== null && body.motionPixelThreshold !== ""
         ? Math.max(8, Math.min(80, Math.round(Number(body.motionPixelThreshold) || 18)))
         : 18;
+    }
+    if (body.offsiteBackupEnabled !== undefined) updateData.offsiteBackupEnabled = Boolean(body.offsiteBackupEnabled);
+    if (body.offsiteBackupUrl !== undefined) updateData.offsiteBackupUrl = body.offsiteBackupUrl ? String(body.offsiteBackupUrl).trim() : null;
+    if (body.offsiteBackupUsername !== undefined) updateData.offsiteBackupUsername = body.offsiteBackupUsername ? String(body.offsiteBackupUsername).trim() : null;
+    if (body.offsiteBackupPassword !== undefined && body.offsiteBackupPassword !== "••••••••") {
+      updateData.offsiteBackupPassword = body.offsiteBackupPassword ? encryptSecret(String(body.offsiteBackupPassword).trim()) : null;
     }
 
     const settings = await prisma.settings.upsert({

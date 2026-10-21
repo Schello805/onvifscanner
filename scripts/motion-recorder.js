@@ -4,6 +4,8 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { effectiveRecordingMode } = require('./recording-policy');
+const { uploadClipToOffsite } = require('./offsite-backup');
+const { getFfmpegHwaccelArgs } = require('./ffmpeg-hwaccel');
 
 const execFileAsync = promisify(execFile);
 const BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGMENT_SECONDS) || 5);
@@ -208,7 +210,7 @@ class MotionRecorder {
         console.warn(`[Motion Recorder] Codec von ${camera.name} konnte nicht ermittelt werden; H.264-Konvertierung wird verwendet.`, error?.message || error);
       }
 
-      const ffmpegArgs = ['-y', '-hide_banner', '-loglevel', 'error'];
+      const ffmpegArgs = ['-y', '-hide_banner', '-loglevel', 'error', ...getFfmpegHwaccelArgs()];
       if (segments.length === 1) {
         ffmpegArgs.push('-i', segments[0]);
       } else {
@@ -240,6 +242,7 @@ class MotionRecorder {
       });
       await fsp.rm(stageDir, { recursive: true, force: true });
       console.log(`[Motion Recorder] ${camera.name}: ${segments.length} Segment(e) zu ${filename} zusammengeführt (${videoCodec === 'h264' ? 'H.264 übernommen' : `${videoCodec || 'unbekannt'} → H.264`}).`);
+      void uploadClipToOffsite(this.prisma, output, filename, camera.name);
     } catch (error) {
       await fsp.unlink(partial).catch(() => undefined);
       await this.prisma.motionRecording.update({

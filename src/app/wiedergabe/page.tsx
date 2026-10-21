@@ -7,6 +7,7 @@ import {
   Play,
   Pause,
   Download,
+  Share2,
   Trash2,
   RefreshCw,
   Calendar,
@@ -99,6 +100,7 @@ export default function PlaybackPage() {
   const [sizeFilter, setSizeFilter] = useState<ClipSizeFilter>("all");
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [filterMotionOnly, setFilterMotionOnly] = useState(false);
+  const [objectFilter, setObjectFilter] = useState<"all" | "person" | "vehicle" | "animal" | "plate">("all");
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [mobileCalendarOpen, setMobileCalendarOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -131,6 +133,30 @@ export default function PlaybackPage() {
   } | null>(null);
 
   // Active Video Player Modal State
+  const [sharingClip, setSharingClip] = useState(false);
+
+  const handleShareClip = async (clipId: string) => {
+    setSharingClip(true);
+    toast.info("Exportiere Clip mit Zeitstempel...");
+    try {
+      const res = await fetch("/api/nvr/recordings/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clipId, overlay: true, shareHours: 48 }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.shareUrl) {
+        throw new Error(data.error || "Fehler beim Erstellen des Links");
+      }
+      const fullUrl = `${window.location.origin}${data.shareUrl}`;
+      await navigator.clipboard.writeText(fullUrl);
+      toast.success("Teilen-Link kopiert (48h gültig)!");
+    } catch (err: any) {
+      toast.error(err?.message || "Teilen fehlgeschlagen");
+    } finally {
+      setSharingClip(false);
+    }
+  };
   const [activeClip, setActiveClip] = useState<RecordingClip | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
@@ -398,6 +424,7 @@ export default function PlaybackPage() {
     Boolean(searchQuery.trim()),
     timePreset !== "all",
     filterMotionOnly,
+    objectFilter !== "all",
     Boolean(storageFilter),
     sizeFilter !== "all",
     sortBy !== "newest",
@@ -414,6 +441,25 @@ export default function PlaybackPage() {
       const cam = cameras.find((c) => c.id === clip.cameraId);
       const fallback = (cam?.recordSegmentMinutes || 15) * 60;
       map.set(clip.id, getMotionEventsForClip(clip, motionEvents, 0, fallback));
+    }
+    return map;
+  }, [clips, motionEvents, cameras]);
+
+  const rawClipEventsMap = useMemo(() => {
+    const map = new Map<string, MotionEvent[]>();
+    for (const clip of clips) {
+      const cam = cameras.find((c) => c.id === clip.cameraId);
+      const fallbackSec = (cam?.recordSegmentMinutes || 15) * 60;
+      const clipStartSec = parseTimeToSeconds(clip.timeStr);
+      const matched = motionEvents.filter((ev) => {
+        if (ev.clipId && ev.clipId !== clip.id) return false;
+        if (ev.cameraId && clip.cameraId && ev.cameraId !== clip.cameraId) return false;
+        if (clip.dateStr && ev.dateStr && clip.dateStr !== ev.dateStr) return false;
+        const evSec = parseTimeToSeconds(ev.timeStr);
+        const offset = evSec - clipStartSec;
+        return offset >= -5 && offset <= fallbackSec + 5;
+      });
+      map.set(clip.id, matched);
     }
     return map;
   }, [clips, motionEvents, cameras]);
@@ -444,14 +490,47 @@ export default function PlaybackPage() {
     let result = [...clips];
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (c) =>
+      result = result.filter((c) => {
+        if (
           c.cameraName.toLowerCase().includes(q) ||
           c.filename.toLowerCase().includes(q) ||
           c.timeStr.toLowerCase().includes(q) ||
           c.dateStr.toLowerCase().includes(q) ||
           c.storageTargetName.toLowerCase().includes(q)
-      );
+        ) {
+          return true;
+        }
+        const evs = rawClipEventsMap.get(c.id);
+        if (evs && evs.length > 0) {
+          for (const ev of evs) {
+            if (ev.message && ev.message.toLowerCase().includes(q)) return true;
+            if (ev.objectClasses && ev.objectClasses.some((cls) => cls.toLowerCase().includes(q))) return true;
+            if (ev.licensePlates && ev.licensePlates.some((p) => p.plate.toLowerCase().includes(q) || (p.knownName && p.knownName.toLowerCase().includes(q)))) return true;
+          }
+        }
+        return false;
+      });
+    }
+
+    if (objectFilter !== "all") {
+      result = result.filter((clip) => {
+        const eventsForClip = rawClipEventsMap.get(clip.id) || [];
+        return eventsForClip.some((ev) => {
+          if (objectFilter === "plate") {
+            return (ev.licensePlates && ev.licensePlates.length > 0) || (ev.message && /kennzeichen/i.test(ev.message));
+          }
+          if (objectFilter === "person") {
+            return (ev.objectClasses && ev.objectClasses.includes("person")) || /person/i.test(ev.message || "");
+          }
+          if (objectFilter === "vehicle") {
+            return (ev.objectClasses && ev.objectClasses.some((c) => ["vehicle", "car", "truck", "bus", "motorcycle"].includes(c))) || /fahrzeug|auto|lkw|motorrad/i.test(ev.message || "");
+          }
+          if (objectFilter === "animal") {
+            return (ev.objectClasses && ev.objectClasses.some((c) => ["animal", "dog", "cat", "bird"].includes(c))) || /tier|hund|katze/i.test(ev.message || "");
+          }
+          return false;
+        });
+      });
     }
     if (timeFrom) {
       const tFrom = timeFrom.length === 5 ? `${timeFrom}:00` : timeFrom;
@@ -511,7 +590,7 @@ export default function PlaybackPage() {
       result.sort((a, b) => direction * a.filename.localeCompare(b.filename, "de", { numeric: true }));
     }
     return result;
-  }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, clipMotionMap, storageFilter, sizeFilter]);
+  }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, objectFilter, clipMotionMap, rawClipEventsMap, storageFilter, sizeFilter]);
 
   // Clips for 24h Timeline (clips matching selected date and selected camera)
   const timelineClips = useMemo(() => {
@@ -1283,7 +1362,7 @@ export default function PlaybackPage() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Suche..."
+                placeholder="Clip, Person, Auto, Kennzeichen..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1299,6 +1378,33 @@ export default function PlaybackPage() {
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
+            </div>
+
+            {/* Quick Object Filter Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5">
+              {[
+                { id: "all", label: "Alle" },
+                { id: "person", label: "🚶 Person" },
+                { id: "vehicle", label: "🚗 Fahrzeug" },
+                { id: "animal", label: "🐾 Tier" },
+                { id: "plate", label: "🏷️ Kennzeichen" },
+              ].map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => {
+                    setObjectFilter(pill.id as any);
+                    setCurrentPage(1);
+                  }}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors shrink-0 ${
+                    objectFilter === pill.id
+                      ? "bg-amber-500 text-black font-semibold shadow-sm"
+                      : "bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
             </div>
 
             {/* Camera Dropdown */}
@@ -1621,6 +1727,15 @@ export default function PlaybackPage() {
                 >
                   <Download className="h-4 w-4" />
                 </a>
+                <button
+                  type="button"
+                  onClick={() => handleShareClip(activeClip.id)}
+                  disabled={sharingClip}
+                  className="rounded-lg border border-amber-500/40 bg-amber-500/15 p-2 text-amber-300 hover:bg-amber-500/30 hover:text-white transition-colors disabled:opacity-50"
+                  title="Clip mit Zeitstempel exportieren & Link teilen (48h gültig)"
+                >
+                  <Share2 className={`h-4 w-4 ${sharingClip ? "animate-spin" : ""}`} />
+                </button>
                 <button
                   onClick={() => {
                     setActiveClip(null);

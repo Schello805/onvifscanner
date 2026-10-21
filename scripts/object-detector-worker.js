@@ -14,7 +14,7 @@ async function loadModel() {
       await tf.ready();
       const cocoSsd = require('@tensorflow-models/coco-ssd');
       const modelUrl = String(process.env.OBJECT_DETECTION_MODEL_URL || '').trim() || undefined;
-      const configuredBase = String(process.env.OBJECT_DETECTION_MODEL_BASE || 'mobilenet_v2').trim();
+      const configuredBase = String(process.env.OBJECT_DETECTION_MODEL_BASE || 'lite_mobilenet_v2').trim();
       const base = new Set(['lite_mobilenet_v2', 'mobilenet_v1', 'mobilenet_v2']).has(configuredBase)
         ? configuredBase
         : 'mobilenet_v2';

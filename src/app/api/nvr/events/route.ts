@@ -10,14 +10,27 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const cameraId = searchParams.get("cameraId");
     const dateStr = searchParams.get("date"); // YYYY-MM-DD
+    const objectClass = (searchParams.get("objectClass") || searchParams.get("class") || "").trim().toLowerCase();
+    const query = (searchParams.get("query") || searchParams.get("q") || "").trim();
 
-    const whereClause: {
-      cameraId?: string;
-      timestamp?: { gte?: Date; lte?: Date };
-    } = {};
+    const whereClause: any = {};
 
     if (cameraId) {
       whereClause.cameraId = cameraId;
+    }
+
+    if (objectClass === "plate" || objectClass === "license_plate") {
+      whereClause.licensePlates = { not: null };
+    } else if (objectClass) {
+      whereClause.objectClasses = { contains: objectClass };
+    }
+
+    if (query) {
+      whereClause.OR = [
+        { message: { contains: query } },
+        { licensePlates: { contains: query } },
+        { objectClasses: { contains: query } },
+      ];
     }
 
     if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {

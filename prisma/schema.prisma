@@ -107,6 +107,10 @@ model Settings {
   timezone                    String?  @default("Europe/Berlin")
   motionMinAreaPercent        Float?   @default(1.5)
   motionPixelThreshold        Int?     @default(18)
+  offsiteBackupEnabled        Boolean? @default(false)
+  offsiteBackupUrl            String?
+  offsiteBackupUsername       String?
+  offsiteBackupPassword       String?
 }
 
 model DiscoveredDevice {

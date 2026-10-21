@@ -27,6 +27,7 @@ import {
   Clock,
   Sparkles,
   Sliders,
+  Cloud,
 } from "lucide-react";
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
@@ -59,6 +60,10 @@ type SettingsData = {
   timezone: string;
   motionMinAreaPercent: number;
   motionPixelThreshold: number;
+  offsiteBackupEnabled?: boolean;
+  offsiteBackupUrl?: string;
+  offsiteBackupUsername?: string;
+  offsiteBackupPassword?: string;
 };
 
 type TabType = "general" | "notifications" | "security" | "entities" | "backup";
@@ -109,6 +114,10 @@ export function SettingsModal({
     timezone: "Europe/Berlin",
     motionMinAreaPercent: 1.5,
     motionPixelThreshold: 18,
+    offsiteBackupEnabled: false,
+    offsiteBackupUrl: "",
+    offsiteBackupUsername: "",
+    offsiteBackupPassword: "",
   });
   const [newAppPassword, setNewAppPassword] = useState("");
   const [showAppPassword, setShowAppPassword] = useState(false);
@@ -1598,6 +1607,74 @@ export function SettingsModal({
                         </div>
                       )}
                     </div>
+                  </div>
+
+                  {/* Cloud / Offsite WebDAV Backup */}
+                  <div className="rounded-2xl border border-slate-800/90 bg-slate-950/50 p-6 space-y-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-2xl bg-sky-500/15 text-sky-400 border border-sky-500/20">
+                          <Cloud className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-100">
+                            {t("Automatisches Offsite- & Cloud-Backup", "Automatic Offsite & Cloud Backup")}
+                          </h3>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {t("Sichert neue Ereignisclips sofort per WebDAV auf Nextcloud, ownCloud oder NAS", "Mirrors new motion clips immediately via WebDAV to Nextcloud or NAS")}
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        className="toggle toggle-info toggle-sm"
+                        checked={data.offsiteBackupEnabled ?? false}
+                        onChange={(e) => setData({ ...data, offsiteBackupEnabled: e.target.checked })}
+                      />
+                    </div>
+
+                    {data.offsiteBackupEnabled && (
+                      <div className="space-y-3.5 pt-2 border-t border-slate-800/70 animate-in fade-in duration-150">
+                        <div>
+                          <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                            {t("WebDAV-Zielordner URL", "WebDAV Target Folder URL")}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="https://cloud.example.com/remote.php/dav/files/benutzer/NVR_Backups"
+                            value={data.offsiteBackupUrl || ""}
+                            onChange={(e) => setData({ ...data, offsiteBackupUrl: e.target.value })}
+                            className="input input-sm w-full bg-slate-900 border-slate-800 text-xs text-slate-200"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                              {t("Benutzername", "Username")}
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="benutzername"
+                              value={data.offsiteBackupUsername || ""}
+                              onChange={(e) => setData({ ...data, offsiteBackupUsername: e.target.value })}
+                              className="input input-sm w-full bg-slate-900 border-slate-800 text-xs text-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-medium text-slate-400 block mb-1">
+                              {t("Passwort / App-Token", "Password / App Token")}
+                            </label>
+                            <input
+                              type="password"
+                              placeholder="••••••••"
+                              value={data.offsiteBackupPassword || ""}
+                              onChange={(e) => setData({ ...data, offsiteBackupPassword: e.target.value })}
+                              className="input input-sm w-full bg-slate-900 border-slate-800 text-xs text-slate-200"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

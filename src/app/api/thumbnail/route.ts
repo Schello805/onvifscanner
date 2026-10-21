@@ -4,6 +4,7 @@ import { sanitizeUrlString } from "@/lib/util/url";
 import { isPrivateIpv4 } from "@/lib/net/ip";
 import { prisma } from "@/lib/db";
 import { decryptSecret, ENC_PREFIX, MASKED_PASSWORD } from "@/lib/security";
+import { getFfmpegHwaccelArgs } from "@/lib/ffmpegHwaccel";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -288,6 +289,7 @@ export async function POST(req: Request) {
             }
             const args = [
               "-y",
+              ...getFfmpegHwaccelArgs(),
               "-rtsp_transport", "tcp",
               "-t", String(Math.ceil(timeoutMs / 1000) + 1),
               "-i", rtspUrl,

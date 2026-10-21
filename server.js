@@ -122,6 +122,7 @@ app.prepare().then(async () => {
         pathname.startsWith("/api/") &&
         !pathname.startsWith("/api/auth/") &&
         !pathname.startsWith("/api/health") &&
+        !pathname.startsWith("/api/share/") &&
         !pathname.startsWith("/api/events/") &&
         isAppAuthEnabled()
       ) {

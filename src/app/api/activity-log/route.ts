@@ -10,26 +10,61 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const cameraId = (searchParams.get("cameraId") || "").trim();
     const type = searchParams.get("type") || "all";
+    const query = (searchParams.get("query") || searchParams.get("q") || "").trim();
+    const objectClass = (searchParams.get("objectClass") || searchParams.get("class") || "").trim().toLowerCase();
+    const fromStr = (searchParams.get("from") || "").trim();
+    const toStr = (searchParams.get("to") || "").trim();
+
     const requestedLimit = Number(searchParams.get("limit"));
     const limit = Math.min(500, Math.max(20, Number.isFinite(requestedLimit) ? requestedLimit : 200));
     const includeMotion = type === "all" || type === "motion";
     const includeStatus = type === "all" || type === "online" || type === "offline";
 
+    const timestampFilter: { gte?: Date; lte?: Date } = {};
+    if (fromStr) {
+      const d = new Date(fromStr);
+      if (!isNaN(d.getTime())) timestampFilter.gte = d;
+    }
+    if (toStr) {
+      const d = new Date(toStr);
+      if (!isNaN(d.getTime())) timestampFilter.lte = d;
+    }
+
+    const alarmWhere: any = {};
+    if (cameraId) alarmWhere.cameraId = cameraId;
+    if (timestampFilter.gte || timestampFilter.lte) alarmWhere.timestamp = timestampFilter;
+
+    if (objectClass === "plate" || objectClass === "license_plate") {
+      alarmWhere.licensePlates = { not: null };
+    } else if (objectClass) {
+      alarmWhere.objectClasses = { contains: objectClass };
+    }
+
+    if (query) {
+      alarmWhere.OR = [
+        { message: { contains: query } },
+        { licensePlates: { contains: query } },
+        { objectClasses: { contains: query } },
+      ];
+    }
+
+    const statusWhere: any = {};
+    if (cameraId) statusWhere.cameraId = cameraId;
+    if (type === "online" || type === "offline") statusWhere.status = type;
+    if (timestampFilter.gte || timestampFilter.lte) statusWhere.timestamp = timestampFilter;
+
     const [alarms, statusLogs] = await Promise.all([
       includeMotion
         ? prisma.alarmLog.findMany({
-            where: cameraId ? { cameraId } : undefined,
+            where: alarmWhere,
             orderBy: { timestamp: "desc" },
             take: limit,
             include: { camera: { select: { id: true, name: true, ip: true } } },
           })
         : [],
-      includeStatus
+      includeStatus && !objectClass && !query
         ? prisma.cameraStatusLog.findMany({
-            where: {
-              ...(cameraId ? { cameraId } : {}),
-              ...(type === "online" || type === "offline" ? { status: type } : {}),
-            },
+            where: statusWhere,
             orderBy: { timestamp: "desc" },
             take: limit,
             include: { camera: { select: { id: true, name: true, ip: true } } },

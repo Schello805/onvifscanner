@@ -11,8 +11,10 @@ import {
   HardDrive,
   ExternalLink,
   Settings,
+  Activity,
 } from "lucide-react";
 import { SettingsModal } from "./SettingsModal";
+import { HealthDashboardModal } from "./camera/HealthDashboardModal";
 import { useLanguage } from "./LanguageProvider";
 
 type NavItem = {
@@ -106,6 +108,7 @@ export function Navigation({
   const pathname = usePathname();
   const { lang, t } = useLanguage();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHealthOpen, setIsHealthOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [recordingCount, setRecordingCount] = useState<number>(0);
 
@@ -226,6 +229,13 @@ export function Navigation({
             })}
             <div className="w-px h-6 bg-white/10 mx-1"></div>
             <button
+              onClick={() => setIsHealthOpen(true)}
+              className="group relative flex items-center justify-center rounded-xl px-3.5 py-2 text-slate-300 hover:bg-white/5 hover:text-white border border-transparent transition-all duration-200"
+              title={t("Systemgesundheit & Streams", "System health & streams")}
+            >
+              <Activity className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+            </button>
+            <button
               onClick={() => setIsSettingsOpen(true)}
               className="group relative flex items-center justify-center rounded-xl px-3.5 py-2 text-slate-300 hover:bg-white/5 hover:text-white border border-transparent transition-all duration-200"
               title={t("Einstellungen", "Settings")}
@@ -247,6 +257,16 @@ export function Navigation({
               <span>GitHub</span>
               <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
+
+            {/* Mobile Health Button */}
+            <button
+              type="button"
+              onClick={() => setIsHealthOpen(true)}
+              className="inline-flex md:hidden items-center justify-center rounded-xl border border-white/10 bg-white/5 p-2 text-emerald-400 transition-colors hover:bg-white/10 hover:text-white active:scale-95"
+              aria-label={t("Systemgesundheit", "Health")}
+            >
+              <Activity className="h-5 w-5" />
+            </button>
 
             {/* Mobile Settings Button */}
             <button
@@ -324,6 +344,12 @@ export function Navigation({
       <SettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
+      />
+
+      {/* Health Dashboard Modal */}
+      <HealthDashboardModal
+        isOpen={isHealthOpen}
+        onClose={() => setIsHealthOpen(false)}
       />
     </>
   );

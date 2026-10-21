@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Volume2, VolumeX } from "lucide-react";
 
 type WebRtcPlayerProps = {
   whepUrl?: string;
@@ -9,6 +10,7 @@ type WebRtcPlayerProps = {
   className?: string;
   style?: React.CSSProperties;
   iceServers?: RTCIceServer[];
+  showAudioToggle?: boolean;
 };
 
 export function WebRtcPlayer({
@@ -18,9 +20,19 @@ export function WebRtcPlayer({
   className,
   style,
   iceServers,
+  showAudioToggle = true,
 }: WebRtcPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(!whepUrl);
+  const [isMuted, setIsMuted] = useState(true);
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    const next = !isMuted;
+    videoRef.current.muted = next;
+    setIsMuted(next);
+  };
 
   useEffect(() => {
     // Only use iframe fallback if whepUrl is missing or RTCPeerConnection is unsupported
@@ -198,15 +210,27 @@ export function WebRtcPlayer({
   }
 
   return (
-    <video
-      ref={videoRef}
-      title={title}
-      autoPlay
-      playsInline
-      muted
-      controls={false}
-      className={className}
-      style={style}
-    />
+    <div className={`relative w-full h-full overflow-hidden ${className || ""}`} style={style}>
+      <video
+        ref={videoRef}
+        title={title}
+        autoPlay
+        playsInline
+        muted
+        controls={false}
+        className="w-full h-full object-cover"
+      />
+      {showAudioToggle && (
+        <button
+          type="button"
+          onClick={toggleMute}
+          title={isMuted ? "Ton einschalten" : "Ton stummschalten"}
+          aria-label={isMuted ? "Ton einschalten" : "Ton stummschalten"}
+          className="absolute bottom-2.5 right-2.5 z-20 p-1.5 rounded-full bg-black/60 hover:bg-black/85 text-white/90 hover:text-white backdrop-blur-sm shadow-md transition-all active:scale-95 cursor-pointer pointer-events-auto"
+        >
+          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+        </button>
+      )}
+    </div>
   );
 }

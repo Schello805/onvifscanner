@@ -20,6 +20,7 @@ import {
   Server,
   Network,
   Wrench,
+  Clock,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
@@ -45,6 +46,8 @@ type StorageTargetItem = {
     usagePercent: number;
     recordingsCount: number;
     recordingsSizeBytes: number;
+    estimatedDailyBytes?: number;
+    estimatedDaysRemaining?: number | null;
     error?: string;
   };
 };
@@ -710,6 +713,15 @@ export default function StorageManagementPage() {
                         {`NVR-Clips: ${stats.recordingsCount} (${formatBytes(stats.recordingsSizeBytes)})`}
                       </span>
                     </div>
+
+                    {stats.estimatedDaysRemaining != null && (
+                      <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 text-xs text-emerald-300">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                        <span>
+                          Speicherprognose: Reicht bei derzeitigem Zuwachs ({formatBytes(stats.estimatedDailyBytes || 0)}/Tag) noch ca. <strong className="font-semibold text-white">{stats.estimatedDaysRemaining} {stats.estimatedDaysRemaining === 1 ? "Tag" : "Tage"}</strong>.
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Settings & Retention Info */}

@@ -6,6 +6,7 @@ const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
 const { readLicensePlates } = require('./license-plate-reader');
 const { findKnownEntity, touchKnownEntity } = require('./known-entities');
+const { matchKnownPersons } = require('./face-recognizer');
 const { isMotionScheduleActive } = require('./motion-schedule');
 const { effectiveRecordingMode } = require('./recording-policy');
 const {
@@ -79,6 +80,28 @@ async function pruneOldCameraEvents(prismaClient, cameraId, maxKeep = 500) {
   } catch (err) {
     console.warn(`[Event Cleanup] Warning for camera ${cameraId}:`, err?.message || err);
   }
+}
+
+function selectMainstreamForRecording(streamUris) {
+  const streams = (streamUris || []).filter((u) => typeof u === 'string' && /^rtsps?:\/\//i.test(u));
+  if (!streams.length) return null;
+  const main = streams.find((u) => /main(stream|_|\/)?|101|subtype=0|stream1|profile1|channel=?1|first/i.test(u));
+  return main || streams[0];
+}
+
+function prioritizeUrisForAnalysis(snapshotUris, streamUris) {
+  const snapshots = (snapshotUris || []).filter((u) => typeof u === 'string' && u);
+  const streams = (streamUris || []).filter((u) => typeof u === 'string' && u);
+
+  // Substream has top priority for video analysis to save CPU
+  const sub = streams.find((u) => /sub(stream|_|\/)?|102|subtype=1|stream2|profile2|channel=?2|second/i.test(u))
+    || (streams.length > 1 ? streams[1] : null);
+  const main = streams.find((u) => /main(stream|_|\/)?|101|subtype=0|stream1|profile1|channel=?1|first/i.test(u))
+    || streams[0];
+
+  const orderedStreams = [sub, main, ...streams].filter(Boolean);
+  const uniqueStreams = Array.from(new Set(orderedStreams));
+  return [...snapshots, ...uniqueStreams];
 }
 
 function parseMotionIgnoreRegions(value) {
@@ -392,7 +415,7 @@ async function detectCameraMotion(cam) {
   let streamUris = [];
   try { snapshotUris = JSON.parse(cam.snapshotUris); } catch {}
   try { streamUris = JSON.parse(cam.streamUris); } catch {}
-  const uris = [...snapshotUris, ...streamUris].filter((uri) => typeof uri === 'string' && uri);
+  const uris = prioritizeUrisForAnalysis(snapshotUris, streamUris);
   if (!uris.length) return;
 
   try {
@@ -656,6 +679,16 @@ async function detectCameraMotion(cam) {
           if (!duplicate) detectedObjects.push(vehicle);
         }
         if (detectedObjects.length) eventMessage = objectDetectionMessage(detectedObjects);
+        const persons = detectedObjects.filter((d) => d.className === 'person');
+        if (persons.length) {
+          try {
+            const matchedPersons = matchKnownPersons(persons, cam.name);
+            if (matchedPersons.length) {
+              const personLabels = matchedPersons.map((p) => p.name).join(', ');
+              eventMessage = `🚶 Bekannte Person: ${personLabels}`;
+            }
+          } catch {}
+        }
         if (vehicles.length) {
           try {
             const plates = await readLicensePlates(eventImage, result, vehicles, ignoreRegions);
@@ -905,7 +938,7 @@ async function syncMediaMtxPaths(cameras) {
       }
       
       if (uris && uris.length > 0) {
-        let uri = uris.find((value) => typeof value === 'string' && /^rtsps?:\/\//i.test(value));
+        let uri = selectMainstreamForRecording(uris);
         if (!uri) continue;
         if (cam.username) {
            try {
