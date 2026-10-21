@@ -1,12 +1,115 @@
 "use client";
 
+import { useMemo } from "react";
 import { Play, Clock, Search, Video, Zap, Image as ImageIcon } from "lucide-react";
 import { TIMELINE_WINDOWS, objectClassLabels } from "@/components/playback/playbackTypes";
 import { formatGermanDate, formatMinutesToTime, parseTimeToSeconds, formatBytes, getTodayStr } from "@/components/playback/playbackUtils";
+import type { RecordingClip } from "@/components/playback/playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
   const { toast, cameras, selectedDate, timeFrom, timeTo, timelineWindowMinutes, timelineStartMin, showEventLog, setShowEventLog, eventLogSearch, setEventLogSearch, eventLogTimeOfDay, setEventLogTimeOfDay, showVideoTrack, setShowVideoTrack, motionEvents, hoverScrubber, setHoverScrubber, activeClip, videoCurrentTime, setSelectedSnapshot, selectRecordingDate, timelineClips, openClipWithOffset, zoomToWindow, goToNow, panTimeline, jumpToMotionCluster, playEvent, focusEventOnTimeline, timelineTicks, timelinePanStepMinutes, timelinePanLabel, filteredMotionEvents } = pb;
+
+  // Merge contiguous / adjacent recording segments into unbroken continuous stream spans ("durchgehender Stream")
+  const streamSpans = useMemo(() => {
+    if (!timelineClips || timelineClips.length === 0) return [];
+
+    // Group clips by camera to preserve camera separation
+    const clipsByCamera = new Map<
+      string,
+      Array<{
+        clip: RecordingClip;
+        startSec: number;
+        endSec: number;
+      }>
+    >();
+
+    for (const clip of timelineClips) {
+      const startSec = parseTimeToSeconds(clip.timeStr);
+      const cam = cameras.find((c) => c.id === clip.cameraId);
+      const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+      const endSec = startSec + segSec;
+
+      const list = clipsByCamera.get(clip.cameraId) || [];
+      list.push({ clip, startSec, endSec });
+      clipsByCamera.set(clip.cameraId, list);
+    }
+
+    const spans: Array<{
+      id: string;
+      cameraId: string;
+      cameraName: string;
+      startSec: number;
+      endSec: number;
+      clips: Array<{
+        clip: RecordingClip;
+        startSec: number;
+        endSec: number;
+      }>;
+    }> = [];
+
+    clipsByCamera.forEach((items, camId) => {
+      if (items.length === 0) return;
+      // Sort chronologically by startSec
+      items.sort((a, b) => a.startSec - b.startSec);
+
+      let currentSpan = {
+        id: `span-${camId}-0`,
+        cameraId: camId,
+        cameraName: items[0].clip.cameraName,
+        startSec: items[0].startSec,
+        endSec: items[0].endSec,
+        clips: [items[0]],
+      };
+
+      for (let i = 1; i < items.length; i++) {
+        const item = items[i];
+        // Merge segments if adjacent or overlapping (tolerance up to 60s handover gap)
+        if (item.startSec <= currentSpan.endSec + 60) {
+          currentSpan.endSec = Math.max(currentSpan.endSec, item.endSec);
+          currentSpan.clips.push(item);
+        } else {
+          spans.push(currentSpan);
+          currentSpan = {
+            id: `span-${camId}-${spans.length}`,
+            cameraId: camId,
+            cameraName: item.clip.cameraName,
+            startSec: item.startSec,
+            endSec: item.endSec,
+            clips: [item],
+          };
+        }
+      }
+      spans.push(currentSpan);
+    });
+
+    return spans;
+  }, [timelineClips, cameras]);
+
+  // Active clip highlight within the timeline
+  const activeClipHighlight = useMemo(() => {
+    if (!activeClip) return null;
+    const startSec = parseTimeToSeconds(activeClip.timeStr);
+    const cam = cameras.find((c) => c.id === activeClip.cameraId);
+    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const endSec = startSec + segSec;
+
+    const spanMin = timelineWindowMinutes;
+    const vStart = timelineStartMin;
+    const vEnd = timelineStartMin + spanMin;
+
+    const startMin = startSec / 60;
+    const endMin = endSec / 60;
+
+    if (endMin < vStart || startMin > vEnd) return null;
+
+    const rStart = Math.max(vStart, startMin);
+    const rEnd = Math.min(vEnd, endMin);
+    const leftPct = ((rStart - vStart) / spanMin) * 100;
+    const widthPct = Math.max(0.3, ((rEnd - rStart) / spanMin) * 100);
+
+    return { leftPct, widthPct };
+  }, [activeClip, cameras, timelineWindowMinutes, timelineStartMin]);
   return (
     <>
       {/* Modern High-Precision Timeline */}
@@ -127,15 +230,10 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             const minute = totalMinutes % 60;
             const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
 
-            const nearbyClip = timelineClips.find((c) => {
-              const clipStartSec = parseTimeToSeconds(c.timeStr);
-              const cam = cameras.find((cm) => cm.id === c.cameraId);
-              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-              return clickSeconds >= clipStartSec && clickSeconds <= clipStartSec + segSec + 15;
-            }) || timelineClips.find((c) => {
-              const clipStartSec = parseTimeToSeconds(c.timeStr);
-              return Math.abs(clickSeconds - clipStartSec) <= 16 * 60;
-            });
+            // Check if within any stream span
+            const matchingSpan = streamSpans.find(
+              (span) => clickSeconds >= span.startSec && clickSeconds <= span.endSec
+            );
 
             const hasMotion = motionEvents.some(
               (ev) => Math.abs(ev.totalMinutes - totalMinutes) <= (timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4)
@@ -144,9 +242,9 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             setHoverScrubber({
               pct,
               timeStr,
-              hasRecording: Boolean(nearbyClip),
+              hasRecording: Boolean(matchingSpan),
               hasMotion,
-              clipName: nearbyClip?.cameraName,
+              clipName: matchingSpan?.cameraName,
             });
           }}
           onMouseLeave={() => setHoverScrubber(null)}
@@ -158,33 +256,41 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             const clickSeconds = (timelineStartMin + pct * spanMin) * 60;
             const totalMinutes = Math.floor(clickSeconds / 60);
 
-            // Find matching clip at this time (exact second accuracy + duration tolerance)
-            const matchingClip = timelineClips.find((c) => {
-              const clipStartSec = parseTimeToSeconds(c.timeStr);
-              const cam = cameras.find((cm) => cm.id === c.cameraId);
-              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-              return clickSeconds >= clipStartSec && clickSeconds <= clipStartSec + segSec + 15;
-            }) || timelineClips.find((c) => {
-              const clipStartSec = parseTimeToSeconds(c.timeStr);
-              return Math.abs(clickSeconds - clipStartSec) <= 16 * 60;
-            });
+            // Find matching stream span
+            const matchingSpan = streamSpans.find(
+              (span) => clickSeconds >= span.startSec && clickSeconds <= span.endSec
+            );
 
-            if (matchingClip) {
-              const clipStartSec = parseTimeToSeconds(matchingClip.timeStr);
-              const offset = Math.max(0, Math.floor(clickSeconds - clipStartSec));
-              openClipWithOffset(matchingClip, offset);
-            } else {
-              // Check if a motion event is near this point on the timeline
-              const nearbyEvent = motionEvents.find((ev) => Math.abs(ev.totalMinutes - totalMinutes) <= 2);
-              if (nearbyEvent) {
-                void playEvent(nearbyEvent);
+            if (matchingSpan) {
+              let targetItem = matchingSpan.clips.find(
+                (item) => clickSeconds >= item.startSec && clickSeconds < item.endSec
+              );
+              if (!targetItem) {
+                if (clickSeconds >= matchingSpan.endSec && matchingSpan.clips.length > 0) {
+                  targetItem = matchingSpan.clips[matchingSpan.clips.length - 1];
+                } else {
+                  targetItem = matchingSpan.clips.reduce((prev, curr) =>
+                    Math.abs(curr.startSec - clickSeconds) < Math.abs(prev.startSec - clickSeconds) ? curr : prev
+                  , matchingSpan.clips[0]);
+                }
+              }
+              if (targetItem) {
+                const offset = Math.max(0, Math.floor(clickSeconds - targetItem.startSec));
+                openClipWithOffset(targetItem.clip, offset);
                 return;
               }
-              const hour = Math.floor(totalMinutes / 60) % 24;
-              const minute = totalMinutes % 60;
-              const timeFormatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
-              toast.info(`Keine Aufnahme für ${timeFormatted} vorhanden.`);
             }
+
+            // Fallback: check if a motion event is near this point on the timeline
+            const nearbyEvent = motionEvents.find((ev) => Math.abs(ev.totalMinutes - totalMinutes) <= 2);
+            if (nearbyEvent) {
+              void playEvent(nearbyEvent);
+              return;
+            }
+            const hour = Math.floor(totalMinutes / 60) % 24;
+            const minute = totalMinutes % 60;
+            const timeFormatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
+            toast.info(`Keine Aufnahme für ${timeFormatted} vorhanden.`);
           }}
           className="relative h-14 sm:h-16 w-full rounded-xl bg-slate-950 border border-slate-800/90 shadow-inner overflow-hidden cursor-crosshair select-none group"
           title="Klicke auf die Zeitleiste zum Abspielen oder Vorfall-Prüfen"
@@ -227,55 +333,82 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             })()
           )}
 
-          {/* Recorded Clips as a sleek modern slim baseline track */}
+          {/* Continuous Recorded Video Stream Spans ("Durchgehender Stream") */}
           {showVideoTrack &&
-            timelineClips.map((clip) => {
+            streamSpans.map((span) => {
               const spanMin = timelineWindowMinutes;
               const vStart = timelineStartMin;
               const vEnd = timelineStartMin + spanMin;
-              const timeParts = clip.timeStr.split(":").map(Number);
-              const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
-              const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
-              const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
-              const clipStartMin = hh * 60 + mm + ss / 60;
-              const camInfo = cameras.find((c) => c.id === clip.cameraId);
-              const clipDurationMin = camInfo?.recordSegmentMinutes || 15;
-              const clipEndMin = clipStartMin + clipDurationMin;
 
-              if (clipEndMin < vStart || clipStartMin > vEnd) return null;
+              const spanStartMin = span.startSec / 60;
+              const spanEndMin = span.endSec / 60;
 
-              const rStart = Math.max(vStart, clipStartMin);
-              const rEnd = Math.min(vEnd, clipEndMin);
-              const leftPct = ((rStart - vStart) / spanMin) * 100;
-              const widthPct = Math.max(0.4, ((rEnd - rStart) / spanMin) * 100);
-              const isCurrentPlaying = activeClip?.id === clip.id;
+              // Outside visible timeline window?
+              if (spanEndMin < vStart || spanStartMin > vEnd) return null;
+
+              const rStartMin = Math.max(vStart, spanStartMin);
+              const rEndMin = Math.min(vEnd, spanEndMin);
+              const leftPct = ((rStartMin - vStart) / spanMin) * 100;
+              const widthPct = Math.max(0.3, ((rEndMin - rStartMin) / spanMin) * 100);
+
+              const isLeftCapped = spanStartMin >= vStart;
+              const isRightCapped = spanEndMin <= vEnd;
 
               return (
                 <div
-                  key={clip.id}
+                  key={span.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    const clipRect = e.currentTarget.getBoundingClientRect();
-                    const innerPct = Math.max(0, Math.min(1, (e.clientX - clipRect.left) / clipRect.width));
-                    const cam = cameras.find((cm) => cm.id === clip.cameraId);
-                    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-                    const offset = Math.floor(innerPct * segSec);
-                    openClipWithOffset(clip, offset);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    const rStartSec = rStartMin * 60;
+                    const rEndSec = rEndMin * 60;
+                    const clickedSec = rStartSec + clickRatio * (rEndSec - rStartSec);
+
+                    // Find matching clip in this span
+                    let targetItem = span.clips.find(
+                      (item) => clickedSec >= item.startSec && clickedSec < item.endSec
+                    );
+                    if (!targetItem) {
+                      if (clickedSec >= span.endSec && span.clips.length > 0) {
+                        targetItem = span.clips[span.clips.length - 1];
+                      } else {
+                        targetItem = span.clips.reduce((prev, curr) =>
+                          Math.abs(curr.startSec - clickedSec) < Math.abs(prev.startSec - clickedSec) ? curr : prev
+                        , span.clips[0]);
+                      }
+                    }
+
+                    if (targetItem) {
+                      const offset = Math.max(0, Math.floor(clickedSec - targetItem.startSec));
+                      openClipWithOffset(targetItem.clip, offset);
+                    }
                   }}
-                  className={`absolute top-2 bottom-2 rounded-lg transition-all cursor-pointer z-10 ${
-                    isCurrentPlaying
-                      ? "bg-sky-500/50 border-2 border-cyan-300 shadow-lg shadow-cyan-500/40 z-20"
-                      : "bg-sky-500/25 hover:bg-sky-400/50 border border-sky-400/35 hover:border-sky-300 shadow-sm"
-                  }`}
+                  className={`absolute top-2.5 bottom-2.5 bg-sky-500/35 hover:bg-sky-400/45 border-y border-sky-400/60 shadow-inner cursor-pointer z-10 transition-colors ${
+                    isLeftCapped ? "rounded-l-md border-l" : ""
+                  } ${isRightCapped ? "rounded-r-md border-r" : ""}`}
                   style={{
                     left: `${leftPct}%`,
                     width: `${widthPct}%`,
-                    minWidth: "4px",
                   }}
-                  title={`${clip.cameraName} · ${clip.timeStr} Uhr (${formatBytes(clip.sizeBytes)}) - Klick zum Abspielen`}
-                />
+                  title={`${span.cameraName} · Durchgehender Stream (${formatMinutesToTime(spanStartMin)} – ${formatMinutesToTime(spanEndMin)}) – Klick zum Abspielen`}
+                >
+                  {/* Subtle inner linear gradient along the continuous stream */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-sky-400/20 to-transparent pointer-events-none" />
+                </div>
               );
             })}
+
+          {/* Active Clip Highlight Band within the Stream */}
+          {showVideoTrack && activeClipHighlight && (
+            <div
+              className="absolute top-2 bottom-2 bg-sky-400/40 border-y-2 border-cyan-300 rounded-sm pointer-events-none z-15 shadow-[0_0_12px_rgba(56,189,248,0.5)]"
+              style={{
+                left: `${activeClipHighlight.leftPct}%`,
+                width: `${activeClipHighlight.widthPct}%`,
+              }}
+            />
+          )}
 
           {/* Motion Event Markers Layer */}
           {motionEvents.map((ev) => {
