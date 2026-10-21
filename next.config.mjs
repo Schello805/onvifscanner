@@ -50,6 +50,20 @@ const nextConfig = {
             value: "camera=(), microphone=(), geolocation=()"
           }
         ]
+      },
+      // Video streaming endpoint: allow byte range requests and browser caching
+      {
+        source: "/api/nvr/recordings/stream",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=86400"
+          },
+          {
+            key: "Accept-Ranges",
+            value: "bytes"
+          }
+        ]
       }
     ];
   }
