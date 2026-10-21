@@ -347,20 +347,20 @@ export default function PlaybackPage() {
   const selectCameraFilter = useCallback((cameraId: string) => {
     setSelectedCameraId(cameraId);
     setCurrentPage(1);
+    setTimeFrom("");
+    setTimeTo("");
+    setTimePreset("all");
     setCameraPickerOpen(false);
     void fetchClips(cameraId, selectedDate);
   }, [fetchClips, selectedDate]);
 
   useEffect(() => {
     if (!cameraPickerOpen) return;
-    const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setCameraPickerOpen(false);
     };
-    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [cameraPickerOpen]);
@@ -376,6 +376,9 @@ export default function PlaybackPage() {
   const showAllRecordingDays = useCallback(() => {
     setSelectedDate("");
     setCurrentPage(1);
+    setTimeFrom("");
+    setTimeTo("");
+    setTimePreset("all");
     void fetchClips(selectedCameraId, "");
   }, [fetchClips, selectedCameraId]);
 

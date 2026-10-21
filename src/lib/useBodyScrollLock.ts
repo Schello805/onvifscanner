@@ -15,8 +15,8 @@ function lockBodyScroll() {
   const html = document.documentElement;
   lockedScrollY = window.scrollY;
   previousBodyStyles = {
-    overflow: body.style.overflow,
-    position: body.style.position,
+    overflow: body.style.overflow !== "hidden" ? body.style.overflow : "",
+    position: body.style.position !== "fixed" ? body.style.position : "",
     top: body.style.top,
     left: body.style.left,
     right: body.style.right,
@@ -24,7 +24,7 @@ function lockBodyScroll() {
     paddingRight: body.style.paddingRight,
   };
   previousHtmlStyles = {
-    overflow: html.style.overflow,
+    overflow: html.style.overflow !== "hidden" ? html.style.overflow : "",
     overscrollBehavior: html.style.overscrollBehavior,
   };
 
@@ -48,8 +48,22 @@ function unlockBodyScroll() {
 
   const body = document.body;
   const html = document.documentElement;
-  Object.assign(body.style, previousBodyStyles);
-  Object.assign(html.style, previousHtmlStyles);
+  body.style.overflow = previousBodyStyles.overflow || "";
+  body.style.position = previousBodyStyles.position || "";
+  body.style.top = previousBodyStyles.top || "";
+  body.style.left = previousBodyStyles.left || "";
+  body.style.right = previousBodyStyles.right || "";
+  body.style.width = previousBodyStyles.width || "";
+  body.style.paddingRight = previousBodyStyles.paddingRight || "";
+
+  html.style.overflow = previousHtmlStyles.overflow || "";
+  html.style.overscrollBehavior = previousHtmlStyles.overscrollBehavior || "";
+
+  // Guaranteed unfreeze
+  if (body.style.overflow === "hidden") body.style.overflow = "";
+  if (body.style.position === "fixed") body.style.position = "";
+  if (html.style.overflow === "hidden") html.style.overflow = "";
+
   window.scrollTo(0, lockedScrollY);
 }
 
