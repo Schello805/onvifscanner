@@ -296,7 +296,7 @@ export async function POST(req: Request) {
             }
             // For single-frame snapshot capture, pure software decode is instantaneous (<30ms)
             // and avoids hardware acceleration crashes (VAAPI/DRM) in LXC containers/virtualized environments.
-            // Fast probing (-analyzeduration 500000 -probesize 500000 -stimeout 3000000) prevents FFmpeg from waiting 5 seconds.
+            // Fast probing (-analyzeduration 500000 -probesize 500000) prevents FFmpeg from waiting.
             const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
             const args = [
               "-y",
@@ -307,7 +307,6 @@ export async function POST(req: Request) {
               "-rtsp_transport", "tcp",
               "-analyzeduration", "500000",
               "-probesize", "500000",
-              "-stimeout", "3000000",
               "-t", String(timeoutSec + 1),
               "-i", rtspUrl,
               "-vframes", "1",
