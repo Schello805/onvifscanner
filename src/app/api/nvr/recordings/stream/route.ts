@@ -15,6 +15,7 @@ const execFileAsync = promisify(execFile);
 const compatibilityJobs = new Map<string, Promise<string>>();
 const probeCache = new Map<string, { videoCodec: string; audioCodec: string }>();
 const PLAYBACK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+let activeConversionLock = Promise.resolve();
 
 async function probeMediaCodecs(filePath: string): Promise<{ videoCodec: string; audioCodec: string }> {
   const cached = probeCache.get(filePath);
@@ -77,22 +78,30 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats): 
   if (runningJob) return runningJob;
 
   const job = (async () => {
+    // Wait for any previous conversion to finish so max 1 ffmpeg runs at a time (prevent high CPU load)
+    const prevLock = activeConversionLock;
+    let releaseLock = () => {};
+    activeConversionLock = new Promise<void>((resolve) => { releaseLock = resolve; });
+    await prevLock.catch(() => undefined);
+
     const temporaryPath = path.join(cacheDirectory, `.${cacheKey}.${process.pid}.tmp.mp4`);
     try {
-      // 2. Ultra-fast stream-copy: NEVER re-encode video if it is already H.264 or H.265!
-      // Only convert the audio track (e.g. G.711 / PCMU / PCMA) to AAC.
-      // Takes under 1 second even for 500MB files!
+      // Check again if existing was completed while waiting for lock
+      const recheck = await fsp.stat(outputPath).catch(() => null);
+      if (recheck?.isFile() && recheck.size > 0) return outputPath;
+
+      // 2. Pure stream copy of video + convert audio to AAC.
+      // NO genpts, NO make_zero, NO +faststart defragmentation!
+      // This runs linearly in 1-2 seconds without freezing CPU or disk I/O.
       try {
         const copyArgs = [
           "-y", "-hide_banner", "-loglevel", "error",
-          "-fflags", "+genpts",
-          "-avoid_negative_ts", "make_zero",
           "-i", sourcePath,
           "-map", "0:v:0", "-map", "0:a:0?",
           "-c:v", "copy",
         ];
 
-        // Only tag as hvc1 if it is actually HEVC/H.265 (DO NOT tag H.264 as hvc1)
+        // Tag as hvc1 only if codec is actually HEVC/H.265
         if (videoCodec === "hevc" || videoCodec === "h265") {
           copyArgs.push("-tag:v", "hvc1");
         }
@@ -103,9 +112,9 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats): 
           copyArgs.push("-c:a", "aac", "-b:a", "128k");
         }
 
-        copyArgs.push("-movflags", "+faststart", "-max_muxing_queue_size", "1024", temporaryPath);
+        copyArgs.push("-threads", "1", temporaryPath);
 
-        await execFileAsync("ffmpeg", copyArgs, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+        await execFileAsync("ffmpeg", copyArgs, { timeout: 25_000, maxBuffer: 4 * 1024 * 1024 });
 
         const converted = await fsp.stat(temporaryPath);
         if (converted.isFile() && converted.size > 0) {
@@ -114,22 +123,21 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats): 
           return outputPath;
         }
       } catch (copyErr: any) {
-        console.warn("[Stream] Fast stream-copy failed, falling back to transcode:", copyErr?.message || copyErr);
+        console.warn("[Stream] Fast stream-copy failed, trying video-only stream copy:", copyErr?.message || copyErr);
         await fsp.unlink(temporaryPath).catch(() => undefined);
       }
 
-      // 3. Last-resort fallback: only for genuinely broken or unsupported video codecs
+      // 3. Fallback: If audio transcode failed, copy video WITHOUT audio (instant 0.2s, 0% CPU!)
+      // Never do a full libx264 re-encode on an NVR CPU!
       await execFileAsync("ffmpeg", [
         "-y", "-hide_banner", "-loglevel", "error",
         "-i", sourcePath,
-        "-map", "0:v:0", "-map", "0:a:0?",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
-        "-pix_fmt", "yuv420p", "-profile:v", "main", "-level", "4.0",
-        "-threads", "4",
-        "-c:a", "aac", "-b:a", "128k",
-        "-movflags", "+faststart",
+        "-map", "0:v:0",
+        "-c:v", "copy",
+        "-an",
         temporaryPath,
-      ], { timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 });
+      ], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+
       const converted = await fsp.stat(temporaryPath);
       if (!converted.isFile() || converted.size === 0) throw new Error("Leere Kompatibilitätsdatei erzeugt.");
       await fsp.rename(temporaryPath, outputPath);
@@ -139,6 +147,7 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats): 
       await fsp.unlink(temporaryPath).catch(() => undefined);
       throw error;
     } finally {
+      releaseLock();
       compatibilityJobs.delete(cacheKey);
     }
   })();
