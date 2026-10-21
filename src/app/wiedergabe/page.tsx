@@ -910,7 +910,8 @@ export default function PlaybackPage() {
         streamUrl: ev.streamUrl || `/api/nvr/recordings/stream?clipId=${ev.clipId}`,
         downloadUrl: `/api/nvr/recordings/stream?clipId=${ev.clipId}&download=1`,
       };
-      openClipWithOffset(clipToPlay, 0);
+      const offset = typeof (ev as any).clipOffsetSec === "number" ? (ev as any).clipOffsetSec : 0;
+      openClipWithOffset(clipToPlay, offset);
       toast.info(`Spiele Aufnahme für ${ev.cameraName} (${ev.timeStr} Uhr)`);
       return;
     }

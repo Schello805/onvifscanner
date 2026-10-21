@@ -51,6 +51,7 @@ let cycleRunning = false;
 const motionFrames = new Map();
 const motionFailureLogTimes = new Map();
 const cameraMotionSessions = new Map();
+const cameraMotionConsecutiveErrors = new Map();
 let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
@@ -420,7 +421,7 @@ async function detectCameraMotion(cam) {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5_000);
+    const timer = setTimeout(() => controller.abort(), 8_000);
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
       headers: {
@@ -834,8 +835,14 @@ async function detectCameraMotion(cam) {
         motionEventLastError: null,
       },
     });
+    cameraMotionConsecutiveErrors.delete(cam.id);
   } catch (error) {
-    motionFrames.delete(cam.id);
+    const errorCount = (cameraMotionConsecutiveErrors.get(cam.id) || 0) + 1;
+    cameraMotionConsecutiveErrors.set(cam.id, errorCount);
+    // Only wipe baseline frame after multiple consecutive errors to tolerate transient network drops
+    if (errorCount >= 3) {
+      motionFrames.delete(cam.id);
+    }
     const now = Date.now();
     const lastLogged = motionFailureLogTimes.get(cam.id) || 0;
     if (now - lastLogged > 60_000) {
@@ -918,6 +925,31 @@ async function runAutoDiscovery() {
   }
 }
 
+function normalizeDurationToSeconds(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  const str = String(val).trim();
+  let total = 0;
+  const matches = [...str.matchAll(/(\d+(?:\.\d+)?)\s*(h|m|s|ms)/g)];
+  if (matches.length > 0) {
+    for (const m of matches) {
+      const n = parseFloat(m[1]);
+      const unit = m[2];
+      if (unit === 'h') total += n * 3600;
+      else if (unit === 'm') total += n * 60;
+      else if (unit === 's') total += n;
+      else if (unit === 'ms') total += n / 1000;
+    }
+    return Math.round(total);
+  }
+  const n = parseFloat(str);
+  return isNaN(n) ? 0 : Math.round(n);
+}
+
+function normalizeRecordPath(p) {
+  return p ? require('path').resolve(String(p).trim()).replace(/\/+$/, '') : '';
+}
+
 async function syncMediaMtxPaths(cameras) {
   try {
     const listRes = await fetch('http://127.0.0.1:9997/v3/config/paths/list');
@@ -944,7 +976,8 @@ async function syncMediaMtxPaths(cameras) {
            try {
               let parsed = new URL(uri);
               parsed.username = cam.username;
-              parsed.password = decryptSecret(cam.password);
+              const decrypted = decryptSecret(cam.password);
+              if (decrypted) parsed.password = decrypted;
               uri = parsed.toString();
            } catch(e) {}
         }
@@ -1001,19 +1034,30 @@ async function syncMediaMtxPaths(cameras) {
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(config)
         }).catch(()=>null);
-      } else if (
-        existing.source !== config.source ||
-        existing.record !== config.record ||
-        existing.sourceOnDemand !== config.sourceOnDemand ||
-        existing.rtspTransport !== config.rtspTransport ||
-        (config.record && existing.recordPath !== config.recordPath) ||
-        (config.record && existing.recordSegmentDuration !== config.recordSegmentDuration && existing.recordSegmentDuration !== `${config.recordSegmentDuration}0s`)
-      ) {
-        await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(config)
-        }).catch(()=>null);
+      } else {
+        const segDurChanged = config.record && (
+          normalizeDurationToSeconds(existing.recordSegmentDuration) !== normalizeDurationToSeconds(config.recordSegmentDuration)
+        );
+        const recPathChanged = config.record && (
+          normalizeRecordPath(existing.recordPath) !== normalizeRecordPath(config.recordPath)
+        );
+        const needsPatch = (
+          existing.source !== config.source ||
+          Boolean(existing.record) !== Boolean(config.record) ||
+          Boolean(existing.sourceOnDemand) !== Boolean(config.sourceOnDemand) ||
+          (config.rtspTransport && existing.rtspTransport !== config.rtspTransport) ||
+          recPathChanged ||
+          segDurChanged
+        );
+
+        if (needsPatch) {
+          console.log(`[MediaMTX Sync] Pfad ${id} wird aktualisiert (Aufnahme=${Boolean(config.record)}, Segment=${config.recordSegmentDuration}).`);
+          await fetch(`http://127.0.0.1:9997/v3/config/paths/patch/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config)
+          }).catch((err) => console.warn(`[MediaMTX Sync] Fehler beim Aktualisieren von ${id}:`, err?.message || err));
+        }
       }
     }
     
@@ -1099,8 +1143,15 @@ async function runRetentionJob() {
           const statfs = fs.statfsSync(target.path);
           let currentFreeBytes = Number(statfs.bavail) * (statfs.bsize || 4096);
           const minFreeBytes = target.minFreeSpaceGb * 1024 * 1024 * 1024;
+          // CRITICAL SAFEGUARD: Never delete clips younger than 48 hours under emergency free space!
+          // Deleting today's/yesterday's fresh footage when the OS or partition is tight causes catastrophic loss of recent evidence.
+          const emergencyProtectCutoff = now - 48 * 3600 * 1000;
           for (const clip of remainingClips) {
             if (currentFreeBytes >= minFreeBytes) break;
+            if (clip.mtimeMs >= emergencyProtectCutoff) {
+              console.warn(`[Retention] Target "${target.name}": Speicherplatz knapp (${(currentFreeBytes / 1e9).toFixed(2)} GB frei, Min: ${target.minFreeSpaceGb} GB). Verbleibende Aufnahmen der letzten 48 Stunden werden geschützt.`);
+              break;
+            }
             try {
               await fsp.unlink(clip.fullPath);
               deletedPaths.push(clip.fullPath);
@@ -1112,22 +1163,23 @@ async function runRetentionJob() {
         } catch {}
       }
 
-      // 3. Clean empty subdirectories recursively
-      const cleanEmptyDirs = async (dir) => {
+      // 3. Clean empty subdirectories recursively (preserving camera root folders)
+      const cleanEmptyDirs = async (dir, depth = 0) => {
         try {
           const entries = await fsp.readdir(dir, { withFileTypes: true });
           for (const entry of entries) {
             if (entry.isDirectory()) {
-              await cleanEmptyDirs(path.join(dir, entry.name));
+              await cleanEmptyDirs(path.join(dir, entry.name), depth + 1);
             }
           }
-          if (dir !== target.path) {
+          // Do NOT remove target.path itself, and do NOT remove direct camera subdirectories (depth === 1)
+          if (dir !== target.path && depth > 1) {
             const rem = await fsp.readdir(dir);
             if (rem.length === 0) await fsp.rmdir(dir);
           }
         } catch {}
       };
-      await cleanEmptyDirs(target.path);
+      await cleanEmptyDirs(target.path, 0);
 
       if (deletedPaths.length) {
         await prisma.motionRecording.updateMany({

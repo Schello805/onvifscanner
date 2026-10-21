@@ -44,7 +44,6 @@ class MotionRecorder {
       const queryStartedAt = new Date();
       const [motionCameras, unfinishedRecordings, defaultStorage, events] = await Promise.all([
         this.prisma.camera.findMany({
-          where: { recordEnabled: true },
           include: { storageTarget: true },
         }),
         this.prisma.motionRecording.findMany({

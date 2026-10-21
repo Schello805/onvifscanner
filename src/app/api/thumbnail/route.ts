@@ -287,49 +287,34 @@ export async function POST(req: Request) {
               authUrl.password = cred.password ?? "";
               rtspUrl = authUrl.toString();
             }
-            const hwArgs = getFfmpegHwaccelArgs();
+            // For single-frame snapshot capture, pure software decode is instantaneous (<30ms)
+            // and avoids hardware acceleration crashes (VAAPI/DRM) in LXC containers/virtualized environments.
+            // Fast probing (-analyzeduration 500000 -probesize 500000 -stimeout 3000000) prevents FFmpeg from waiting 5 seconds.
+            const timeoutSec = Math.max(1, Math.ceil(timeoutMs / 1000));
             const args = [
               "-y",
-              ...hwArgs,
+              "-hide_banner",
+              "-loglevel", "error",
+              "-nostats",
+              "-an", "-sn", "-dn",
               "-rtsp_transport", "tcp",
-              "-t", String(Math.ceil(timeoutMs / 1000) + 1),
+              "-analyzeduration", "500000",
+              "-probesize", "500000",
+              "-stimeout", "3000000",
+              "-t", String(timeoutSec + 1),
               "-i", rtspUrl,
               "-vframes", "1",
               "-q:v", "4",
               "-f", "image2",
               "-"
             ];
-            let stdout: Buffer | null = null;
-            try {
-              const res = await execFileAsync("ffmpeg", args, {
-                encoding: "buffer",
-                timeout: timeoutMs + 2000,
-                signal: req.signal as any
-              });
-              stdout = res.stdout as Buffer;
-            } catch (errHw) {
-              if (hwArgs.length > 0) {
-                // Retry without hwaccel
-                const fallbackArgs = [
-                  "-y",
-                  "-rtsp_transport", "tcp",
-                  "-t", String(Math.ceil(timeoutMs / 1000) + 1),
-                  "-i", rtspUrl,
-                  "-vframes", "1",
-                  "-q:v", "4",
-                  "-f", "image2",
-                  "-"
-                ];
-                const resFallback = await execFileAsync("ffmpeg", fallbackArgs, {
-                  encoding: "buffer",
-                  timeout: timeoutMs + 2000,
-                  signal: req.signal as any
-                });
-                stdout = resFallback.stdout as Buffer;
-              } else {
-                throw errHw;
-              }
-            }
+            const candidateTimeout = Math.min(timeoutMs + 1000, 3500);
+            const res = await execFileAsync("ffmpeg", args, {
+              encoding: "buffer",
+              timeout: candidateTimeout,
+              signal: req.signal as any
+            });
+            const stdout = res.stdout as Buffer;
             if (!stdout || stdout.length === 0) throw new Error("ffmpeg returned empty output");
             ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength) as ArrayBuffer;
             contentType = "image/jpeg";

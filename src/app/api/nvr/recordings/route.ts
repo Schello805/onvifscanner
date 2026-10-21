@@ -132,7 +132,7 @@ export async function GET(req: Request) {
         }
 
         for (const file of files) {
-          if (!file.endsWith(".mp4") && !file.endsWith(".m4s")) continue;
+          if (!/\.(?:mp4|m4s|ts)$/i.test(file)) continue;
 
           // Expected filename pattern: YYYY-MM-DD_HH-mm-ss...
           // e.g., 2026-10-09_12-30-00.mp4 or 2026-10-09_12-30-00-123456.mp4
@@ -194,11 +194,11 @@ export async function GET(req: Request) {
 
             let matchesDate = !filterDate || dateStr === filterDate;
             if (!matchesDate && filterDate) {
-              // Also include clips starting late on the previous day (>= 23:30) that overlap into the morning
+              // Also include clips starting late on the previous day (>= 22:00) that overlap into the morning
               const prevDate = new Date(`${filterDate}T00:00:00Z`);
               prevDate.setUTCDate(prevDate.getUTCDate() - 1);
               const prevDateStr = prevDate.toISOString().slice(0, 10);
-              if (dateStr === prevDateStr && timeStr >= "23:30:00") {
+              if (dateStr === prevDateStr && timeStr >= "22:00:00") {
                 matchesDate = true;
               }
             }

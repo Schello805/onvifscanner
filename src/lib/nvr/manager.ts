@@ -35,9 +35,12 @@ export function getCameraSourceUrl(camera: {
       parsedUris = [];
     }
 
-    const streamUri = Array.isArray(parsedUris)
-      ? parsedUris.find((v): v is string => typeof v === "string" && /^rtsps?:\/\//i.test(v.trim()))
-      : undefined;
+    const streams = Array.isArray(parsedUris)
+      ? parsedUris.filter((v): v is string => typeof v === "string" && /^rtsps?:\/\//i.test(v.trim()))
+      : [];
+    if (!streams.length) return null;
+    const main = streams.find((u) => /main(stream|_|\/)?|101|subtype=0|stream1|profile1|channel=?1|first/i.test(u));
+    const streamUri = main || streams[0];
 
     if (!streamUri) return null;
 
@@ -50,7 +53,8 @@ export function getCameraSourceUrl(camera: {
 
     if (camera.username) {
       source.username = camera.username;
-      source.password = decryptSecret(camera.password);
+      const dec = decryptSecret(camera.password);
+      if (dec) source.password = dec;
     }
 
     return source.toString();
