@@ -38,6 +38,10 @@ export function usePlaybackPage() {
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [mobileCalendarOpen, setMobileCalendarOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [jumpTimeInput, setJumpTimeInput] = useState<string>(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  });
 
   // Timeline Zoom & Event Inspector State
   const [timelineWindowMinutes, setTimelineWindowMinutes] = useState<TimelineWindowMinutes>(1440);
@@ -576,7 +580,7 @@ export function usePlaybackPage() {
     setIsPlaying(true);
   };
 
-  const openClipWithOffset = (clip: RecordingClip, offsetSec = 0) => {
+  const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
     if (activeClip?.id === clip.id && videoRef.current) {
       videoRef.current.currentTime = offsetSec;
       setVideoCurrentTime(offsetSec);
@@ -597,7 +601,13 @@ export function usePlaybackPage() {
     setPlayerOptionsOpen(false);
     setActiveClip(clip);
     setIsPlaying(true);
-  };
+  }, [activeClip?.id]);
+
+  useEffect(() => {
+    if (activeClip?.timeStr) {
+      setJumpTimeInput(activeClip.timeStr.slice(0, 5));
+    }
+  }, [activeClip?.id, activeClip?.timeStr]);
 
   // Single Clip Deletion
   const handleDeleteClip = async (clip: RecordingClip) => {
@@ -677,20 +687,159 @@ export function usePlaybackPage() {
   };
 
   // Seek & Player Controls
-  const seekRelative = (seconds: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime + seconds);
-    }
-  };
-
-  const showSeekFeedback = (label: string) => {
+  const showSeekFeedback = useCallback((label: string) => {
     if (seekFeedbackTimerRef.current !== null) window.clearTimeout(seekFeedbackTimerRef.current);
     setSeekFeedback(label);
     seekFeedbackTimerRef.current = window.setTimeout(() => {
       setSeekFeedback("");
       seekFeedbackTimerRef.current = null;
     }, 700);
-  };
+  }, []);
+
+  const togglePlay = useCallback(() => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        void videoRef.current.play().catch(() => null);
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+  }, []);
+
+  const seekRelative = useCallback((seconds: number) => {
+    if (!videoRef.current || !activeClip) return;
+    const current = videoRef.current.currentTime || 0;
+    const duration = videoRef.current.duration || videoDuration || 0;
+    const newTarget = current + seconds;
+
+    // Inside current clip bounds
+    if (newTarget >= 0 && (duration <= 0 || newTarget <= duration)) {
+      videoRef.current.currentTime = newTarget;
+      setVideoCurrentTime(newTarget);
+      showSeekFeedback(seconds < 0 ? `${seconds}s` : `+${seconds}s`);
+      return;
+    }
+
+    // Crossing clip boundary:
+    const cam = cameras.find((c) => c.id === activeClip.cameraId);
+    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const sameCameraClips = clips
+      .filter((c) => c.cameraId === activeClip.cameraId && c.dateStr === activeClip.dateStr)
+      .sort((a, b) => parseTimeToSeconds(a.timeStr) - parseTimeToSeconds(b.timeStr));
+
+    const currentIndex = sameCameraClips.findIndex((c) => c.id === activeClip.id);
+
+    if (newTarget < 0) {
+      if (currentIndex > 0) {
+        const prevClip = sameCameraClips[currentIndex - 1];
+        const targetOffset = Math.max(0, segSec + newTarget);
+        openClipWithOffset(prevClip, targetOffset);
+        showSeekFeedback(seconds < 0 ? `${seconds}s (Vorheriger Clip)` : `Clip gewechselt`);
+        return;
+      } else {
+        videoRef.current.currentTime = 0;
+        setVideoCurrentTime(0);
+        showSeekFeedback("Anfang der Aufnahmen");
+        return;
+      }
+    }
+
+    if (duration > 0 && newTarget > duration) {
+      if (currentIndex >= 0 && currentIndex < sameCameraClips.length - 1) {
+        const nextClip = sameCameraClips[currentIndex + 1];
+        const targetOffset = Math.max(0, newTarget - duration);
+        openClipWithOffset(nextClip, targetOffset);
+        showSeekFeedback(`+${seconds}s (Nächster Clip)`);
+        return;
+      } else {
+        videoRef.current.currentTime = duration;
+        setVideoCurrentTime(duration);
+        showSeekFeedback("Ende der Aufnahmen");
+        return;
+      }
+    }
+  }, [activeClip, clips, cameras, videoDuration, openClipWithOffset, showSeekFeedback]);
+
+  const jumpToTime = useCallback(async (timeStr: string) => {
+    if (!timeStr) {
+      toast.warning("Bitte eine Uhrzeit angeben (z.B. 14:30)");
+      return;
+    }
+    const targetSec = parseTimeToSeconds(timeStr);
+    const camId = selectedCameraId || (cameras.length > 0 ? cameras[0].id : "");
+    if (!camId) {
+      toast.warning("Bitte zuerst eine Kamera auswählen");
+      return;
+    }
+    if (!selectedCameraId && camId) {
+      setSelectedCameraId(camId);
+    }
+    const dateStr = selectedDate || getTodayStr();
+
+    let camClips = clips.filter((c) => c.cameraId === camId && (!selectedDate || c.dateStr === dateStr));
+
+    if (camClips.length === 0) {
+      try {
+        const res = await fetch(`/api/nvr/recordings?cameraId=${encodeURIComponent(camId)}&date=${encodeURIComponent(dateStr)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.clips) && data.clips.length > 0) {
+            camClips = data.clips;
+            setClips((prev) => {
+              const prevIds = new Set(prev.map(c => c.id));
+              const newOnes = data.clips.filter((c: RecordingClip) => !prevIds.has(c.id));
+              return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
+            });
+          }
+        }
+      } catch {}
+    }
+
+    if (camClips.length === 0) {
+      toast.warning(`Keine Aufnahmen für ${selectedCamera?.name || "diese Kamera"} am ${selectedDate || "heutigen Tag"} vorhanden.`);
+      return;
+    }
+
+    const cam = cameras.find((c) => c.id === camId);
+    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+
+    // 1. Exact clip that contains targetSec
+    const matchingClip = camClips.find((c) => {
+      const clipStart = parseTimeToSeconds(c.timeStr);
+      const offset = targetSec - clipStart;
+      return offset >= 0 && offset < segSec;
+    });
+
+    if (matchingClip) {
+      const clipStart = parseTimeToSeconds(matchingClip.timeStr);
+      const offset = Math.max(0, targetSec - clipStart);
+      openClipWithOffset(matchingClip, offset);
+      toast.success(`Video gestartet um ${timeStr} Uhr (${matchingClip.cameraName})`);
+      return;
+    }
+
+    // 2. Nearest clip
+    const sorted = [...camClips].sort((a, b) => parseTimeToSeconds(a.timeStr) - parseTimeToSeconds(b.timeStr));
+    let nearestClip = sorted[0];
+    let minDiff = Infinity;
+    for (const c of sorted) {
+      const clipStart = parseTimeToSeconds(c.timeStr);
+      const diff = Math.abs(clipStart - targetSec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearestClip = c;
+      }
+    }
+
+    if (nearestClip) {
+      const clipStart = parseTimeToSeconds(nearestClip.timeStr);
+      const offset = targetSec > clipStart ? Math.min(segSec - 1, targetSec - clipStart) : 0;
+      openClipWithOffset(nearestClip, offset);
+      toast.info(`Kein Clip exakt um ${timeStr} Uhr – spiele Aufnahme ab ${nearestClip.timeStr.slice(0, 5)} Uhr`);
+    }
+  }, [clips, selectedCameraId, selectedDate, cameras, selectedCamera, openClipWithOffset, toast]);
 
   const clearPlayerGesture = useCallback(() => {
     const gesture = playerGestureRef.current;
@@ -1032,6 +1181,15 @@ export function usePlaybackPage() {
     }
   };
 
+  const toggleFullscreen = useCallback(() => {
+    if (!playerContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      void playerContainerRef.current.requestFullscreen().then(() => setPlayerFullscreen(true)).catch(() => null);
+    } else {
+      void document.exitFullscreen().then(() => setPlayerFullscreen(false)).catch(() => null);
+    }
+  }, []);
+
   // Keyboard Shortcuts for Video Player
   useEffect(() => {
     if (!activeClip) return;
@@ -1042,25 +1200,19 @@ export function usePlaybackPage() {
       }
       if (e.key === " " || e.key === "k") {
         e.preventDefault();
-        if (videoRef.current) {
-          if (videoRef.current.paused) {
-            void videoRef.current.play();
-            setIsPlaying(true);
-          } else {
-            videoRef.current.pause();
-            setIsPlaying(false);
-          }
-        }
+        togglePlay();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        seekRelative(-5);
+        seekRelative(e.shiftKey ? -60 : -10);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        seekRelative(5);
+        seekRelative(e.shiftKey ? 60 : 10);
       } else if (e.key === "j") {
-        seekRelative(-10);
+        e.preventDefault();
+        seekRelative(-60);
       } else if (e.key === "l") {
-        seekRelative(10);
+        e.preventDefault();
+        seekRelative(60);
       } else if (e.key === "n" || e.key === "m") {
         e.preventDefault();
         jumpToNextMotion();
@@ -1076,7 +1228,7 @@ export function usePlaybackPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeClip, jumpToNextMotion, jumpToPrevMotion]);
+  }, [activeClip, togglePlay, seekRelative, jumpToNextMotion, jumpToPrevMotion, toggleFullscreen]);
 
   useEffect(() => {
     if (!showStatsModal) return;
@@ -1088,15 +1240,6 @@ export function usePlaybackPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [showStatsModal]);
-
-  const toggleFullscreen = () => {
-    if (!playerContainerRef.current) return;
-    if (!document.fullscreenElement) {
-      void playerContainerRef.current.requestFullscreen().then(() => setPlayerFullscreen(true)).catch(() => null);
-    } else {
-      void document.exitFullscreen().then(() => setPlayerFullscreen(false)).catch(() => null);
-    }
-  };
 
   useEffect(() => {
     if (activeClip && !playerFullscreen) {
@@ -1154,6 +1297,10 @@ export function usePlaybackPage() {
     setMobileCalendarOpen,
     mobileFiltersOpen,
     setMobileFiltersOpen,
+    jumpTimeInput,
+    setJumpTimeInput,
+    jumpToTime,
+    togglePlay,
     timelineWindowMinutes,
     setTimelineWindowMinutes,
     timelineStartMin,

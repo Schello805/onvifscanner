@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX } from "lucide-react";
+import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX, ChevronLeft, ChevronRight, RotateCcw, RotateCw, Clock } from "lucide-react";
 import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
-  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen } = pb;
+  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
   return (
     <>
       {/* Video Player Modal with Advanced NVR Controls */}
@@ -412,6 +412,54 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   </button>
                 </div>
 
+                {/* Center-Left: Rapid Jump Controls (-1m, -10s, Play/Pause, +10s, +1m) */}
+                <div className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950 p-0.5 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => seekRelative(-60)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-xs font-semibold"
+                    title="1 Minute zurück (Taste J oder Umschalt+Links)"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>-1m</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => seekRelative(-10)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-xs font-semibold"
+                    title="10 Sekunden zurück (Pfeiltaste links)"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <span>-10s</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="inline-flex items-center justify-center rounded bg-amber-500 px-2.5 py-1 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-sm"
+                    title={isPlaying ? "Pause (Leertaste)" : "Abspielen (Leertaste)"}
+                  >
+                    {isPlaying ? <Pause className="h-3.5 w-3.5 fill-slate-950" /> : <Play className="h-3.5 w-3.5 fill-slate-950" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => seekRelative(10)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-xs font-semibold"
+                    title="10 Sekunden vor (Pfeiltaste rechts)"
+                  >
+                    <span>+10s</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => seekRelative(60)}
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-xs font-semibold"
+                    title="1 Minute vor (Taste L oder Umschalt+Rechts)"
+                  >
+                    <span>+1m</span>
+                    <RotateCw className="h-3 w-3" />
+                  </button>
+                </div>
+
                 {/* Center: Tempo / Speed & Auto-Play */}
                 <div className="flex items-center gap-2">
                   {/* Auto-Play */}
@@ -480,9 +528,35 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     </h3>
                   </div>
                   <p className="mt-1 max-w-md text-xs text-slate-300">
-                    Klicke unten auf die blaue Zeitleiste oder einen Clip, um die Wiedergabe an der gewünschten Stelle zu starten.
+                    Gib eine Uhrzeit ein oder klicke unten auf die Zeitleiste, um die Wiedergabe an der gewünschten Stelle zu starten.
                   </p>
-                  <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void jumpToTime(jumpTimeInput);
+                    }}
+                    className="mt-3 flex flex-wrap items-center justify-center gap-2"
+                  >
+                    <div className="relative flex min-h-10 items-center rounded-lg border border-slate-700 bg-slate-900 px-3">
+                      <Clock className="h-4 w-4 shrink-0 text-sky-400 mr-2" />
+                      <input
+                        type="time"
+                        step="60"
+                        value={jumpTimeInput}
+                        onChange={(e) => setJumpTimeInput(e.target.value)}
+                        className="bg-transparent text-sm font-mono text-white focus:outline-none w-20"
+                        aria-label="Uhrzeit für Videosuche"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-amber-500 px-4 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-slate-950" />
+                      <span>Video starten</span>
+                    </button>
+                  </form>
+                  <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs">
                     <span className="h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
                     <span>{filteredClips.length} Aufnahmen auf der Zeitleiste bereit</span>
                   </div>

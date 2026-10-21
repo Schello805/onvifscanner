@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Pencil, Video } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Pencil, Video, Clock, Play } from "lucide-react";
 import { formatGermanDateLong, getTodayStr } from "./playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
@@ -27,6 +27,9 @@ export function SourceBar({ pb }: { pb: PlaybackState }) {
     setMobileCalendarOpen,
     loadingCalendar,
     calendarMonthClipCount,
+    jumpTimeInput,
+    setJumpTimeInput,
+    jumpToTime,
   } = pb;
 
   const today = getTodayStr();
@@ -38,7 +41,7 @@ export function SourceBar({ pb }: { pb: PlaybackState }) {
       aria-label="Kamera und Tag wählen"
       className="rounded-xl border border-slate-800 bg-slate-900/80 p-3 shadow-md sm:rounded-2xl"
     >
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_auto_auto] lg:items-end">
         {/* Kamera */}
         <div className="min-w-0">
           <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Kamera</div>
@@ -147,6 +150,56 @@ export function SourceBar({ pb }: { pb: PlaybackState }) {
               </button>
             ) : null}
           </div>
+        </div>
+
+        {/* Uhrzeit & Direktstart */}
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span>Uhrzeit</span>
+            <span className="font-medium normal-case tracking-normal text-slate-500">Direktsuche</span>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void jumpToTime(jumpTimeInput);
+            }}
+            className="flex items-center gap-2"
+          >
+            <div className="relative flex min-h-10 items-center rounded-lg border border-slate-700 bg-slate-950 px-3">
+              <Clock className="h-4 w-4 shrink-0 text-sky-400 mr-2" />
+              <input
+                type="time"
+                step="60"
+                value={jumpTimeInput}
+                onChange={(e) => setJumpTimeInput(e.target.value)}
+                className="bg-transparent text-sm font-mono text-white focus:outline-none w-20"
+                aria-label="Uhrzeit für Videosuche"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-sm shrink-0"
+              title="Video an dieser Uhrzeit starten"
+            >
+              <Play className="h-3.5 w-3.5 fill-slate-950" />
+              <span>Video ansehen</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, "0");
+                const mm = String(now.getMinutes()).padStart(2, "0");
+                const timeNow = `${hh}:${mm}`;
+                setJumpTimeInput(timeNow);
+                void jumpToTime(timeNow);
+              }}
+              className="min-h-10 touch-manipulation rounded-lg border border-slate-700 bg-slate-950 px-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white shrink-0"
+              title="Zur aktuellen Uhrzeit springen"
+            >
+              Jetzt
+            </button>
+          </form>
         </div>
       </div>
     </section>
