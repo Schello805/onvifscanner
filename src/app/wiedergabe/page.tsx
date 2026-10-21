@@ -193,7 +193,7 @@ export default function PlaybackPage() {
   const [activityStats, setActivityStats] = useState<ActivityStatsResponse | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [selectedSnapshot, setSelectedSnapshot] = useState<{ url: string; title: string } | null>(null);
-  useBodyScrollLock(Boolean(showStatsModal || activeClip || cameraPickerOpen || selectedSnapshot));
+  useBodyScrollLock(Boolean(showStatsModal || (activeClip && playerFullscreen) || cameraPickerOpen || selectedSnapshot));
 
   const fetchActivityStats = useCallback(async (period: string) => {
     try {
@@ -1153,6 +1153,12 @@ export default function PlaybackPage() {
     }
   };
 
+  useEffect(() => {
+    if (activeClip && !playerFullscreen) {
+      playerContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [activeClip, playerFullscreen]);
+
   return (
     <div className="mx-auto max-w-6xl space-y-3 sm:space-y-5">
       {/* Top Header */}
@@ -1753,6 +1759,60 @@ export default function PlaybackPage() {
         }}
       />
 
+
+      {dailySummary && selectedDate && (
+        <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-950/20 to-slate-950 p-4 sm:p-5 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300">Tageszusammenfassung</p>
+              <h2 className="mt-1 text-base font-bold text-white">{formatGermanDateLong(selectedDate)}</h2>
+            </div>
+            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200">
+              {dailySummary.totalEvents} Ereignisse
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Personen", dailySummary.counts.person, "text-emerald-300"],
+              ["Fahrzeuge", dailySummary.counts.vehicle, "text-sky-300"],
+              ["Tiere", dailySummary.counts.animal, "text-amber-300"],
+              ["Nur Bewegung", dailySummary.counts.unclassified, "text-slate-300"],
+            ].map(([label, value, color]) => (
+              <div key={String(label)} className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                <div className={`text-xl font-bold ${color}`}>{value}</div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+              </div>
+            ))}
+          </div>
+          {dailySummary.cameras.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                Kameras ({dailySummary.cameras.length})
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {dailySummary.cameras.map((camera) => (
+                <button
+                  key={camera.cameraId}
+                  type="button"
+                  onClick={() => setSelectedCameraId(camera.cameraId)}
+                  className={`min-w-0 rounded-lg border px-3 py-2 text-left transition hover:border-cyan-500/40 ${
+                    selectedCameraId === camera.cameraId
+                      ? "border-cyan-500/50 bg-cyan-500/10"
+                      : "border-white/10 bg-white/[0.04]"
+                  }`}
+                >
+                  <span className="block truncate text-xs font-semibold text-white">{camera.cameraName}</span>
+                  <span className="block truncate text-[10px] text-slate-400">
+                    {camera.events} Ereignisse · {camera.objects} Objekte
+                  </span>
+                </button>
+              ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Video Player Modal with Advanced NVR Controls */}
       {activeClip && (
         <div className={playerFullscreen ? "fixed inset-0 z-50 flex items-center justify-center bg-black overflow-hidden p-0" : "w-full mb-6 rounded-2xl border border-slate-800/90 bg-slate-950 p-2 sm:p-4 shadow-2xl overflow-hidden"}>
@@ -2228,59 +2288,6 @@ export default function PlaybackPage() {
       </div>
     </div>
     )}
-
-      {dailySummary && selectedDate && (
-        <section className="mb-6 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-950/20 to-slate-950 p-4 sm:p-5 shadow-xl">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300">Tageszusammenfassung</p>
-              <h2 className="mt-1 text-base font-bold text-white">{formatGermanDateLong(selectedDate)}</h2>
-            </div>
-            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200">
-              {dailySummary.totalEvents} Ereignisse
-            </span>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              ["Personen", dailySummary.counts.person, "text-emerald-300"],
-              ["Fahrzeuge", dailySummary.counts.vehicle, "text-sky-300"],
-              ["Tiere", dailySummary.counts.animal, "text-amber-300"],
-              ["Nur Bewegung", dailySummary.counts.unclassified, "text-slate-300"],
-            ].map(([label, value, color]) => (
-              <div key={String(label)} className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
-                <div className={`text-xl font-bold ${color}`}>{value}</div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
-              </div>
-            ))}
-          </div>
-          {dailySummary.cameras.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                Kameras ({dailySummary.cameras.length})
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {dailySummary.cameras.map((camera) => (
-                <button
-                  key={camera.cameraId}
-                  type="button"
-                  onClick={() => setSelectedCameraId(camera.cameraId)}
-                  className={`min-w-0 rounded-lg border px-3 py-2 text-left transition hover:border-cyan-500/40 ${
-                    selectedCameraId === camera.cameraId
-                      ? "border-cyan-500/50 bg-cyan-500/10"
-                      : "border-white/10 bg-white/[0.04]"
-                  }`}
-                >
-                  <span className="block truncate text-xs font-semibold text-white">{camera.cameraName}</span>
-                  <span className="block truncate text-[10px] text-slate-400">
-                    {camera.events} Ereignisse · {camera.objects} Objekte
-                  </span>
-                </button>
-              ))}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
 
       {/* Modern High-Precision Timeline */}
       <div className="rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 sm:p-5 mb-6 shadow-2xl backdrop-blur-md">
