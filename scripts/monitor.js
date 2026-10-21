@@ -196,16 +196,12 @@ async function runMonitorCycle() {
       legacyRecordingModesMigrated = true;
     }
     if (!motionSensitivityDefaultsMigrated) {
-      const settings = await prisma.settings.findUnique({ where: { id: 'default' } });
-      if (!settings?.motionSensitivityV4Clamped) {
-        await clampCameraSensitivities(prisma);
-        await prisma.settings.upsert({
-          where: { id: 'default' },
-          update: { motionSensitivityV4Clamped: true },
-          create: { id: 'default', motionSensitivityV4Clamped: true },
-        });
-      }
       motionSensitivityDefaultsMigrated = true;
+      try {
+        await clampCameraSensitivities(prisma);
+      } catch (err) {
+        console.warn('[Safety Clamp] Fehler beim Clampen:', err?.message || err);
+      }
     }
     const cameras = await prisma.camera.findMany({
       include: { status: true, storageTarget: true },
@@ -442,7 +438,11 @@ async function detectCameraMotion(cam) {
       }),
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
-    if (!response.ok) throw new Error(`Snapshot HTTP ${response.status}`);
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || contentType.includes('application/json')) {
+      const errJson = await response.json().catch(() => null);
+      throw new Error(errJson?.error || `Snapshot HTTP ${response.status}`);
+    }
 
     const pixels = Buffer.from(await response.arrayBuffer());
     const info = {
