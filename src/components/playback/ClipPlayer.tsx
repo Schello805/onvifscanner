@@ -118,12 +118,16 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   onCanPlay={(event) => {
                     setPlayerPreparing(false);
                     setPlayerError("");
+                    const dur = event.currentTarget.duration || 0;
                     if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                      const target = pendingSeekRef.current;
-                      const dur = event.currentTarget.duration || 0;
-                      const seekTo = (Number.isFinite(dur) && dur > 0) ? Math.min(dur, target) : target;
+                      let target = pendingSeekRef.current;
+                      if (Number.isFinite(dur) && dur > 0) {
+                        if (target >= dur) {
+                          target = Math.max(0, dur - 0.5);
+                        }
+                      }
                       try {
-                        event.currentTarget.currentTime = seekTo;
+                        event.currentTarget.currentTime = target;
                       } catch {}
                       pendingSeekRef.current = null;
                     }
@@ -143,13 +147,15 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       });
                   }}
                   onError={() => {
+                    const mediaErr = videoRef.current?.error;
+                    console.warn("Video playback error:", mediaErr?.code, mediaErr?.message);
                     if (!liveTranscode) {
                       setLiveTranscode(true);
                       setPlayerError("");
                       return;
                     }
                     setPlayerPreparing(false);
-                    setPlayerError("Das Video konnte im Webbrowser nicht geladen werden.");
+                    setPlayerError("Dieser Aufnahme-Abschnitt ist unvollständig oder konnte nicht geladen werden.");
                   }}
                   onLoadedMetadata={(e) => {
                     setPlayerPreparing(false);
@@ -159,10 +165,14 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       setVideoDuration(dur);
                     }
                     if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                      const target = pendingSeekRef.current;
-                      const seekTo = (Number.isFinite(dur) && dur > 0) ? Math.min(dur, target) : target;
+                      let target = pendingSeekRef.current;
+                      if (Number.isFinite(dur) && dur > 0) {
+                        if (target >= dur) {
+                          target = Math.max(0, dur - 0.5);
+                        }
+                      }
                       try {
-                        e.currentTarget.currentTime = seekTo;
+                        e.currentTarget.currentTime = target;
                       } catch {}
                       pendingSeekRef.current = null;
                     }
@@ -242,20 +252,44 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                         </button>
                       </>
                     ) : (
-                      <>
+                      <div className="flex flex-col items-center gap-2 p-2 max-w-sm text-center">
                         <p className="text-sm font-semibold text-rose-200">{playerError}</p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPlayerError("");
-                            setPlayerPreparing(true);
-                            setPlaybackAttempt((attempt) => attempt + 1);
-                          }}
-                          className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950"
-                        >
-                          Erneut versuchen
-                        </button>
-                      </>
+                        <p className="text-xs text-slate-400">
+                          {videoDuration > 0 && videoDuration < 60
+                            ? `Dieser Clip ist nur ${formatSeconds(videoDuration)} lang (möglicherweise durch Serverneustart oder vollen Speicher unterbrochen).`
+                            : "Das Videoformat wird von diesem Browser nicht direkt unterstützt."}
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPlayerError("");
+                              setLiveTranscode(false);
+                              setPlayerPreparing(true);
+                              if (videoRef.current) {
+                                try { videoRef.current.currentTime = 0; } catch {}
+                              }
+                              setPlaybackAttempt((attempt) => attempt + 1);
+                            }}
+                            className="rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white border border-slate-700 transition"
+                          >
+                            Von Anfang abspielen
+                          </button>
+                          {activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPlayerError("");
+                                setLiveTranscode(false);
+                                playNextClip();
+                              }}
+                              className="rounded-lg bg-amber-500 hover:bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 transition shadow-sm"
+                            >
+                              Nächsten Clip ansehen ▶
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
