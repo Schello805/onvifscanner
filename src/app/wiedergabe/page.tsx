@@ -1755,13 +1755,13 @@ export default function PlaybackPage() {
 
       {/* Video Player Modal with Advanced NVR Controls */}
       {activeClip && (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md overflow-hidden ${playerFullscreen ? 'p-0' : 'p-3 sm:p-6 md:p-8'}`}>
+        <div className={playerFullscreen ? "fixed inset-0 z-50 flex items-center justify-center bg-black overflow-hidden p-0" : "w-full mb-6 rounded-2xl border border-slate-800/90 bg-slate-950 p-2 sm:p-4 shadow-2xl overflow-hidden"}>
           <div
             ref={playerContainerRef}
             className={`group relative flex flex-col overflow-hidden bg-slate-950 transition-all ${
               playerFullscreen
                 ? 'w-full h-full max-w-none rounded-none border-none'
-                : 'w-full max-w-4xl max-h-[92vh] rounded-2xl border border-slate-800 shadow-2xl my-auto'
+                : 'w-full rounded-xl border border-slate-800/80 shadow-xl'
             }`}
           >
             {/* Player Header */}
@@ -1779,8 +1779,9 @@ export default function PlaybackPage() {
                       {activeClipMotionEvents.length} {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip
                     </span>
                   ) : (
-                    <span className="rounded bg-slate-800/60 px-1.5 py-0.5 text-[10px] text-slate-400">
-                      Keine Bewegung erkannt
+                    <span className="rounded bg-sky-500/20 border border-sky-500/40 px-2 py-0.5 text-[10px] font-bold text-sky-300 shadow-sm flex items-center gap-1">
+                      <Film className="h-3 w-3 text-sky-400" />
+                      Daueraufnahme (15 Min.)
                     </span>
                   )}
                   {activeClipIndex >= 0 && (
@@ -1842,7 +1843,7 @@ export default function PlaybackPage() {
             {/* Scrollable Player Body: Ensures Video, Timeline, and Toolbar are ALWAYS visible on any display */}
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* Video Element */}
-              <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[38vh] sm:max-h-[44vh] shrink-0'}`}>
+              <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
                   key={`${activeClip.id}-${compatiblePlayback ? "compatible" : "original"}-${playbackAttempt}`}
@@ -1850,7 +1851,7 @@ export default function PlaybackPage() {
                   autoPlay
                   playsInline
                   muted={isMuted}
-                  className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[38vh] sm:max-h-[44vh]'}`}
+                  className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[50vh] sm:max-h-[55vh]'}`}
                   onPlay={() => {
                     setIsPlaying(true);
                     setPlayerNeedsStart(false);
@@ -2007,8 +2008,9 @@ export default function PlaybackPage() {
                         {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip:
                       </span>
                     ) : (
-                      <span className="text-slate-400 font-normal">
-                        Keine Bewegungserkennung für diesen Clip registriert
+                      <span className="text-sky-300 font-normal flex items-center gap-1.5">
+                        <Film className="h-3.5 w-3.5 text-sky-400" />
+                        Daueraufnahme aktiv (15 Min.)
                       </span>
                     )}
                   </div>
@@ -2395,15 +2397,20 @@ export default function PlaybackPage() {
             const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
             const pct = clickX / rect.width;
             const spanMin = timelineWindowMinutes;
-            const totalMinutes = Math.floor(timelineStartMin + pct * spanMin);
+            const clickSeconds = (timelineStartMin + pct * spanMin) * 60;
+            const totalMinutes = Math.floor(clickSeconds / 60);
             const hour = Math.floor(totalMinutes / 60) % 24;
             const minute = totalMinutes % 60;
             const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
 
             const nearbyClip = timelineClips.find((c) => {
-              const [h, m] = c.timeStr.split(":").map(Number);
-              const clipMin = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
-              return totalMinutes >= clipMin && totalMinutes <= clipMin + 16;
+              const clipStartSec = parseTimeToSeconds(c.timeStr);
+              const cam = cameras.find((cm) => cm.id === c.cameraId);
+              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+              return clickSeconds >= clipStartSec && clickSeconds <= clipStartSec + segSec + 15;
+            }) || timelineClips.find((c) => {
+              const clipStartSec = parseTimeToSeconds(c.timeStr);
+              return Math.abs(clickSeconds - clipStartSec) <= 16 * 60;
             });
 
             const hasMotion = motionEvents.some(
@@ -2424,19 +2431,23 @@ export default function PlaybackPage() {
             const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
             const pct = clickX / rect.width;
             const spanMin = timelineWindowMinutes;
-            const totalMinutes = Math.floor(timelineStartMin + pct * spanMin);
+            const clickSeconds = (timelineStartMin + pct * spanMin) * 60;
+            const totalMinutes = Math.floor(clickSeconds / 60);
 
-            // Find matching clip at this time
+            // Find matching clip at this time (exact second accuracy + duration tolerance)
             const matchingClip = timelineClips.find((c) => {
-              const [h, m] = c.timeStr.split(":").map(Number);
-              const clipMin = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
-              return totalMinutes >= clipMin && totalMinutes <= clipMin + 16;
+              const clipStartSec = parseTimeToSeconds(c.timeStr);
+              const cam = cameras.find((cm) => cm.id === c.cameraId);
+              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+              return clickSeconds >= clipStartSec && clickSeconds <= clipStartSec + segSec + 15;
+            }) || timelineClips.find((c) => {
+              const clipStartSec = parseTimeToSeconds(c.timeStr);
+              return Math.abs(clickSeconds - clipStartSec) <= 16 * 60;
             });
 
             if (matchingClip) {
               const clipStartSec = parseTimeToSeconds(matchingClip.timeStr);
-              const targetSec = totalMinutes * 60;
-              const offset = Math.max(0, targetSec - clipStartSec);
+              const offset = Math.max(0, Math.floor(clickSeconds - clipStartSec));
               openClipWithOffset(matchingClip, offset);
             } else {
               // Check if a motion event is near this point on the timeline
@@ -2520,17 +2531,22 @@ export default function PlaybackPage() {
                   key={clip.id}
                   onClick={(e) => {
                     e.stopPropagation();
-                    openClip(clip);
+                    const clipRect = e.currentTarget.getBoundingClientRect();
+                    const innerPct = Math.max(0, Math.min(1, (e.clientX - clipRect.left) / clipRect.width));
+                    const cam = cameras.find((cm) => cm.id === clip.cameraId);
+                    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+                    const offset = Math.floor(innerPct * segSec);
+                    openClipWithOffset(clip, offset);
                   }}
-                  className={`absolute bottom-1 h-2 rounded-sm transition-all cursor-pointer z-10 ${
+                  className={`absolute top-2 bottom-2 rounded-lg transition-all cursor-pointer z-10 ${
                     isCurrentPlaying
-                      ? "bg-cyan-400 ring-2 ring-white shadow-md shadow-cyan-500/50 z-20 h-2.5"
-                      : "bg-sky-500/25 hover:bg-sky-400/60 border border-sky-400/30 hover:scale-y-125 shadow-sm"
+                      ? "bg-sky-500/50 border-2 border-cyan-300 shadow-lg shadow-cyan-500/40 z-20"
+                      : "bg-sky-500/25 hover:bg-sky-400/50 border border-sky-400/35 hover:border-sky-300 shadow-sm"
                   }`}
                   style={{
                     left: `${leftPct}%`,
                     width: `${widthPct}%`,
-                    minWidth: "2px",
+                    minWidth: "4px",
                   }}
                   title={`${clip.cameraName} · ${clip.timeStr} Uhr (${formatBytes(clip.sizeBytes)}) - Klick zum Abspielen`}
                 />
@@ -2593,16 +2609,17 @@ export default function PlaybackPage() {
               const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
               const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
               const startMin = hh * 60 + mm + ss / 60;
+              const currentMin = startMin + (videoCurrentTime / 60);
 
-              if (startMin < vStart || startMin > vEnd) return null;
-              const leftPct = ((startMin - vStart) / spanMin) * 100;
+              if (currentMin < vStart || currentMin > vEnd) return null;
+              const leftPct = ((currentMin - vStart) / spanMin) * 100;
 
               return (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 z-30 pointer-events-none shadow-[0_0_10px_#38bdf8]"
+                  className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 z-30 pointer-events-none shadow-[0_0_12px_#38bdf8]"
                   style={{ left: `${leftPct}%` }}
                 >
-                  <div className="absolute -top-1 -left-1.5 h-3.5 w-3.5 rounded-full bg-cyan-400 border border-white shadow-md animate-pulse" />
+                  <div className="absolute -top-1.5 -left-2 h-4 w-4 rounded-full bg-cyan-400 border-2 border-white shadow-lg animate-pulse" />
                 </div>
               );
             })()
@@ -3029,7 +3046,14 @@ export default function PlaybackPage() {
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-slate-500 italic">Keine</span>
+                          <button
+                            onClick={() => openClip(clip)}
+                            className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 transition-colors group/d w-fit cursor-pointer"
+                            title="Klick zum Abspielen dieser Daueraufnahme"
+                          >
+                            <Film className="h-3 w-3 text-sky-400 group-hover/d:scale-110 transition-transform" />
+                            <span>Daueraufnahme (15m)</span>
+                          </button>
                         )}
                       </td>
 
@@ -3178,9 +3202,17 @@ export default function PlaybackPage() {
                       </span>
                     </button>
                   ) : (
-                    <div className="text-[10px] text-slate-500 mt-1.5 pl-0.5">
-                      Keine Bewegung registriert
-                    </div>
+                    <button
+                      onClick={() => openClip(clip)}
+                      className="w-full flex items-center justify-between text-[10px] text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 rounded px-2 py-1 mt-1.5 text-left transition-colors cursor-pointer group/d"
+                      title="Klick zum Abspielen dieser Daueraufnahme"
+                    >
+                      <span className="flex items-center gap-1 font-semibold">
+                        <Film className="h-2.5 w-2.5 text-sky-400 group-hover/d:scale-110 transition-transform shrink-0" />
+                        Daueraufnahme
+                      </span>
+                      <span className="text-slate-400 font-mono">15 Min.</span>
+                    </button>
                   )}
 
                   <div className="text-[10px] text-slate-500 truncate mt-1">
