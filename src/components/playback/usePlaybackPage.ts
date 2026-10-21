@@ -99,7 +99,7 @@ export function usePlaybackPage() {
   const [autoPlayNext, setAutoPlayNext] = useState(true);
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [videoCurrentTime, setVideoCurrentTime] = useState<number>(0);
-  const [compatiblePlayback, setCompatiblePlayback] = useState(false);
+  const [liveTranscode, setLiveTranscode] = useState(false);
   const [playerPreparing, setPlayerPreparing] = useState(false);
   const [playerError, setPlayerError] = useState("");
   const [playerNeedsStart, setPlayerNeedsStart] = useState(false);
@@ -566,7 +566,7 @@ export function usePlaybackPage() {
     setVideoDuration(0);
     setVideoCurrentTime(0);
     pendingSeekRef.current = null;
-    setCompatiblePlayback(true);
+    setLiveTranscode(false);
     setPlayerPreparing(false);
     setPlayerError("");
     setPlayerNeedsStart(false);
@@ -589,7 +589,7 @@ export function usePlaybackPage() {
     setVideoDuration(0);
     setVideoCurrentTime(offsetSec);
     pendingSeekRef.current = offsetSec > 0 ? offsetSec : null;
-    setCompatiblePlayback(true);
+    setLiveTranscode(false);
     setPlayerPreparing(false);
     setPlayerError("");
     setPlayerNeedsStart(false);
@@ -1013,7 +1013,11 @@ export function usePlaybackPage() {
   }, [activeClip, filteredClips]);
 
   const activePlaybackUrl = activeClip
-    ? `${activeClip.streamUrl}${activeClip.streamUrl.includes("?") ? "&" : "?"}compatible=1`
+    ? `${activeClip.streamUrl}${
+        liveTranscode
+          ? `${activeClip.streamUrl.includes("?") ? "&" : "?"}transcode=1&offset=${Math.floor(videoCurrentTime || pendingSeekRef.current || 0)}`
+          : ""
+      }`
     : "";
 
   const playPreviousClip = () => {
@@ -1195,8 +1199,8 @@ export function usePlaybackPage() {
     setVideoDuration,
     videoCurrentTime,
     setVideoCurrentTime,
-    compatiblePlayback,
-    setCompatiblePlayback,
+    liveTranscode,
+    setLiveTranscode,
     playerPreparing,
     setPlayerPreparing,
     playerError,

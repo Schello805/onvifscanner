@@ -33,6 +33,12 @@ function isLoopbackAddress(addr) {
 }
 
 app.prepare().then(async () => {
+  // Clean up any stale ffmpeg playback processes from previous runs
+  try {
+    const { exec } = require("child_process");
+    exec("pkill -9 -f 'ffmpeg.*playback-cache' 2>/dev/null || true");
+  } catch {}
+
   // Zeitzone aus Einstellungen laden, SQLite WAL-Pragmas setzen & Kamerasensitivität auf sichere Werte prüfen
   try {
     const { PrismaClient } = require("@prisma/client");

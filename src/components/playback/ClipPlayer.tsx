@@ -6,7 +6,7 @@ import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/p
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
-  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, compatiblePlayback, setCompatiblePlayback, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen } = pb;
+  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen } = pb;
   return (
     <>
       {/* Video Player Modal with Advanced NVR Controls */}
@@ -101,7 +101,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
               <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
-                  key={`${activeClip.id}-${compatiblePlayback ? "compatible" : "original"}-${playbackAttempt}`}
+                  key={`${activeClip.id}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
                   src={activePlaybackUrl}
                   autoPlay
                   playsInline
@@ -113,7 +113,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   }}
                   onPause={() => setIsPlaying(false)}
                   onLoadStart={() => {
-                    if (compatiblePlayback) setPlayerPreparing(true);
+                    setPlayerPreparing(false);
                   }}
                   onCanPlay={(event) => {
                     setPlayerPreparing(false);
@@ -138,9 +138,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       });
                   }}
                   onError={() => {
-                    if (!compatiblePlayback) {
-                      setCompatiblePlayback(true);
-                      setPlayerPreparing(true);
+                    if (!liveTranscode) {
+                      setLiveTranscode(true);
                       setPlayerError("");
                       return;
                     }
