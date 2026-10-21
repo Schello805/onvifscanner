@@ -145,7 +145,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       return;
                     }
                     setPlayerPreparing(false);
-                    setPlayerError("Das Video konnte auch im Smartphone-Modus nicht geladen werden.");
+                    setPlayerError("Das Video konnte im Webbrowser nicht geladen werden.");
                   }}
                 onLoadedMetadata={(e) => {
                   setPlayerPreparing(false);
@@ -215,8 +215,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     {playerPreparing ? (
                       <>
                         <RefreshCw className="mx-auto h-6 w-6 animate-spin text-amber-400" />
-                        <p className="mt-2 text-sm font-semibold text-white">Smartphone-Video wird vorbereitet</p>
-                        <p className="mt-1 text-xs text-slate-400">Der Clip wird einmalig in ein kompatibles Format umgewandelt.</p>
+                        <p className="mt-2 text-sm font-semibold text-white">Video wird vorbereitet...</p>
+                        <p className="mt-1 text-xs text-slate-400">Audiospur wird für den Webbrowser angepasst (wenige Sekunden).</p>
                       </>
                     ) : playerNeedsStart ? (
                       <>

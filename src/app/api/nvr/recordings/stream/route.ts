@@ -13,7 +13,33 @@ export const dynamic = "force-dynamic";
 
 const execFileAsync = promisify(execFile);
 const compatibilityJobs = new Map<string, Promise<string>>();
+const probeCache = new Map<string, { videoCodec: string; audioCodec: string }>();
 const PLAYBACK_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+async function probeMediaCodecs(filePath: string): Promise<{ videoCodec: string; audioCodec: string }> {
+  const cached = probeCache.get(filePath);
+  if (cached) return cached;
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "error",
+      "-show_entries", "stream=codec_name,codec_type",
+      "-of", "json",
+      filePath
+    ], { timeout: 5000 });
+    const parsed = JSON.parse(stdout);
+    const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+    const videoStream = streams.find((s: any) => s.codec_type === "video");
+    const audioStream = streams.find((s: any) => s.codec_type === "audio");
+    const result = {
+      videoCodec: String(videoStream?.codec_name || "").toLowerCase(),
+      audioCodec: String(audioStream?.codec_name || "").toLowerCase(),
+    };
+    probeCache.set(filePath, result);
+    return result;
+  } catch {
+    return { videoCodec: "unknown", audioCodec: "unknown" };
+  }
+}
 
 async function cleanupPlaybackCache(cacheDirectory: string) {
   const entries = await fsp.readdir(cacheDirectory, { withFileTypes: true }).catch(() => []);
@@ -26,12 +52,22 @@ async function cleanupPlaybackCache(cacheDirectory: string) {
   }));
 }
 
-async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats) {
+async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats): Promise<string> {
+  // 1. Probe codecs first to check if file is ALREADY web-native (H.264 + AAC or no audio)
+  const { videoCodec, audioCodec } = await probeMediaCodecs(sourcePath);
+  const isWebAudio = !audioCodec || audioCodec === "aac" || audioCodec === "mp3" || audioCodec === "opus";
+  const isH264 = videoCodec === "h264";
+
+  // If H.264 video with compatible audio or no audio: serve directly without ANY conversion!
+  if (isH264 && isWebAudio) {
+    return sourcePath;
+  }
+
   const cacheDirectory = process.env.PLAYBACK_CACHE_DIR || path.join(process.cwd(), "data", "playback-cache");
   await fsp.mkdir(cacheDirectory, { recursive: true });
   const cacheKey = crypto
     .createHash("sha256")
-    .update(`${sourcePath}:${sourceStat.size}:${sourceStat.mtimeMs}`)
+    .update(`${sourcePath}:${sourceStat.size}:${sourceStat.mtimeMs}:${videoCodec}:${audioCodec}`)
     .digest("hex");
   const outputPath = path.join(cacheDirectory, `${cacheKey}.mp4`);
   const existing = await fsp.stat(outputPath).catch(() => null);
@@ -43,22 +79,33 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats) {
   const job = (async () => {
     const temporaryPath = path.join(cacheDirectory, `.${cacheKey}.${process.pid}.tmp.mp4`);
     try {
-      // 1. Ultra-fast stream-copy: keep H.264 / H.265 video untouched, remux audio to AAC, add faststart moov atom
-      // Runs in < 1 second even for 500MB+ files!
+      // 2. Ultra-fast stream-copy: NEVER re-encode video if it is already H.264 or H.265!
+      // Only convert the audio track (e.g. G.711 / PCMU / PCMA) to AAC.
+      // Takes under 1 second even for 500MB files!
       try {
-        await execFileAsync("ffmpeg", [
+        const copyArgs = [
           "-y", "-hide_banner", "-loglevel", "error",
           "-fflags", "+genpts",
           "-avoid_negative_ts", "make_zero",
           "-i", sourcePath,
           "-map", "0:v:0", "-map", "0:a:0?",
           "-c:v", "copy",
-          "-tag:v", "hvc1",
-          "-c:a", "aac", "-b:a", "128k",
-          "-movflags", "+faststart",
-          "-max_muxing_queue_size", "1024",
-          temporaryPath,
-        ], { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+        ];
+
+        // Only tag as hvc1 if it is actually HEVC/H.265 (DO NOT tag H.264 as hvc1)
+        if (videoCodec === "hevc" || videoCodec === "h265") {
+          copyArgs.push("-tag:v", "hvc1");
+        }
+
+        if (isWebAudio) {
+          copyArgs.push("-c:a", "copy");
+        } else {
+          copyArgs.push("-c:a", "aac", "-b:a", "128k");
+        }
+
+        copyArgs.push("-movflags", "+faststart", "-max_muxing_queue_size", "1024", temporaryPath);
+
+        await execFileAsync("ffmpeg", copyArgs, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 
         const converted = await fsp.stat(temporaryPath);
         if (converted.isFile() && converted.size > 0) {
@@ -71,7 +118,7 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats) {
         await fsp.unlink(temporaryPath).catch(() => undefined);
       }
 
-      // 2. Fallback full re-encode for incompatible video codecs (e.g. H.265/HEVC)
+      // 3. Last-resort fallback: only for genuinely broken or unsupported video codecs
       await execFileAsync("ffmpeg", [
         "-y", "-hide_banner", "-loglevel", "error",
         "-i", sourcePath,
