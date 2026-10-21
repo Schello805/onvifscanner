@@ -119,7 +119,12 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerPreparing(false);
                     setPlayerError("");
                     if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                      event.currentTarget.currentTime = Math.min(event.currentTarget.duration || 9999, pendingSeekRef.current);
+                      const target = pendingSeekRef.current;
+                      const dur = event.currentTarget.duration || 0;
+                      const seekTo = (Number.isFinite(dur) && dur > 0) ? Math.min(dur, target) : target;
+                      try {
+                        event.currentTarget.currentTime = seekTo;
+                      } catch {}
                       pendingSeekRef.current = null;
                     }
                     void event.currentTarget.play()
@@ -146,16 +151,22 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerPreparing(false);
                     setPlayerError("Das Video konnte im Webbrowser nicht geladen werden.");
                   }}
-                onLoadedMetadata={(e) => {
-                  setPlayerPreparing(false);
-                  setPlayerError("");
-                  const dur = e.currentTarget.duration || 0;
-                  setVideoDuration(dur);
-                  if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                    e.currentTarget.currentTime = Math.min(dur, pendingSeekRef.current);
-                    pendingSeekRef.current = null;
-                  }
-                }}
+                  onLoadedMetadata={(e) => {
+                    setPlayerPreparing(false);
+                    setPlayerError("");
+                    const dur = e.currentTarget.duration || 0;
+                    if (Number.isFinite(dur) && dur > 0) {
+                      setVideoDuration(dur);
+                    }
+                    if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
+                      const target = pendingSeekRef.current;
+                      const seekTo = (Number.isFinite(dur) && dur > 0) ? Math.min(dur, target) : target;
+                      try {
+                        e.currentTarget.currentTime = seekTo;
+                      } catch {}
+                      pendingSeekRef.current = null;
+                    }
+                  }}
                 onTimeUpdate={(e) => {
                   setVideoCurrentTime(e.currentTarget.currentTime || 0);
                 }}

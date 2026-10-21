@@ -130,6 +130,9 @@ export async function GET(req: Request) {
 
       const chunkSize = end - start + 1;
       const nodeStream = fs.createReadStream(resolved, { start, end, highWaterMark: 64 * 1024 });
+      req.signal.addEventListener("abort", () => {
+        try { nodeStream.destroy(); } catch {}
+      });
       const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 
       return new Response(webStream, {
@@ -146,6 +149,9 @@ export async function GET(req: Request) {
 
     // Full file streaming
     const nodeStream = fs.createReadStream(resolved);
+    req.signal.addEventListener("abort", () => {
+      try { nodeStream.destroy(); } catch {}
+    });
     const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 
     const headers: Record<string, string> = {

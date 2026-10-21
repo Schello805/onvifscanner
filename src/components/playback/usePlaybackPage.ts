@@ -96,6 +96,7 @@ export function usePlaybackPage() {
     }
   };
   const [activeClip, setActiveClip] = useState<RecordingClip | null>(null);
+  const [playbackOffset, setPlaybackOffset] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
@@ -569,6 +570,7 @@ export function usePlaybackPage() {
   const openClip = (clip: RecordingClip) => {
     setVideoDuration(0);
     setVideoCurrentTime(0);
+    setPlaybackOffset(0);
     pendingSeekRef.current = null;
     setLiveTranscode(false);
     setPlayerPreparing(false);
@@ -581,8 +583,11 @@ export function usePlaybackPage() {
   };
 
   const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
+    setPlaybackOffset(offsetSec);
     if (activeClip?.id === clip.id && videoRef.current) {
-      videoRef.current.currentTime = offsetSec;
+      try {
+        videoRef.current.currentTime = offsetSec;
+      } catch {}
       setVideoCurrentTime(offsetSec);
       if (videoRef.current.paused) {
         void videoRef.current.play().catch(() => null);
@@ -716,7 +721,10 @@ export function usePlaybackPage() {
 
     // Inside current clip bounds
     if (newTarget >= 0 && (duration <= 0 || newTarget <= duration)) {
-      videoRef.current.currentTime = newTarget;
+      setPlaybackOffset(newTarget);
+      try {
+        videoRef.current.currentTime = newTarget;
+      } catch {}
       setVideoCurrentTime(newTarget);
       showSeekFeedback(seconds < 0 ? `${seconds}s` : `+${seconds}s`);
       return;
@@ -895,13 +903,17 @@ export function usePlaybackPage() {
     if (seekFeedbackTimerRef.current !== null) window.clearTimeout(seekFeedbackTimerRef.current);
   }, [clearPlayerGesture]);
 
-  const seekToOffset = (seconds: number) => {
+  const seekToOffset = useCallback((seconds: number) => {
+    setPlaybackOffset(seconds);
     if (videoRef.current) {
-      videoRef.current.currentTime = Math.max(0, seconds);
-      videoRef.current.play().catch(() => {});
+      try {
+        videoRef.current.currentTime = Math.max(0, seconds);
+      } catch {}
+      setVideoCurrentTime(seconds);
+      void videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
-  };
+  }, []);
 
   const jumpToNextMotion = useCallback(() => {
     if (!videoRef.current || !activeClipMotionEvents.length) return;
@@ -1161,13 +1173,14 @@ export function usePlaybackPage() {
     return filteredClips.findIndex((c) => c.id === activeClip.id);
   }, [activeClip, filteredClips]);
 
-  const activePlaybackUrl = activeClip
-    ? `${activeClip.streamUrl}${
-        liveTranscode
-          ? `${activeClip.streamUrl.includes("?") ? "&" : "?"}transcode=1&offset=${Math.floor(videoCurrentTime || pendingSeekRef.current || 0)}`
-          : ""
-      }`
-    : "";
+  const activePlaybackUrl = useMemo(() => {
+    if (!activeClip) return "";
+    if (liveTranscode) {
+      const sep = activeClip.streamUrl.includes("?") ? "&" : "?";
+      return `${activeClip.streamUrl}${sep}transcode=1&offset=${Math.floor(playbackOffset)}`;
+    }
+    return activeClip.streamUrl;
+  }, [activeClip, liveTranscode, playbackOffset]);
 
   const playPreviousClip = () => {
     if (activeClipIndex > 0) {
