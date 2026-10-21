@@ -39,6 +39,8 @@ import {
   Award,
   Pencil,
   Image as ImageIcon,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { SnapshotLightboxModal } from "@/components/SnapshotLightboxModal";
@@ -159,6 +161,7 @@ export default function PlaybackPage() {
   };
   const [activeClip, setActiveClip] = useState<RecordingClip | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
   const [autoPlayNext, setAutoPlayNext] = useState(true);
@@ -887,17 +890,101 @@ export default function PlaybackPage() {
     toast.success(`Zoom auf Bewegungen um ${firstEv.timeStr} Uhr`);
   };
 
-  const playEvent = (ev: MotionEvent) => {
-    const linkedClip = ev.clipId ? clips.find((clip) => clip.id === ev.clipId) : undefined;
-    const matchingClip = linkedClip || timelineClips.find((c) => {
-      const [h, m] = c.timeStr.split(":").map(Number);
-      const clipMin = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
-      return ev.totalMinutes >= clipMin && ev.totalMinutes <= clipMin + 20;
-    }) || timelineClips[0];
+  const playEvent = async (ev: MotionEvent) => {
+    // 1. Direct clip associated with this event (motion recording)
+    if (ev.clipId) {
+      const linkedClip = clips.find((clip) => clip.id === ev.clipId);
+      const clipToPlay: RecordingClip = linkedClip || {
+        id: ev.clipId,
+        cameraId: ev.cameraId,
+        cameraName: ev.cameraName,
+        filename: `${ev.dateStr || getTodayStr()}_${ev.timeStr.replace(/:/g, "-")}.mp4`,
+        dateStr: ev.dateStr || getTodayStr(),
+        timeStr: ev.timeStr,
+        timestamp: ev.timestamp,
+        sizeBytes: 0,
+        storageTargetName: "Ereignis-Aufnahme",
+        streamUrl: ev.streamUrl || `/api/nvr/recordings/stream?clipId=${ev.clipId}`,
+        downloadUrl: `/api/nvr/recordings/stream?clipId=${ev.clipId}&download=1`,
+      };
+      openClipWithOffset(clipToPlay, 0);
+      toast.info(`Spiele Aufnahme für ${ev.cameraName} (${ev.timeStr} Uhr)`);
+      return;
+    }
+
+    // 2. Continuous recording: find the clip that covers this camera at this time
+    const evSec = parseTimeToSeconds(ev.timeStr);
+    const cameraClips = clips.filter((c) => c.cameraId === ev.cameraId);
+    let matchingClip = cameraClips.find((c) => {
+      const [h, m, s] = c.timeStr.split(":").map(Number);
+      const clipStartSec = (isNaN(h) ? 0 : h) * 3600 + (isNaN(m) ? 0 : m) * 60 + (isNaN(s) ? 0 : s);
+      const cam = cameras.find((cm) => cm.id === c.cameraId);
+      const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+      const offset = evSec - clipStartSec;
+      return offset >= -5 && offset <= segSec + 15;
+    });
+
+    // 3. Fallback to nearest clip of this camera on the same day if in memory
+    if (!matchingClip) {
+      const sameDayCamClips = cameraClips.filter((c) => c.dateStr === ev.dateStr);
+      if (sameDayCamClips.length > 0) {
+        matchingClip = sameDayCamClips.reduce((best, curr) => {
+          const bestDiff = Math.abs(parseTimeToSeconds(best.timeStr) - evSec);
+          const currDiff = Math.abs(parseTimeToSeconds(curr.timeStr) - evSec);
+          return currDiff < bestDiff ? curr : best;
+        });
+      }
+    }
+
+    // 4. If still not found, dynamically query server for clips of this camera on this date
+    if (!matchingClip) {
+      try {
+        const queryParams = new URLSearchParams({ cameraId: ev.cameraId, date: ev.dateStr || "" });
+        const res = await fetch(`/api/nvr/recordings?${queryParams.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          const serverClips: RecordingClip[] = Array.isArray(data.clips) ? data.clips : [];
+          if (serverClips.length > 0) {
+            setClips((prev) => {
+              const prevIds = new Set(prev.map((c) => c.id));
+              const newClips = serverClips.filter((c) => !prevIds.has(c.id));
+              return newClips.length > 0 ? [...newClips, ...prev] : prev;
+            });
+
+            matchingClip = serverClips.find((c) => {
+              const [h, m, s] = c.timeStr.split(":").map(Number);
+              const clipStartSec = (isNaN(h) ? 0 : h) * 3600 + (isNaN(m) ? 0 : m) * 60 + (isNaN(s) ? 0 : s);
+              const cam = cameras.find((cm) => cm.id === c.cameraId);
+              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+              const offset = evSec - clipStartSec;
+              return offset >= -5 && offset <= segSec + 15;
+            }) || serverClips[0];
+          }
+        }
+      } catch {}
+    }
+
+    // 5. Check late clips from previous day if event is in the first 30 minutes of the day
+    if (!matchingClip && evSec < 1800) {
+      try {
+        const prevDate = new Date(`${ev.dateStr}T00:00:00Z`);
+        prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+        const prevDateStr = prevDate.toISOString().slice(0, 10);
+        const queryParams = new URLSearchParams({ cameraId: ev.cameraId, date: prevDateStr });
+        const res = await fetch(`/api/nvr/recordings?${queryParams.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          const prevClips: RecordingClip[] = Array.isArray(data.clips) ? data.clips : [];
+          const lateClip = prevClips.find((c) => parseTimeToSeconds(c.timeStr) >= 84600);
+          if (lateClip) {
+            matchingClip = lateClip;
+          }
+        }
+      } catch {}
+    }
 
     if (matchingClip) {
       const clipStartSec = parseTimeToSeconds(matchingClip.timeStr);
-      const evSec = parseTimeToSeconds(ev.timeStr);
       let offset = evSec - clipStartSec;
       if (offset < -43200) offset += 86400;
       if (offset > 43200) offset -= 86400;
@@ -910,9 +997,9 @@ export default function PlaybackPage() {
       } else if (ev.motionRecordingStatus === "failed") {
         toast.error(ev.motionRecordingError || `Der Clip für ${ev.timeStr} Uhr konnte nicht erstellt werden.`);
       } else if (ev.motionRecordingStatus === "disabled") {
-        toast.warning("Für diese Kamera war die Bewegungsaufnahme nicht aktiviert.");
+        toast.warning(`Für "${ev.cameraName}" war die Videoaufnahme nicht aktiviert.`);
       } else {
-        toast.warning(`Keine passende Videoaufnahme für ${ev.timeStr} Uhr gefunden.`);
+        toast.warning(`Keine passende Videoaufnahme für ${ev.cameraName} um ${ev.timeStr} Uhr gefunden.`);
       }
     }
   };
@@ -1758,6 +1845,7 @@ export default function PlaybackPage() {
                   src={activePlaybackUrl}
                   autoPlay
                   playsInline
+                  muted={isMuted}
                   className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[38vh] sm:max-h-[44vh]'}`}
                   onPlay={() => {
                     setIsPlaying(true);
@@ -1770,7 +1858,20 @@ export default function PlaybackPage() {
                   onCanPlay={(event) => {
                     setPlayerPreparing(false);
                     setPlayerError("");
-                    void event.currentTarget.play().then(() => setPlayerNeedsStart(false)).catch(() => setPlayerNeedsStart(true));
+                    void event.currentTarget.play()
+                      .then(() => setPlayerNeedsStart(false))
+                      .catch(() => {
+                        // If unmuted autoplay blocked by browser, try muted autoplay
+                        if (!isMuted && videoRef.current) {
+                          videoRef.current.muted = true;
+                          setIsMuted(true);
+                          void videoRef.current.play()
+                            .then(() => setPlayerNeedsStart(false))
+                            .catch(() => setPlayerNeedsStart(true));
+                        } else {
+                          setPlayerNeedsStart(true);
+                        }
+                      });
                   }}
                   onError={() => {
                     if (!compatiblePlayback) {
@@ -1811,19 +1912,34 @@ export default function PlaybackPage() {
                 }}
                 aria-label="Videogesten: links oder rechts doppeltippen für zehn Sekunden, gedrückt halten zum schnellen Spulen"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!videoRef.current) return;
-                  if (videoRef.current.paused) void videoRef.current.play();
-                  else videoRef.current.pause();
-                }}
-                className="absolute bottom-3 left-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-xl backdrop-blur-md transition hover:bg-black/85"
-                aria-label={isPlaying ? "Pause" : "Abspielen"}
-                title={isPlaying ? "Pause" : "Abspielen"}
-              >
-                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
-              </button>
+              <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!videoRef.current) return;
+                    if (videoRef.current.paused) void videoRef.current.play();
+                    else videoRef.current.pause();
+                  }}
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-xl backdrop-blur-md transition hover:bg-black/85"
+                  aria-label={isPlaying ? "Pause" : "Abspielen"}
+                  title={isPlaying ? "Pause" : "Abspielen"}
+                >
+                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isMuted;
+                    setIsMuted(next);
+                    if (videoRef.current) videoRef.current.muted = next;
+                  }}
+                  className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-xl backdrop-blur-md transition hover:bg-black/85"
+                  aria-label={isMuted ? "Ton einschalten" : "Ton stummschalten"}
+                  title={isMuted ? "Ton einschalten" : "Ton stummschalten"}
+                >
+                  {isMuted ? <VolumeX className="h-5 w-5 text-slate-400" /> : <Volume2 className="h-5 w-5 text-emerald-400" />}
+                </button>
+              </div>
               {seekFeedback ? (
                 <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
                   <span className="rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md">{seekFeedback}</span>
@@ -2319,11 +2435,16 @@ export default function PlaybackPage() {
               const offset = Math.max(0, targetSec - clipStartSec);
               openClipWithOffset(matchingClip, offset);
             } else {
+              // Check if a motion event is near this point on the timeline
+              const nearbyEvent = motionEvents.find((ev) => Math.abs(ev.totalMinutes - totalMinutes) <= 2);
+              if (nearbyEvent) {
+                void playEvent(nearbyEvent);
+                return;
+              }
               const hour = Math.floor(totalMinutes / 60) % 24;
-              const minuteStep = timelineWindowMinutes <= 30 ? 1 : 15;
-              const minute = Math.floor((totalMinutes % 60) / minuteStep) * minuteStep;
-              const formatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-              setTimeFrom(formatted);
+              const minute = totalMinutes % 60;
+              const timeFormatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
+              toast.info(`Keine Aufnahme für ${timeFormatted} vorhanden.`);
             }
           }}
           className="relative h-14 sm:h-16 w-full rounded-xl bg-slate-950 border border-slate-800/90 shadow-inner overflow-hidden cursor-crosshair select-none group"

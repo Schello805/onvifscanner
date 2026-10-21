@@ -287,9 +287,10 @@ export async function POST(req: Request) {
               authUrl.password = cred.password ?? "";
               rtspUrl = authUrl.toString();
             }
+            const hwArgs = getFfmpegHwaccelArgs();
             const args = [
               "-y",
-              ...getFfmpegHwaccelArgs(),
+              ...hwArgs,
               "-rtsp_transport", "tcp",
               "-t", String(Math.ceil(timeoutMs / 1000) + 1),
               "-i", rtspUrl,
@@ -298,13 +299,39 @@ export async function POST(req: Request) {
               "-f", "image2",
               "-"
             ];
-            const { stdout } = await execFileAsync("ffmpeg", args, {
-              encoding: "buffer",
-              timeout: timeoutMs + 2000,
-              signal: req.signal as any
-            });
-            if (stdout.length === 0) throw new Error("ffmpeg returned empty output");
-            ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength);
+            let stdout: Buffer | null = null;
+            try {
+              const res = await execFileAsync("ffmpeg", args, {
+                encoding: "buffer",
+                timeout: timeoutMs + 2000,
+                signal: req.signal as any
+              });
+              stdout = res.stdout as Buffer;
+            } catch (errHw) {
+              if (hwArgs.length > 0) {
+                // Retry without hwaccel
+                const fallbackArgs = [
+                  "-y",
+                  "-rtsp_transport", "tcp",
+                  "-t", String(Math.ceil(timeoutMs / 1000) + 1),
+                  "-i", rtspUrl,
+                  "-vframes", "1",
+                  "-q:v", "4",
+                  "-f", "image2",
+                  "-"
+                ];
+                const resFallback = await execFileAsync("ffmpeg", fallbackArgs, {
+                  encoding: "buffer",
+                  timeout: timeoutMs + 2000,
+                  signal: req.signal as any
+                });
+                stdout = resFallback.stdout as Buffer;
+              } else {
+                throw errHw;
+              }
+            }
+            if (!stdout || stdout.length === 0) throw new Error("ffmpeg returned empty output");
+            ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength) as ArrayBuffer;
             contentType = "image/jpeg";
             attemptLog.push(`Status: ffmpeg success (${cred?.username || "unauth"})`);
             break;

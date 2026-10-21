@@ -33,7 +33,12 @@ function getFfmpegHwaccelArgs() {
   }
 
   if (process.platform === 'linux' && fs.existsSync('/dev/dri/renderD128')) {
-    return ['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128'];
+    try {
+      fs.accessSync('/dev/dri/renderD128', fs.constants.R_OK | fs.constants.W_OK);
+      return ['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128'];
+    } catch {
+      return [];
+    }
   }
 
   return [];

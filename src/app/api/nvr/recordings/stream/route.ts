@@ -90,12 +90,31 @@ export async function GET(req: Request) {
 
     const resolved = path.resolve(decodedPath);
 
-    // Verify file is within an approved storage target
+    // Verify file is within an approved storage target or system recording directories
     const targets = await prisma.storageTarget.findMany();
-    const isAllowed = targets.some((target) => {
-      const relative = path.relative(path.resolve(target.path), resolved);
+    const allowedDirs = [
+      ...targets.map((target) => path.resolve(target.path)),
+      path.resolve(process.cwd(), "data", "recordings"),
+      path.resolve(process.cwd(), "data", "motion-buffer"),
+      path.resolve(process.cwd(), "data", "motion-staging"),
+      path.resolve(process.env.PLAYBACK_CACHE_DIR || path.join(process.cwd(), "data", "playback-cache")),
+    ];
+
+    let isAllowed = allowedDirs.some((dir) => {
+      const relative = path.relative(dir, resolved);
       return relative !== "" && !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative);
     });
+
+    if (!isAllowed) {
+      // Allow verified motion recording paths from the database
+      const dbRecording = await prisma.motionRecording.findFirst({
+        where: { filePath: resolved },
+        select: { id: true },
+      });
+      if (dbRecording) {
+        isAllowed = true;
+      }
+    }
 
     if (!isAllowed) {
       return new Response("Access denied", { status: 403 });

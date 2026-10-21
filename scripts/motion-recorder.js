@@ -210,28 +210,51 @@ class MotionRecorder {
         console.warn(`[Motion Recorder] Codec von ${camera.name} konnte nicht ermittelt werden; H.264-Konvertierung wird verwendet.`, error?.message || error);
       }
 
-      const ffmpegArgs = ['-y', '-hide_banner', '-loglevel', 'error', ...getFfmpegHwaccelArgs()];
-      if (segments.length === 1) {
-        ffmpegArgs.push('-i', segments[0]);
-      } else {
-        const listFile = path.join(stageDir, 'segments.txt');
+      let listFile = null;
+      if (segments.length > 1) {
+        listFile = path.join(stageDir, 'segments.txt');
         const list = segments.map((segment) => `file '${segment.replaceAll("'", "'\\''")}'`).join('\n');
         await fsp.writeFile(listFile, `${list}\n`, 'utf8');
-        ffmpegArgs.push('-f', 'concat', '-safe', '0', '-i', listFile);
       }
 
-      ffmpegArgs.push('-map', '0:v:0', '-map', '0:a:0?');
-      if (videoCodec === 'h264') {
-        ffmpegArgs.push('-c:v', 'copy');
-      } else {
-        ffmpegArgs.push(
-          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24',
-          '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level', '4.0',
-          '-threads', '2',
-        );
+      const runFfmpeg = async (useHwaccel) => {
+        const args = ['-y', '-hide_banner', '-loglevel', 'error'];
+        // Only attempt hwaccel if transcoding is needed; stream copy must never use hwaccel
+        if (useHwaccel && videoCodec !== 'h264') {
+          args.push(...getFfmpegHwaccelArgs());
+        }
+
+        if (segments.length === 1) {
+          args.push('-i', segments[0]);
+        } else {
+          args.push('-f', 'concat', '-safe', '0', '-i', listFile);
+        }
+
+        args.push('-map', '0:v:0', '-map', '0:a:0?');
+        if (videoCodec === 'h264') {
+          args.push('-c:v', 'copy');
+        } else {
+          args.push(
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24',
+            '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level', '4.0',
+            '-threads', '2',
+          );
+        }
+        args.push('-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', partial);
+        await execFileAsync('ffmpeg', args, { timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 });
+      };
+
+      try {
+        await runFfmpeg(true);
+      } catch (errHw) {
+        if (videoCodec !== 'h264') {
+          console.warn(`[Motion Recorder] Transcoding mit Hardware-Beschleunigung fehlgeschlagen, versuche CPU-Software-Fallback:`, errHw?.message || errHw);
+          await fsp.unlink(partial).catch(() => undefined);
+          await runFfmpeg(false);
+        } else {
+          throw errHw;
+        }
       }
-      ffmpegArgs.push('-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', partial);
-      await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 });
 
       const stat = await fsp.stat(partial);
       if (!stat.isFile() || stat.size === 0) throw new Error('FFmpeg hat keine gültige Ausgabedatei erzeugt.');

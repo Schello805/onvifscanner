@@ -33,6 +33,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const filterCameraId = searchParams.get("cameraId");
     const filterDate = searchParams.get("date"); // YYYY-MM-DD
+    const singleClipId = searchParams.get("clipId");
     const calendarMonthRaw = searchParams.get("calendarMonth");
     const calendarMonth = calendarMonthRaw && /^\d{4}-\d{2}$/.test(calendarMonthRaw) ? calendarMonthRaw : null;
 
@@ -45,11 +46,63 @@ export async function GET(req: Request) {
       where: { enabled: true },
     });
 
+    // Ensure default recording directory is always checked
+    const defaultDataDir = path.resolve(process.cwd(), "data", "recordings");
+    const allTargets = [...storageTargets];
+    if (fs.existsSync(defaultDataDir) && !allTargets.some((t) => path.resolve(t.path) === defaultDataDir)) {
+      allTargets.push({
+        id: "default-local-storage",
+        name: "Lokaler Speicher",
+        path: defaultDataDir,
+        enabled: true,
+        isDefault: true,
+        maxDays: 14,
+        minFreeSpaceGb: 10,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    // Direct single clip lookup
+    if (singleClipId) {
+      try {
+        const decodedPath = Buffer.from(singleClipId, "base64url").toString("utf-8");
+        const resolved = path.resolve(decodedPath);
+        if (fs.existsSync(resolved)) {
+          const stat = await fsp.stat(resolved);
+          if (stat.isFile()) {
+            const filename = path.basename(resolved);
+            const parentDir = path.basename(path.dirname(resolved));
+            const dateMatch = filename.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+            let dateStr = dateMatch ? dateMatch[1] : stat.mtime.toISOString().slice(0, 10);
+            let timeStr = dateMatch ? `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}` : stat.mtime.toISOString().slice(11, 19);
+
+            return NextResponse.json({
+              clips: [{
+                id: singleClipId,
+                cameraId: parentDir,
+                cameraName: cameraMap.get(parentDir) || `Kamera ${parentDir}`,
+                filename,
+                dateStr,
+                timeStr,
+                timestamp: `${dateStr}T${timeStr}Z`,
+                sizeBytes: stat.size,
+                storageTargetName: "Lokaler Speicher",
+                streamUrl: `/api/nvr/recordings/stream?clipId=${singleClipId}`,
+                downloadUrl: `/api/nvr/recordings/stream?clipId=${singleClipId}&download=1`,
+              }],
+              totalCount: 1,
+            });
+          }
+        }
+      } catch {}
+    }
+
     const clips: RecordingClip[] = [];
     const calendarDays = new Map<string, { count: number; cameras: Map<string, number> }>();
     const unavailableStorageTargets: string[] = [];
 
-    for (const target of storageTargets) {
+    for (const target of allTargets) {
       if (!fs.existsSync(target.path)) {
         unavailableStorageTargets.push(target.name);
         continue;
@@ -139,7 +192,17 @@ export async function GET(req: Request) {
               timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
             }
 
-            if (filterDate && dateStr !== filterDate) continue;
+            let matchesDate = !filterDate || dateStr === filterDate;
+            if (!matchesDate && filterDate) {
+              // Also include clips starting late on the previous day (>= 23:30) that overlap into the morning
+              const prevDate = new Date(`${filterDate}T00:00:00Z`);
+              prevDate.setUTCDate(prevDate.getUTCDate() - 1);
+              const prevDateStr = prevDate.toISOString().slice(0, 10);
+              if (dateStr === prevDateStr && timeStr >= "23:30:00") {
+                matchesDate = true;
+              }
+            }
+            if (!matchesDate) continue;
 
             if (calendarMonth) {
               if (dateStr.startsWith(`${calendarMonth}-`)) {
@@ -168,6 +231,71 @@ export async function GET(req: Request) {
           } catch {}
         }
       }
+    }
+
+    // Merge ready motion recordings from database if not already indexed
+    if (!calendarMonth) {
+      const existingClipIds = new Set(clips.map((c) => c.id));
+      const motionWhere: any = { status: "ready", filePath: { not: null } };
+      if (filterCameraId) motionWhere.cameraId = filterCameraId;
+      if (filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)) {
+        const dStart = new Date(`${filterDate}T00:00:00.000Z`);
+        dStart.setHours(dStart.getHours() - 14);
+        const dEnd = new Date(`${filterDate}T23:59:59.999Z`);
+        dEnd.setHours(dEnd.getHours() + 14);
+        motionWhere.startedAt = { gte: dStart, lte: dEnd };
+      }
+
+      try {
+        const dbMotionRecs = await prisma.motionRecording.findMany({
+          where: motionWhere,
+          orderBy: { startedAt: "desc" },
+          take: 500,
+        });
+
+        for (const rec of dbMotionRecs) {
+          if (!rec.filePath) continue;
+          const clipId = Buffer.from(rec.filePath).toString("base64url");
+          if (existingClipIds.has(clipId)) continue;
+          if (!fs.existsSync(rec.filePath)) continue;
+
+          try {
+            const stat = await fsp.stat(rec.filePath);
+            if (!stat.isFile()) continue;
+
+            const p = new Intl.DateTimeFormat("en-CA", {
+              timeZone: process.env.TZ || "Europe/Berlin",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hourCycle: "h23",
+            }).formatToParts(rec.startedAt);
+            const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
+            const dateStr = `${g("year")}-${g("month")}-${g("day")}`;
+            const timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
+
+            if (filterDate && dateStr !== filterDate) continue;
+
+            clips.push({
+              id: clipId,
+              cameraId: rec.cameraId,
+              cameraName: cameraMap.get(rec.cameraId) || `Kamera ${rec.cameraId}`,
+              filename: path.basename(rec.filePath),
+              dateStr,
+              timeStr,
+              timestamp: rec.startedAt.toISOString(),
+              sizeBytes: stat.size,
+              storageTargetName: "Ereignis-Speicher",
+              streamUrl: `/api/nvr/recordings/stream?clipId=${clipId}`,
+              downloadUrl: `/api/nvr/recordings/stream?clipId=${clipId}&download=1`,
+            });
+            existingClipIds.add(clipId);
+          } catch {}
+        }
+      } catch {}
     }
 
     if (calendarMonth) {
