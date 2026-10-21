@@ -23,6 +23,7 @@ const {
   motionMonitoringRequested,
   requiresServerMotionValidation,
   motionCooldownSeconds,
+  shouldAcceptExternalMotion,
 } = require('./motion-policy');
 const { decryptSecret, getInternalWorkerToken } = require('./security');
 const { clampCameraSensitivities } = require('./reset-sensitivity');
@@ -35,7 +36,7 @@ const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
 const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
 const objectDetectionEnabled = process.env.ENABLE_OBJECT_DETECTION !== 'false';
-const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 3_000);
+const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 4_000);
 const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 2));
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
@@ -52,6 +53,7 @@ const motionFrames = new Map();
 const motionFailureLogTimes = new Map();
 const cameraMotionSessions = new Map();
 const cameraMotionConsecutiveErrors = new Map();
+const cameraSnapshotBackoffUntil = new Map();
 let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
@@ -395,6 +397,19 @@ async function detectCameraMotion(cam) {
   }
   if (!motionMonitoringRequested(cam)) {
     motionFrames.delete(cam.id);
+    return;
+  }
+
+  // If native ONVIF motion events are healthy and active and no server-side validation is required,
+  // we do not need to burn CPU running software pixel comparison.
+  if (cam.motionEventSource === 'onvif' && cam.motionEventState === 'active' && shouldAcceptExternalMotion(cam)) {
+    motionFrames.delete(cam.id);
+    return;
+  }
+
+  // Backoff check: if this camera repeatedly failed snapshot/ffmpeg extraction, pause requests to save CPU
+  const backoffUntil = cameraSnapshotBackoffUntil.get(cam.id) || 0;
+  if (Date.now() < backoffUntil) {
     return;
   }
 
@@ -836,9 +851,13 @@ async function detectCameraMotion(cam) {
       },
     });
     cameraMotionConsecutiveErrors.delete(cam.id);
+    cameraSnapshotBackoffUntil.delete(cam.id);
   } catch (error) {
     const errorCount = (cameraMotionConsecutiveErrors.get(cam.id) || 0) + 1;
     cameraMotionConsecutiveErrors.set(cam.id, errorCount);
+    // Exponential backoff to avoid hammering the camera / spawning ffmpeg on every cycle (10s, 20s, 40s, 60s)
+    const backoffSeconds = Math.min(60, 10 * Math.pow(2, Math.min(errorCount - 1, 3)));
+    cameraSnapshotBackoffUntil.set(cam.id, Date.now() + backoffSeconds * 1000);
     // Only wipe baseline frame after multiple consecutive errors to tolerate transient network drops
     if (errorCount >= 3) {
       motionFrames.delete(cam.id);

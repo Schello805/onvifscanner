@@ -92,6 +92,7 @@ type CacheEntry = { ts: number; bytes: Buffer; contentType: string; width?: numb
 const cache = new Map<string, CacheEntry>();
 const CACHE_MAX_ENTRIES = clampInt(process.env.THUMBNAIL_CACHE_MAX_ENTRIES ?? 256, 0, 2048);
 const latestCameraSnapshots = new Map<string, { ts: number; bytes: Buffer }>();
+const failedRtspCooldown = new Map<string, number>();
 
 export async function POST(req: Request) {
   let body: Body;
@@ -277,7 +278,13 @@ export async function POST(req: Request) {
       let contentType = "";
 
       if (url.protocol === "rtsp:") {
+        const cooldownUntil = failedRtspCooldown.get(url.toString()) ?? 0;
+        if (Date.now() < cooldownUntil) {
+          attemptLog.push(`Protocol: RTSP skipped (cooling down for ${Math.round((cooldownUntil - Date.now()) / 1000)}s)`);
+          continue;
+        }
         attemptLog.push("Protocol: RTSP (using ffmpeg)");
+        let rtspSuccess = false;
         for (const cred of credCandidates) {
           try {
             let rtspUrl = url.toString();
@@ -319,10 +326,16 @@ export async function POST(req: Request) {
             ab = stdout.buffer.slice(stdout.byteOffset, stdout.byteOffset + stdout.byteLength) as ArrayBuffer;
             contentType = "image/jpeg";
             attemptLog.push(`Status: ffmpeg success (${cred?.username || "unauth"})`);
+            rtspSuccess = true;
+            failedRtspCooldown.delete(url.toString());
             break;
           } catch (e) {
             attemptLog.push(`ffmpeg error (${cred?.username || "unauth"}): ${e instanceof Error ? e.message : "Unknown"}`);
           }
+        }
+        if (!rtspSuccess) {
+          // If all credentials failed for this RTSP stream, cool down for 25 seconds to protect CPU
+          failedRtspCooldown.set(url.toString(), Date.now() + 25_000);
         }
         if (!ab) continue;
       } else {

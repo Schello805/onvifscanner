@@ -9,7 +9,7 @@ const { getFfmpegHwaccelArgs } = require('./ffmpeg-hwaccel');
 
 const execFileAsync = promisify(execFile);
 const BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGMENT_SECONDS) || 5);
-const PROCESS_INTERVAL_MS = 2_000;
+const PROCESS_INTERVAL_MS = Math.max(2_000, Number(process.env.MOTION_RECORDER_INTERVAL_MS) || 4_000);
 const FINALIZE_GRACE_MS = 1_500;
 const MERGE_GRACE_MS = (BUFFER_SEGMENT_SECONDS + 5) * 1000;
 

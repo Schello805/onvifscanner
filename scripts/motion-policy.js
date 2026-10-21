@@ -15,11 +15,19 @@ function parseIgnoreRegions(value) {
 }
 
 function motionMonitoringRequested(camera, date = new Date()) {
-  if (effectiveRecordingMode(camera, date) !== 'off') return true;
+  const mode = effectiveRecordingMode(camera, date);
+  if (mode === 'motion') return true;
+  if (mode === 'continuous') {
+    const continuousAnalysisEnabled = process.env.ENABLE_MOTION_ON_CONTINUOUS !== 'false';
+    if (!continuousAnalysisEnabled && !camera?.notificationsEnabled && !camera?.objectDetectionEnabled && !camera?.licensePlateRecognitionEnabled) {
+      return false;
+    }
+    return true;
+  }
   if (!camera?.notificationsEnabled) return false;
 
-  const mode = normalizeRecordingMode(camera);
-  return !recordingModeUsesSchedule(mode)
+  const normalized = normalizeRecordingMode(camera);
+  return !recordingModeUsesSchedule(normalized)
     || isMotionScheduleActive({ ...camera, motionScheduleEnabled: true }, date);
 }
 

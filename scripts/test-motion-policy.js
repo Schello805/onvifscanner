@@ -34,6 +34,11 @@ assert.equal(effectiveRecordingMode({ recordMode: 'scheduled_motion_else_continu
 assert.equal(effectiveRecordingMode({ recordMode: 'scheduled_continuous_else_motion', ...overnight }, wednesdayAt23), 'continuous');
 assert.equal(effectiveRecordingMode({ recordMode: 'scheduled_continuous_else_motion', ...overnight }, thursdayAt07), 'motion');
 assert.equal(motionMonitoringRequested({ recordMode: 'motion' }), true);
+assert.equal(motionMonitoringRequested({ recordMode: 'continuous', notificationsEnabled: false }), true);
+process.env.ENABLE_MOTION_ON_CONTINUOUS = 'false';
+assert.equal(motionMonitoringRequested({ recordMode: 'continuous', notificationsEnabled: false }), false);
+assert.equal(motionMonitoringRequested({ recordMode: 'continuous', notificationsEnabled: true }), true);
+delete process.env.ENABLE_MOTION_ON_CONTINUOUS;
 assert.equal(motionMonitoringRequested({ recordMode: 'off', notificationsEnabled: false }), false);
 assert.equal(motionMonitoringRequested({ recordMode: 'scheduled_motion', notificationsEnabled: true, ...overnight }, thursdayAt07), false);
 assert.equal(motionMonitoringRequested({ recordMode: 'scheduled_continuous_else_motion', ...overnight }, thursdayAt07), true);
