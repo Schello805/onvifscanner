@@ -166,14 +166,13 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                 }}
               />
               <div
-                data-pull-to-refresh-ignore="true"
-                className="absolute inset-0 z-10 touch-manipulation select-none"
-                onPointerDown={handlePlayerPointerDown}
-                onPointerUp={handlePlayerPointerEnd}
-                onPointerCancel={(event) => {
-                  if (playerGestureRef.current.pointerId === event.pointerId) clearPlayerGesture();
+                className="absolute inset-0 z-10 select-none cursor-pointer"
+                onClick={() => {
+                  if (!videoRef.current) return;
+                  if (videoRef.current.paused) void videoRef.current.play();
+                  else videoRef.current.pause();
                 }}
-                aria-label="Videogesten: links oder rechts doppeltippen für zehn Sekunden, gedrückt halten zum schnellen Spulen"
+                aria-label="Klick zum Abspielen oder Pausieren"
               />
               <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
                 <button

@@ -118,11 +118,7 @@ export async function GET(req: Request) {
         ? Number(match[1])
         : Math.max(0, fileSize - Math.min(fileSize, suffixLength));
 
-      // Fast 3 MB chunk streaming for progressive video playback
-      const MAX_CHUNK_SIZE = 3 * 1024 * 1024;
-      const requestedEnd = match[2] && match[1]
-        ? Number(match[2])
-        : Math.min(fileSize - 1, start + MAX_CHUNK_SIZE - 1);
+      const requestedEnd = match[2] && match[1] ? Number(match[2]) : fileSize - 1;
       const end = Math.min(requestedEnd, fileSize - 1);
 
       if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= fileSize || end < start) {
@@ -133,7 +129,7 @@ export async function GET(req: Request) {
       }
 
       const chunkSize = end - start + 1;
-      const nodeStream = fs.createReadStream(resolved, { start, end });
+      const nodeStream = fs.createReadStream(resolved, { start, end, highWaterMark: 64 * 1024 });
       const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 
       return new Response(webStream, {
