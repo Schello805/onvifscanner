@@ -23,7 +23,7 @@ const {
   requiresServerMotionValidation,
   motionCooldownSeconds,
 } = require('./motion-policy');
-const { decryptSecret } = require('./security');
+const { decryptSecret, getInternalWorkerToken } = require('./security');
 const { clampCameraSensitivities } = require('./reset-sensitivity');
 
 const prisma = new PrismaClient();
@@ -54,6 +54,32 @@ let motionDetectionCycleRunning = false;
 const monitorTimers = [];
 let legacyRecordingModesMigrated = false;
 let motionSensitivityDefaultsMigrated = false;
+const lastEventCleanupTimes = new Map();
+
+async function pruneOldCameraEvents(prismaClient, cameraId, maxKeep = 500) {
+  const now = Date.now();
+  const lastRun = lastEventCleanupTimes.get(cameraId) || 0;
+  if (now - lastRun < 10 * 60_000) return;
+  lastEventCleanupTimes.set(cameraId, now);
+  try {
+    const oldEvents = await prismaClient.alarmLog.findMany({
+      where: { cameraId },
+      orderBy: { timestamp: 'desc' },
+      skip: maxKeep,
+      select: { id: true, imageUrl: true },
+    });
+    if (oldEvents.length) {
+      for (const oldEv of oldEvents) {
+        if (oldEv.imageUrl) {
+          void deleteSnapshotFile(oldEv.imageUrl);
+        }
+      }
+      await prismaClient.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
+    }
+  } catch (err) {
+    console.warn(`[Event Cleanup] Warning for camera ${cameraId}:`, err?.message || err);
+  }
+}
 
 function parseMotionIgnoreRegions(value) {
   try {
@@ -157,7 +183,9 @@ async function runMonitorCycle() {
       }
       motionSensitivityDefaultsMigrated = true;
     }
-    const cameras = await prisma.camera.findMany();
+    const cameras = await prisma.camera.findMany({
+      include: { status: true, storageTarget: true },
+    });
     const cameraChecks = await mapWithConcurrency(cameras, 8, async (cam) => {
       // First try RTSP port, fallback to HTTP port 80 if needed
       let isOnline = await pingCamera(cam.ip, 554);
@@ -168,7 +196,7 @@ async function runMonitorCycle() {
     });
 
     for (const { cam, isOnline } of cameraChecks) {
-      const status = await prisma.deviceStatus.findUnique({ where: { cameraId: cam.id } });
+      const status = cam.status;
       
       let failures = status ? status.pingFailures : 0;
       if (isOnline) {
@@ -296,7 +324,11 @@ async function fetchMotionEventImage(cam, uris, options = {}) {
     const timeoutMs = highRes ? 5_000 : 3_500;
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-worker': 'true',
+        'x-internal-worker-token': getInternalWorkerToken(),
+      },
       body: JSON.stringify({
         urls: uris,
         size,
@@ -368,7 +400,11 @@ async function detectCameraMotion(cam) {
     const timer = setTimeout(() => controller.abort(), 5_000);
     const response = await fetch(`${appBaseUrl}/api/thumbnail`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-worker': 'true',
+        'x-internal-worker-token': getInternalWorkerToken(),
+      },
       body: JSON.stringify({
         urls: uris,
         size: motionAnalysisWidth,
@@ -404,10 +440,14 @@ async function detectCameraMotion(cam) {
     let signedDifferenceSum = 0;
     const channels = Math.max(1, info.channels || 1);
     const activePixelCount = previous.activePixelCount ?? Math.floor(pixels.length / channels);
+    const isSingleChannel = channels === 1;
+    const prevPixels = previous.pixels;
+    const activeMask = previous.activeMask;
+
     for (let index = 0; index < pixels.length; index += channels) {
-      const pixelIndex = Math.floor(index / channels);
-      if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
-      signedDifferenceSum += pixels[index] - previous.pixels[index];
+      const pixelIndex = isSingleChannel ? index : Math.floor(index / channels);
+      if (activeMask && !activeMask[pixelIndex]) continue;
+      signedDifferenceSum += pixels[index] - prevPixels[index];
     }
     const globalBrightnessShift = activePixelCount > 0 ? signedDifferenceSum / activePixelCount : 0;
 
@@ -435,9 +475,9 @@ async function detectCameraMotion(cam) {
     const sensitivityFactor = Math.max(0.6, 1.5 - sensitivity / 100);
     const effectivePixelThreshold = Math.max(10, Math.round(globalPixelThreshold * sensitivityFactor));
     for (let index = 0; index < pixels.length; index += channels) {
-      const pixelIndex = Math.floor(index / channels);
-      if (previous.activeMask && !previous.activeMask[pixelIndex]) continue;
-      const difference = Math.abs((pixels[index] - previous.pixels[index]) - globalBrightnessShift);
+      const pixelIndex = isSingleChannel ? index : Math.floor(index / channels);
+      if (activeMask && !activeMask[pixelIndex]) continue;
+      const difference = Math.abs((pixels[index] - prevPixels[index]) - globalBrightnessShift);
       differenceSum += difference;
       if (difference >= effectivePixelThreshold) {
         changedPixels += 1;
@@ -750,20 +790,7 @@ async function detectCameraMotion(cam) {
         finalNotificationImage ? { imageBuffer: finalNotificationImage, contentType: 'image/jpeg' } : {},
       );
       console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}% / Min ${(requiredArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
-      const oldEvents = await prisma.alarmLog.findMany({
-        where: { cameraId: cam.id },
-        orderBy: { timestamp: 'desc' },
-        skip: 500,
-        select: { id: true, imageUrl: true },
-      });
-      if (oldEvents.length) {
-        for (const oldEv of oldEvents) {
-          if (oldEv.imageUrl) {
-            void deleteSnapshotFile(oldEv.imageUrl);
-          }
-        }
-        await prisma.alarmLog.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
-      }
+      void pruneOldCameraEvents(prisma, cam.id);
     await prisma.camera.update({
       where: { id: cam.id },
       data: {
@@ -806,7 +833,11 @@ async function runAutoDiscovery() {
   try {
      const res = await fetch(`${appBaseUrl}/api/scan`, {
        method: 'POST',
-       headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
+       headers: {
+         'Content-Type': 'application/json',
+         'x-internal-worker': 'true',
+         'x-internal-worker-token': getInternalWorkerToken(),
+       },
        body: JSON.stringify({ preset: 'ws-discovery', acknowledgeAuthorizedNetwork: true, timeoutMs: 3000, fast: true })
      });
      const data = await res.json();
@@ -893,7 +924,9 @@ async function syncMediaMtxPaths(cameras) {
           const fs = require('fs');
           const path = require('path');
           let targetDir = defaultStoragePath;
-          if (cam.storageTargetId) {
+          if (cam.storageTarget && cam.storageTarget.enabled) {
+            targetDir = cam.storageTarget.path;
+          } else if (cam.storageTargetId) {
             const target = await prisma.storageTarget.findUnique({ where: { id: cam.storageTargetId } });
             if (target && target.enabled) targetDir = target.path;
           }

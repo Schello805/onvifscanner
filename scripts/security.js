@@ -12,6 +12,33 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 let cachedConfig = null;
 let cachedMtimeMs = 0;
 
+let internalWorkerToken = process.env.INTERNAL_WORKER_TOKEN || null;
+if (!internalWorkerToken) {
+  internalWorkerToken = crypto.randomBytes(32).toString("hex");
+  process.env.INTERNAL_WORKER_TOKEN = internalWorkerToken;
+}
+
+function getInternalWorkerToken() {
+  if (!internalWorkerToken) {
+    internalWorkerToken = process.env.INTERNAL_WORKER_TOKEN || crypto.randomBytes(32).toString("hex");
+    process.env.INTERNAL_WORKER_TOKEN = internalWorkerToken;
+  }
+  return internalWorkerToken;
+}
+
+function verifyInternalWorkerToken(candidate) {
+  if (!candidate || typeof candidate !== "string") return false;
+  const currentToken = getInternalWorkerToken();
+  try {
+    const a = Buffer.from(candidate, "utf8");
+    const b = Buffer.from(currentToken, "utf8");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -289,4 +316,6 @@ module.exports = {
   createSessionToken,
   verifySessionToken,
   parseCookies,
+  getInternalWorkerToken,
+  verifyInternalWorkerToken,
 };

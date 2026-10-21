@@ -17,6 +17,7 @@ const {
   isAppAuthEnabled,
   parseCookies,
   verifySessionToken,
+  verifyInternalWorkerToken,
 } = require("./scripts/security");
 
 const dev = process.env.NODE_ENV !== "production";
@@ -32,18 +33,27 @@ function isLoopbackAddress(addr) {
 }
 
 app.prepare().then(async () => {
-  // Zeitzone aus Einstellungen laden & Kamerasensitivität auf sichere Werte prüfen
+  // Zeitzone aus Einstellungen laden, SQLite WAL-Pragmas setzen & Kamerasensitivität auf sichere Werte prüfen
   try {
     const { PrismaClient } = require("@prisma/client");
     const { clampCameraSensitivities } = require("./scripts/reset-sensitivity");
     const prisma = new PrismaClient();
+    try {
+      await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
+      await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
+      await prisma.$queryRawUnsafe("PRAGMA synchronous = NORMAL;");
+    } catch (dbErr) {
+      console.warn("Could not set SQLite WAL pragmas:", dbErr?.message || dbErr);
+    }
     const settings = await prisma.settings.findUnique({ where: { id: "default" } });
     if (settings?.timezone) {
       process.env.TZ = settings.timezone;
     }
     await clampCameraSensitivities(prisma);
     await prisma.$disconnect();
-  } catch {}
+  } catch (initErr) {
+    console.warn("Server init warning:", initErr?.message || initErr);
+  }
 
   let mediaMtx = null;
   let mediaRestartTimer = null;
@@ -118,11 +128,7 @@ app.prepare().then(async () => {
         const isInternalWorkerCall =
           isLoopbackAddress(req.socket?.remoteAddress) &&
           !req.headers.origin &&
-          (
-            req.headers["x-internal-worker"] === "true" ||
-            req.headers["user-agent"] === "node" ||
-            !req.headers["sec-ch-ua"]
-          );
+          verifyInternalWorkerToken(req.headers["x-internal-worker-token"]);
 
         if (!isInternalWorkerCall) {
           const cookies = parseCookies(req.headers.cookie);

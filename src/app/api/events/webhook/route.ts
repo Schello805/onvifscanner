@@ -4,7 +4,7 @@ import path from "path";
 import { prisma } from "@/lib/db";
 import { sendNtfyMessage } from "@/lib/ntfy";
 import { sendTelegramMessage } from "@/lib/telegram";
-import { decryptSecret, getWebhookToken } from "@/lib/security";
+import { decryptSecret, getWebhookToken, getInternalWorkerToken } from "@/lib/security";
 import {
   motionCooldownSeconds,
   motionMonitoringRequested,
@@ -157,7 +157,11 @@ export async function POST(req: Request) {
           const streamUris = JSON.parse(matchedCamera.streamUris || "[]");
           const imageResponse = await fetch(`http://127.0.0.1:${process.env.PORT || "3000"}/api/thumbnail`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "x-internal-worker": "true" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-worker": "true",
+              "x-internal-worker-token": getInternalWorkerToken(),
+            },
             body: JSON.stringify({
               cameraId: matchedCamera.id,
               urls: [...snapshotUris, ...streamUris],

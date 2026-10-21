@@ -31,6 +31,8 @@ export const setWebhookToken: (token: string | null | undefined) => void = sec.s
 export const createSessionToken: () => string = sec.createSessionToken;
 export const verifySessionToken: (token: string | null | undefined) => boolean = sec.verifySessionToken;
 export const parseCookies: (cookieHeader: string | null | undefined) => Record<string, string> = sec.parseCookies;
+export const getInternalWorkerToken: () => string = sec.getInternalWorkerToken;
+export const verifyInternalWorkerToken: (token: string | null | undefined) => boolean = sec.verifyInternalWorkerToken;
 
 export function isRequestAuthenticated(req: Request): boolean {
   if (!isAppAuthEnabled()) return true;

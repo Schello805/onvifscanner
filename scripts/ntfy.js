@@ -1,4 +1,4 @@
-const { decryptSecret } = require('./security');
+const { decryptSecret, getInternalWorkerToken } = require('./security');
 
 function normalizeNtfyServer(value) {
   const trimmed = String(value || '').trim().replace(/\/+$/, '');
@@ -56,7 +56,11 @@ async function fetchCameraImage(camera) {
   try {
     const response = await fetch(`http://127.0.0.1:${process.env.PORT || '3000'}/api/thumbnail`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-worker': 'true' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-worker': 'true',
+        'x-internal-worker-token': getInternalWorkerToken(),
+      },
       body: JSON.stringify({
         cameraId: camera.id,
         urls,

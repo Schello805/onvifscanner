@@ -8,6 +8,7 @@ type WebRtcPlayerProps = {
   title: string;
   className?: string;
   style?: React.CSSProperties;
+  iceServers?: RTCIceServer[];
 };
 
 export function WebRtcPlayer({
@@ -16,6 +17,7 @@ export function WebRtcPlayer({
   title,
   className,
   style,
+  iceServers,
 }: WebRtcPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(!whepUrl);
@@ -68,8 +70,14 @@ export function WebRtcPlayer({
       cleanupCurrentPc();
 
       try {
+        const configuredIceServers =
+          iceServers ??
+          (process.env.NEXT_PUBLIC_STUN_SERVER
+            ? [{ urls: process.env.NEXT_PUBLIC_STUN_SERVER }]
+            : []);
+
         const peer = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+          ...(configuredIceServers.length > 0 ? { iceServers: configuredIceServers } : {}),
         });
         pc = peer;
 
@@ -175,7 +183,7 @@ export function WebRtcPlayer({
       if (retryTimer) clearTimeout(retryTimer);
       cleanupCurrentPc();
     };
-  }, [whepUrl]);
+  }, [whepUrl, iceServers]);
 
   if (useIframeFallback) {
     return (

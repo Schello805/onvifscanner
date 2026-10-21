@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.18.36",
+  "version": "0.18.37",
   "private": true,
   "description": "Local-first camera discovery, monitoring and NVR for ONVIF/RTSP cameras.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -58,6 +58,7 @@
   },
   "optionalDependencies": {
     "@tensorflow-models/coco-ssd": "^2.2.3",
-    "@tensorflow/tfjs-backend-cpu": "^4.22.0"
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0"
   }
 }

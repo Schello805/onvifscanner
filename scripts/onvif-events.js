@@ -173,6 +173,7 @@ class OnvifEventManager {
     this.eventStates = new Map();
     this.unsupportedUntil = new Map(); // cameraId -> timestamp
     this.lastHealthUpdates = new Map();
+    this.lastCleanupTimes = new Map();
   }
 
   start() {
@@ -448,21 +449,31 @@ class OnvifEventManager {
         fetchedImage?.data ? { imageBuffer: Buffer.from(fetchedImage.data), contentType: fetchedImage.contentType || 'image/jpeg' } : {}
       );
       await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, effectiveTimestamp);
-      const oldEvents = await this.prisma.alarmLog.findMany({
-        where: { cameraId: cam.id },
-        orderBy: { timestamp: 'desc' },
-        skip: 500,
-        select: { id: true, imageUrl: true }
-      });
-      if (oldEvents.length) {
-        for (const oldEv of oldEvents) {
-          if (oldEv.imageUrl) {
-            void deleteSnapshotFile(oldEv.imageUrl);
+      const lastClean = this.lastCleanupTimes.get(cam.id) || 0;
+      if (now - lastClean >= 10 * 60_000) {
+        this.lastCleanupTimes.set(cam.id, now);
+        void (async () => {
+          try {
+            const oldEvents = await this.prisma.alarmLog.findMany({
+              where: { cameraId: cam.id },
+              orderBy: { timestamp: 'desc' },
+              skip: 500,
+              select: { id: true, imageUrl: true }
+            });
+            if (oldEvents.length) {
+              for (const oldEv of oldEvents) {
+                if (oldEv.imageUrl) {
+                  void deleteSnapshotFile(oldEv.imageUrl);
+                }
+              }
+              await this.prisma.alarmLog.deleteMany({
+                where: { id: { in: oldEvents.map((event) => event.id) } }
+              });
+            }
+          } catch (err) {
+            console.warn(`[ONVIF Events] Event cleanup warning for ${cam.name}:`, err?.message || err);
           }
-        }
-        await this.prisma.alarmLog.deleteMany({
-          where: { id: { in: oldEvents.map((event) => event.id) } }
-        });
+        })();
       }
     } catch (err) {
       console.error(`[ONVIF Events] ${cam.name}: Fehler beim Erfassen des Bewegungsereignisses:`, err);

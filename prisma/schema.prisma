@@ -137,6 +137,8 @@ model AlarmLog {
   motionRecording   MotionRecording? @relation(fields: [motionRecordingId], references: [id], onDelete: SetNull)
 
   @@index([motionRecordingId])
+  @@index([cameraId, timestamp])
+  @@index([timestamp])
 }
 
 model MotionRecording {
