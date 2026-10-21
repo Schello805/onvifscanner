@@ -225,6 +225,23 @@ export function usePlaybackPage() {
         if (!silent) {
           setSelectedClipIds(new Set());
           setCurrentPage(1);
+          if (camId && Array.isArray(dataClips.clips)) {
+            if (dataClips.clips.length > 0) {
+              const targetClip = dataClips.clips[0];
+              setVideoDuration(0);
+              setVideoCurrentTime(0);
+              pendingSeekRef.current = null;
+              setCompatiblePlayback(true);
+              setPlayerPreparing(false);
+              setPlayerError("");
+              setPlayerNeedsStart(false);
+              setPlaybackAttempt(0);
+              setActiveClip(targetClip);
+              setIsPlaying(true);
+            } else {
+              setActiveClip(null);
+            }
+          }
         }
       }
 
@@ -564,7 +581,7 @@ export function usePlaybackPage() {
     setVideoDuration(0);
     setVideoCurrentTime(0);
     pendingSeekRef.current = null;
-    setCompatiblePlayback(false);
+    setCompatiblePlayback(true);
     setPlayerPreparing(false);
     setPlayerError("");
     setPlayerNeedsStart(false);
@@ -575,10 +592,19 @@ export function usePlaybackPage() {
   };
 
   const openClipWithOffset = (clip: RecordingClip, offsetSec = 0) => {
+    if (activeClip?.id === clip.id && videoRef.current) {
+      videoRef.current.currentTime = offsetSec;
+      setVideoCurrentTime(offsetSec);
+      if (videoRef.current.paused) {
+        void videoRef.current.play().catch(() => null);
+        setIsPlaying(true);
+      }
+      return;
+    }
     setVideoDuration(0);
-    setVideoCurrentTime(0);
+    setVideoCurrentTime(offsetSec);
     pendingSeekRef.current = offsetSec > 0 ? offsetSec : null;
-    setCompatiblePlayback(false);
+    setCompatiblePlayback(true);
     setPlayerPreparing(false);
     setPlayerError("");
     setPlayerNeedsStart(false);
@@ -1002,9 +1028,7 @@ export function usePlaybackPage() {
   }, [activeClip, filteredClips]);
 
   const activePlaybackUrl = activeClip
-    ? compatiblePlayback
-      ? `${activeClip.streamUrl}${activeClip.streamUrl.includes("?") ? "&" : "?"}compatible=1`
-      : activeClip.streamUrl
+    ? `${activeClip.streamUrl}${activeClip.streamUrl.includes("?") ? "&" : "?"}compatible=1`
     : "";
 
   const playPreviousClip = () => {

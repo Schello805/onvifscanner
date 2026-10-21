@@ -43,16 +43,20 @@ async function ensureCompatibleVideo(sourcePath: string, sourceStat: fs.Stats) {
   const job = (async () => {
     const temporaryPath = path.join(cacheDirectory, `.${cacheKey}.${process.pid}.tmp.mp4`);
     try {
-      // 1. Ultra-fast stream-copy: keep H.264 video untouched, remux audio to AAC, add faststart moov atom
+      // 1. Ultra-fast stream-copy: keep H.264 / H.265 video untouched, remux audio to AAC, add faststart moov atom
       // Runs in < 1 second even for 500MB+ files!
       try {
         await execFileAsync("ffmpeg", [
           "-y", "-hide_banner", "-loglevel", "error",
+          "-fflags", "+genpts",
+          "-avoid_negative_ts", "make_zero",
           "-i", sourcePath,
           "-map", "0:v:0", "-map", "0:a:0?",
           "-c:v", "copy",
+          "-tag:v", "hvc1",
           "-c:a", "aac", "-b:a", "128k",
           "-movflags", "+faststart",
+          "-max_muxing_queue_size", "1024",
           temporaryPath,
         ], { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
 
@@ -151,7 +155,7 @@ export async function GET(req: Request) {
 
     let streamPath = resolved;
     let stat = fs.statSync(streamPath);
-    if (compatible && !download) {
+    if (!download) {
       streamPath = await ensureCompatibleVideo(resolved, stat);
       stat = fs.statSync(streamPath);
     }

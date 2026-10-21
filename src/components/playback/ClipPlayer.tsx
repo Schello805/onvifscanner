@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX } from "lucide-react";
-import { formatSeconds, formatBytes } from "@/components/playback/playbackUtils";
+import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX } from "lucide-react";
+import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
-  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, compatiblePlayback, setCompatiblePlayback, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen } = pb;
+  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, compatiblePlayback, setCompatiblePlayback, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen } = pb;
   return (
     <>
       {/* Video Player Modal with Advanced NVR Controls */}
@@ -118,6 +118,10 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   onCanPlay={(event) => {
                     setPlayerPreparing(false);
                     setPlayerError("");
+                    if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
+                      event.currentTarget.currentTime = Math.min(event.currentTarget.duration || 9999, pendingSeekRef.current);
+                      pendingSeekRef.current = null;
+                    }
                     void event.currentTarget.play()
                       .then(() => setPlayerNeedsStart(false))
                       .catch(() => {
@@ -483,6 +487,45 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
       </div>
     </div>
     )}
+
+      {!activeClip && (
+        <div className="w-full rounded-2xl border border-slate-800/90 bg-slate-950 p-3 sm:p-4 shadow-2xl overflow-hidden">
+          <div className="flex flex-col items-center justify-center min-h-[220px] sm:min-h-[300px] rounded-xl border border-dashed border-slate-800 bg-slate-900/30 text-center p-6">
+            <div className="rounded-full bg-slate-900/90 border border-slate-800 p-3.5 mb-3 text-amber-400">
+              <Film className="h-7 w-7" />
+            </div>
+            {selectedCamera ? (
+              <>
+                <h3 className="text-sm sm:text-base font-semibold text-white">
+                  {loadingClips ? `Lade Aufnahmen für ${selectedCamera.name}…` : `Keine Aufnahmen für ${selectedCamera.name}`}
+                </h3>
+                <p className="mt-1 max-w-md text-xs text-slate-400">
+                  {loadingClips
+                    ? "Videoabschnitte werden vorbereitet..."
+                    : `Am ${selectedDate ? formatGermanDateLong(selectedDate) : "ausgewählten Tag"} wurden keine Aufnahmen gefunden. Wähle einen anderen Tag im Kalender oder klicke auf die Zeitleiste.`}
+                </p>
+                {!loadingClips && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileCalendarOpen(true)}
+                    className="mt-3.5 inline-flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-500/20 transition-colors"
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                    Aufnahme-Kalender öffnen
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm sm:text-base font-semibold text-white">Keine Kamera ausgewählt</h3>
+                <p className="mt-1 max-w-md text-xs text-slate-400">
+                  Wähle oben eine Kamera aus oder klicke unten auf die Zeitleiste, um die Aufnahme an dieser Stelle nahtlos abzuspielen.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
