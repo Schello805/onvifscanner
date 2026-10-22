@@ -6,6 +6,7 @@ import { TIMELINE_WINDOWS, objectClassLabels } from "@/components/playback/playb
 import { formatGermanDate, formatMinutesToTime, parseTimeToSeconds, formatBytes, getTodayStr } from "@/components/playback/playbackUtils";
 import type { RecordingClip } from "@/components/playback/playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
+import { recordingDayPosition } from "./playbackTiming";
 
 export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
   const { toast, cameras, selectedDate, timeFrom, timeTo, timelineWindowMinutes, timelineStartMin, showEventLog, setShowEventLog, eventLogSearch, setEventLogSearch, eventLogTimeOfDay, setEventLogTimeOfDay, showVideoTrack, setShowVideoTrack, motionEvents, hoverScrubber, setHoverScrubber, activeClip, videoCurrentTime, setSelectedSnapshot, selectRecordingDate, timelineClips, openClipWithOffset, zoomToWindow, goToNow, panTimeline, jumpToMotionCluster, playEvent, focusEventOnTimeline, timelineTicks, timelinePanStepMinutes, timelinePanLabel, filteredMotionEvents } = pb;
@@ -25,7 +26,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
     >();
 
     for (const clip of timelineClips) {
-      const startSec = parseTimeToSeconds(clip.timeStr);
+      const startSec = recordingDayPosition(clip, selectedDate || clip.dateStr);
       const cam = cameras.find((c) => c.id === clip.cameraId);
       const segSec = (cam?.recordSegmentMinutes || 15) * 60;
       const clipDuration = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0
@@ -87,16 +88,16 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
     });
 
     return spans;
-  }, [timelineClips, cameras]);
+  }, [timelineClips, cameras, selectedDate]);
 
   // Active clip highlight within the timeline
   const activeClipHighlight = useMemo(() => {
     if (!activeClip) return null;
-    const startSec = parseTimeToSeconds(activeClip.timeStr);
+    const startSec = recordingDayPosition(activeClip, selectedDate || activeClip.dateStr);
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
     const segSec = (cam?.recordSegmentMinutes || 15) * 60;
     const clipDuration = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
-      ? Math.min(activeClip.durationSeconds, segSec)
+      ? activeClip.durationSeconds
       : segSec;
     const endSec = startSec + clipDuration;
 
@@ -115,7 +116,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
     const widthPct = Math.max(0.3, ((rEnd - rStart) / spanMin) * 100);
 
     return { leftPct, widthPct };
-  }, [activeClip, cameras, timelineWindowMinutes, timelineStartMin]);
+  }, [activeClip, cameras, timelineWindowMinutes, timelineStartMin, selectedDate]);
   return (
     <>
       {/* Modern High-Precision Timeline */}

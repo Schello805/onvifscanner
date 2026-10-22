@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
+import { recordingFileTime } from "@/lib/recordingTime";
+import { recordingFile } from "@/lib/recordingFile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,26 +74,18 @@ export async function GET(req: Request) {
     // Direct single clip lookup
     if (singleClipId) {
       try {
-        const decodedPath = Buffer.from(singleClipId, "base64url").toString("utf-8");
-        const resolved = path.resolve(decodedPath);
+        const resolved = await recordingFile(singleClipId);
         if (fs.existsSync(resolved)) {
           const stat = await fsp.stat(resolved);
           if (stat.isFile()) {
             const filename = path.basename(resolved);
-            const parentDir = path.basename(path.dirname(resolved));
-            const dateMatch = filename.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-            let dateStr = dateMatch ? dateMatch[1] : stat.mtime.toISOString().slice(0, 10);
-            let timeStr = dateMatch ? `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}` : stat.mtime.toISOString().slice(11, 19);
-
-            let durationSeconds = 900;
-            if (dateMatch) {
-              const utcMs = Date.parse(`${dateMatch[1]}T${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}Z`);
-              const baseStartMs = !isNaN(utcMs) && Math.abs(stat.mtimeMs - utcMs) < 40 * 60 * 1000
-                ? utcMs
-                : new Date(`${dateMatch[1]}T${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}`).getTime();
-              const diff = Math.floor((stat.mtimeMs - baseStartMs) / 1000);
-              if (diff > 0 && diff < 3600) durationSeconds = diff;
-            }
+            const saved = await prisma.motionRecording.findFirst({
+              where: { filePath: resolved, status: "ready" }, select: { startedAt: true, endedAt: true, cameraId: true },
+            });
+            const parentDir = saved?.cameraId || path.basename(path.dirname(resolved));
+            const timing = saved ? recordingFileTime("", saved.startedAt.getTime()) : recordingFileTime(filename, stat.mtimeMs);
+            const durationSeconds = saved ? Math.max(0.001, (saved.endedAt.getTime() - saved.startedAt.getTime()) / 1000)
+              : Math.max(1, Math.min(3600, (stat.mtimeMs - timing.startMs) / 1000));
 
             return NextResponse.json({
               clips: [{
@@ -99,9 +93,9 @@ export async function GET(req: Request) {
                 cameraId: parentDir,
                 cameraName: cameraMap.get(parentDir) || `Kamera ${parentDir}`,
                 filename,
-                dateStr,
-                timeStr,
-                timestamp: `${dateStr}T${timeStr}Z`,
+                dateStr: timing.dateStr,
+                timeStr: timing.timeStr,
+                timestamp: timing.timestamp,
                 sizeBytes: stat.size,
                 durationSeconds,
                 storageTargetName: "Lokaler Speicher",
@@ -112,7 +106,12 @@ export async function GET(req: Request) {
             });
           }
         }
-      } catch {}
+        return NextResponse.json({ error: "Aufnahme nicht gefunden." }, { status: 404 });
+      } catch (error) {
+        const failure = error as { message?: string; code?: string };
+        const denied = failure.message === "Access denied" || failure.code === "EACCES";
+        return NextResponse.json({ error: denied ? "Zugriff auf Aufnahme verweigert." : "Aufnahme konnte nicht geladen werden." }, { status: denied ? 403 : failure.code === "ENOENT" ? 404 : 500 });
+      }
     }
 
     const clips: RecordingClip[] = [];
@@ -150,6 +149,7 @@ export async function GET(req: Request) {
         }
 
         for (const file of files) {
+          if (file.startsWith(".") || /\.(?:partial|tmp)\./i.test(file)) continue;
           if (!/\.(?:mp4|m4s|ts)$/i.test(file)) continue;
 
           // Expected filename pattern: YYYY-MM-DD_HH-mm-ss...
@@ -168,51 +168,7 @@ export async function GET(req: Request) {
             const stat = await fsp.stat(fullFilePath);
             if (!stat.isFile()) continue;
 
-            let dateStr = "";
-            let timeStr = "";
-            let isoDate = stat.mtime.toISOString();
-
-            let baseStartMs = stat.mtimeMs;
-            if (dateMatch) {
-              dateStr = dateMatch[1];
-              timeStr = `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}`;
-
-              // Legacy: Name in UTC geschrieben? (Dateiende-Zeit liegt kurz nach der Namens-Zeit als UTC gelesen)
-              const utcMs = Date.parse(`${dateStr}T${timeStr}Z`);
-              if (!isNaN(utcMs) && Math.abs(stat.mtimeMs - utcMs) < 40 * 60 * 1000) {
-                baseStartMs = utcMs;
-                const p = new Intl.DateTimeFormat("en-CA", {
-                  timeZone: "Europe/Berlin",
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                  hourCycle: "h23",
-                }).formatToParts(new Date(utcMs));
-                const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
-                dateStr = `${g("year")}-${g("month")}-${g("day")}`;
-                timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
-              } else {
-                baseStartMs = new Date(`${dateStr}T${timeStr}`).getTime();
-              }
-              isoDate = `${dateStr}T${timeStr}Z`;
-            } else {
-              const p = new Intl.DateTimeFormat("en-CA", {
-                timeZone: process.env.TZ || "Europe/Berlin",
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-                hourCycle: "h23",
-              }).formatToParts(stat.mtime);
-              const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
-              dateStr = `${g("year")}-${g("month")}-${g("day")}`;
-              timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
-            }
+            const { dateStr, timeStr, timestamp: isoDate, startMs: baseStartMs } = recordingFileTime(file, stat.mtimeMs);
 
             let matchesDate = !filterDate || dateStr === filterDate;
             if (!matchesDate && filterDate) {
@@ -259,7 +215,6 @@ export async function GET(req: Request) {
 
     // Merge ready motion recordings from database if not already indexed
     if (!calendarMonth) {
-      const existingClipIds = new Set(clips.map((c) => c.id));
       const motionWhere: any = { status: "ready", filePath: { not: null } };
       if (filterCameraId) motionWhere.cameraId = filterCameraId;
       if (filterDate && /^\d{4}-\d{2}-\d{2}$/.test(filterDate)) {
@@ -280,7 +235,6 @@ export async function GET(req: Request) {
         for (const rec of dbMotionRecs) {
           if (!rec.filePath) continue;
           const clipId = Buffer.from(rec.filePath).toString("base64url");
-          if (existingClipIds.has(clipId)) continue;
           if (!fs.existsSync(rec.filePath)) continue;
 
           try {
@@ -303,8 +257,8 @@ export async function GET(req: Request) {
 
             if (filterDate && dateStr !== filterDate) continue;
 
-            const motionDuration = Math.max(1, Math.round((new Date(rec.endedAt).getTime() - new Date(rec.startedAt).getTime()) / 1000));
-            clips.push({
+            const motionDuration = Math.max(0.001, (new Date(rec.endedAt).getTime() - new Date(rec.startedAt).getTime()) / 1000);
+            const readyClip = {
               id: clipId,
               cameraId: rec.cameraId,
               cameraName: cameraMap.get(rec.cameraId) || `Kamera ${rec.cameraId}`,
@@ -317,8 +271,10 @@ export async function GET(req: Request) {
               storageTargetName: "Ereignis-Speicher",
               streamUrl: `/api/nvr/recordings/stream?clipId=${clipId}`,
               downloadUrl: `/api/nvr/recordings/stream?clipId=${clipId}&download=1`,
-            });
-            existingClipIds.add(clipId);
+            };
+            const existingIndex = clips.findIndex((clip) => clip.id === clipId);
+            if (existingIndex >= 0) clips[existingIndex] = { ...readyClip, storageTargetName: clips[existingIndex].storageTargetName };
+            else clips.push(readyClip);
           } catch {}
         }
       } catch {}

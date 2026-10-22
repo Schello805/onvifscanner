@@ -29,6 +29,25 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Install media test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          npx playwright install --with-deps chromium
+
+      - name: Recording and playback integrity
+        run: |
+          npm run test:recording
+          npm run test:recording:api
+          npm run test:playback
+          npm run test:playback:browser
+
+      - name: RTSP recording and reconnect
+        run: |
+          curl -fL https://github.com/bluenviron/mediamtx/releases/download/v1.9.0/mediamtx_v1.9.0_linux_amd64.tar.gz -o "$RUNNER_TEMP/mediamtx.tar.gz"
+          tar -xzf "$RUNNER_TEMP/mediamtx.tar.gz" -C "$RUNNER_TEMP" mediamtx
+          MEDIAMTX_BIN="$RUNNER_TEMP/mediamtx" npm run test:recording:rtsp
+
       - name: Typecheck
         run: npm run typecheck
 

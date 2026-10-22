@@ -12,6 +12,14 @@ const BUFFER_SEGMENT_SECONDS = Math.max(3, Number(process.env.MOTION_BUFFER_SEGM
 const PROCESS_INTERVAL_MS = Math.max(2_000, Number(process.env.MOTION_RECORDER_INTERVAL_MS) || 4_000);
 const FINALIZE_GRACE_MS = 1_500;
 const MERGE_GRACE_MS = (BUFFER_SEGMENT_SECONDS + 5) * 1000;
+const RECORDING_COMPLETE_COMMAND = `sh -c 'printf "%s" "$MTX_SEGMENT_DURATION" > "$MTX_SEGMENT_PATH.complete"'`;
+
+function segmentStartedAt(filename) {
+  const match = path.basename(filename).match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})(?:[-_](\d{6}))?/);
+  if (!match) return null;
+  const value = new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${(match[5] || '000000').slice(0, 3)}`).getTime();
+  return Number.isFinite(value) ? value : null;
+}
 
 class MotionRecorder {
   constructor(prisma) {
@@ -71,10 +79,10 @@ class MotionRecorder {
 
       for (const event of events) {
         if (this.seenEventIds.has(event.id) || event.motionRecordingId) continue;
-        this.seenEventIds.add(event.id);
         const camera = camerasById.get(event.cameraId);
         if (!camera || effectiveRecordingMode(camera, event.timestamp) !== 'motion') continue;
         await this.registerEvent(camera, event);
+        this.seenEventIds.add(event.id);
       }
 
       this.lastEventAt = queryStartedAt;
@@ -106,17 +114,17 @@ class MotionRecorder {
     const eventMs = event.timestamp.getTime();
     const preRollMs = Math.max(0, camera.motionPreRollSeconds ?? 10) * 1000;
     const postRollMs = Math.max(5, camera.motionPostRollSeconds ?? 30) * 1000;
+    const startedAt = new Date(eventMs - preRollMs);
+    const endedAt = new Date(eventMs + postRollMs);
     let recording = await this.prisma.motionRecording.findFirst({
       where: {
         cameraId: camera.id,
         status: 'buffering',
-        endedAt: { gte: new Date(eventMs - BUFFER_SEGMENT_SECONDS * 1000) },
+        endedAt: { gte: new Date(startedAt.getTime() - BUFFER_SEGMENT_SECONDS * 1000) },
       },
       orderBy: { endedAt: 'desc' },
     });
 
-    const startedAt = new Date(eventMs - preRollMs);
-    const endedAt = new Date(eventMs + postRollMs);
     if (recording) {
       recording = await this.prisma.motionRecording.update({
         where: { id: recording.id },
@@ -142,28 +150,41 @@ class MotionRecorder {
     const files = fs.existsSync(bufferDir) ? await this.listVideoFiles(bufferDir) : [];
     const now = Date.now();
     const preRollMs = Math.max(0, camera.motionPreRollSeconds ?? 10) * 1000;
+    const pendingRecordings = new Set();
 
     for (const file of files) {
       let stat;
       try { stat = await fsp.stat(file); } catch { continue; }
-      if (now - stat.mtimeMs < FINALIZE_GRACE_MS) continue;
+      const stable = now - stat.mtimeMs >= FINALIZE_GRACE_MS;
 
-      const segmentEnd = stat.mtimeMs;
-      const segmentStart = segmentEnd - BUFFER_SEGMENT_SECONDS * 1000;
+      const duration = Number(await fsp.readFile(`${file}.complete`, 'utf8').catch(() => ''));
+      const completedDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+      const segmentStart = segmentStartedAt(file) ?? stat.mtimeMs - BUFFER_SEGMENT_SECONDS * 1000;
+      const successor = files.map(segmentStartedAt).filter((start) => start !== null && start > segmentStart).sort((first, second) => first - second)[0];
+      const complete = completedDuration > 0 || (successor !== undefined && stable);
+      const segmentEnd = completedDuration > 0 ? segmentStart + completedDuration * 1000 : stat.mtimeMs;
       const recording = recordings.find((item) =>
         segmentEnd >= item.startedAt.getTime() && segmentStart <= item.endedAt.getTime()
       );
 
       if (recording) {
+        if (!complete) {
+          pendingRecordings.add(recording.id);
+          continue;
+        }
         const stageDir = motionStagingDirectory(recording.id);
         await fsp.mkdir(stageDir, { recursive: true });
+        if (completedDuration > 0) await fsp.writeFile(path.join(stageDir, `${path.basename(file)}.complete`), String(completedDuration));
         await this.moveFile(file, path.join(stageDir, path.basename(file)));
-      } else if (segmentEnd < now - preRollMs - (BUFFER_SEGMENT_SECONDS + 3) * 1000) {
+        await fsp.unlink(`${file}.complete`).catch(() => undefined);
+      } else if (complete && segmentEnd < now - preRollMs - (BUFFER_SEGMENT_SECONDS + 3) * 1000) {
         await fsp.unlink(file).catch(() => undefined);
+        await fsp.unlink(`${file}.complete`).catch(() => undefined);
       }
     }
 
     for (const recording of recordings) {
+      if (pendingRecordings.has(recording.id)) continue;
       if (now <= recording.endedAt.getTime() + MERGE_GRACE_MS) continue;
       await this.finalizeRecording(camera, defaultStoragePath, recording);
     }
@@ -191,7 +212,8 @@ class MotionRecorder {
       : (defaultStoragePath || path.join(process.cwd(), 'data', 'recordings'));
     const finalDir = path.join(storageRoot, camera.id);
     await fsp.mkdir(finalDir, { recursive: true });
-    const filename = `${formatLocalTimestamp(recording.startedAt)}_motion_${recording.id.slice(-8)}.mp4`;
+    const actualStart = new Date(segmentStartedAt(segments[0]) ?? recording.startedAt.getTime());
+    const filename = `${formatLocalTimestamp(actualStart)}-${String(actualStart.getMilliseconds()).padStart(3, '0')}000_motion_${recording.id.slice(-8)}.mp4`;
     const output = path.join(finalDir, filename);
     const partial = path.join(finalDir, `.${filename}.partial.mp4`);
 
@@ -212,7 +234,11 @@ class MotionRecorder {
       let listFile = null;
       if (segments.length > 1) {
         listFile = path.join(stageDir, 'segments.txt');
-        const list = segments.map((segment) => `file '${segment.replaceAll("'", "'\\''")}'`).join('\n');
+        const list = (await Promise.all(segments.map(async (segment) => {
+          const duration = Number(await fsp.readFile(`${segment}.complete`, 'utf8').catch(() => ''));
+          const file = `file '${segment.replaceAll("'", "'\\''")}'`;
+          return duration > 0 && Number.isFinite(duration) ? `${file}\nduration ${duration}` : file;
+        }))).join('\n');
         await fsp.writeFile(listFile, `${list}\n`, 'utf8');
       }
 
@@ -257,10 +283,16 @@ class MotionRecorder {
 
       const stat = await fsp.stat(partial);
       if (!stat.isFile() || stat.size === 0) throw new Error('FFmpeg hat keine gültige Ausgabedatei erzeugt.');
+      const verified = await execFileAsync('ffprobe', [
+        '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name:format=duration', '-of', 'json', partial,
+      ], { timeout: 15_000, maxBuffer: 256 * 1024 });
+      const video = JSON.parse(verified.stdout);
+      const duration = Number(video.format?.duration);
+      if (!video.streams?.length || !Number.isFinite(duration) || duration <= 0) throw new Error('Die Ausgabedatei enthält keine abspielbare Videospur.');
       await fsp.rename(partial, output);
       await this.prisma.motionRecording.update({
         where: { id: recording.id },
-        data: { status: 'ready', filePath: output, segmentCount: segments.length, error: null },
+        data: { status: 'ready', filePath: output, segmentCount: segments.length, startedAt: actualStart, endedAt: new Date(actualStart.getTime() + duration * 1000), error: null },
       });
       await fsp.rm(stageDir, { recursive: true, force: true });
       console.log(`[Motion Recorder] ${camera.name}: ${segments.length} Segment(e) zu ${filename} zusammengeführt (${videoCodec === 'h264' ? 'H.264 übernommen' : `${videoCodec || 'unbekannt'} → H.264`}).`);
@@ -296,7 +328,13 @@ class MotionRecorder {
       const files = await this.listVideoFiles(directory);
       for (const file of files) {
         const stat = await fsp.stat(file).catch(() => null);
-        if (stat && stat.mtimeMs < cutoff) await fsp.unlink(file).catch(() => undefined);
+        const hasMarker = await fsp.access(`${file}.complete`).then(() => true, () => false);
+        const start = segmentStartedAt(file);
+        const hasSuccessor = start !== null && files.some((candidate) => (segmentStartedAt(candidate) ?? -Infinity) > start);
+        if (stat && stat.mtimeMs < cutoff && (hasMarker || hasSuccessor)) {
+          await fsp.unlink(file).catch(() => undefined);
+          await fsp.unlink(`${file}.complete`).catch(() => undefined);
+        }
       }
       const remaining = await fsp.readdir(directory).catch(() => []);
       if (remaining.length === 0) await fsp.rm(directory, { recursive: true, force: true }).catch(() => undefined);
@@ -350,6 +388,8 @@ function motionBufferRecordPattern(cameraId) {
 module.exports = {
   MotionRecorder,
   BUFFER_SEGMENT_SECONDS,
+  RECORDING_COMPLETE_COMMAND,
+  segmentStartedAt,
   motionBufferDirectory,
   motionBufferRecordPattern,
 };

@@ -1,4 +1,5 @@
 import type { RecordingClip, MotionEvent, ClipMotionEvent } from "./playbackTypes";
+import { recordingStart } from "./playbackTiming";
 
 export function formatGermanDate(isoOrDateStr: string): string {
   if (!isoOrDateStr) return "";
@@ -52,7 +53,7 @@ export function getMotionEventsForClip(
   if (!clip || !events || events.length === 0) return [];
   const clipStartSec = parseTimeToSeconds(clip.timeStr);
 
-  const maxDuration = videoDuration > 0 ? videoDuration : fallbackDurationSec;
+  const maxDuration = videoDuration > 0 ? videoDuration : clip.durationSeconds || fallbackDurationSec;
 
   const matched: ClipMotionEvent[] = [];
   const seenSeconds = new Set<number>();
@@ -62,16 +63,20 @@ export function getMotionEventsForClip(
     if (ev.cameraId && clip.cameraId && ev.cameraId !== clip.cameraId) {
       continue;
     }
-    if (clip.dateStr && ev.dateStr && clip.dateStr !== ev.dateStr) {
+    const eventTimestamp = Date.parse(ev.timestamp);
+    const hasTimestamp = Number.isFinite(eventTimestamp) && Number.isFinite(Date.parse(clip.timestamp));
+    if (!hasTimestamp && clip.dateStr && ev.dateStr && clip.dateStr !== ev.dateStr) {
       continue;
     }
 
     const evSec = parseTimeToSeconds(ev.timeStr);
-    let offset = evSec - clipStartSec;
+    let offset = hasTimestamp ? eventTimestamp / 1000 - recordingStart(clip) : evSec - clipStartSec;
 
     // Tageswechsel-Kompensation (um Mitternacht)
-    if (offset < -43200) offset += 86400;
-    if (offset > 43200) offset -= 86400;
+    if (!hasTimestamp) {
+      if (offset < -43200) offset += 86400;
+      if (offset > 43200) offset -= 86400;
+    }
 
     // Toleranzbereich: Bis zu 2s vor Segmentstart oder 3s nach Segmentende
     if (offset >= -2 && offset <= maxDuration + 3) {

@@ -6,12 +6,49 @@ import path from "path";
 
 const run = promisify(execFile);
 export const SEGMENT_SECONDS = 6;
-const jobs = new Map<string, Promise<string>>();
+type SegmentJob = { promise: Promise<string>; controller: AbortController; users: number; settled: boolean };
+const jobs = new Map<string, SegmentJob>();
 type Profile = { duration: number; copyVideo: boolean; boundaries: number[] };
 const metadata = new Map<string, Promise<Profile>>();
 let running = 0;
 const waiting: Array<() => void> = [];
 let lastCleanup = 0;
+let probing = 0;
+const probeWaiting: Array<() => void> = [];
+
+async function probeLimited<T>(job: () => Promise<T>): Promise<T> {
+  if (probing >= 2) await new Promise<void>((resolve) => probeWaiting.push(resolve));
+  else probing += 1;
+  try { return await job(); }
+  finally {
+    const next = probeWaiting.shift();
+    if (next) next();
+    else probing -= 1;
+  }
+}
+
+function watchJob(job: SegmentJob, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) {
+    if (!job.users && !job.settled) job.controller.abort();
+    void job.promise.catch(() => undefined);
+    return Promise.reject(new DOMException("Wiedergabe abgebrochen", "AbortError"));
+  }
+  job.users += 1;
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const done = () => {
+      if (finished) return false;
+      finished = true;
+      signal?.removeEventListener("abort", aborted);
+      job.users -= 1;
+      if (!job.users && !job.settled) job.controller.abort();
+      return true;
+    };
+    const aborted = () => { if (done()) reject(new DOMException("Wiedergabe abgebrochen", "AbortError")); };
+    signal?.addEventListener("abort", aborted, { once: true });
+    job.promise.then((file) => { if (done()) resolve(file); }, (error) => { if (done()) reject(error); });
+  });
+}
 
 async function cleanSegments(directory: string) {
   if (Date.now() - lastCleanup < 60_000) return;
@@ -53,7 +90,7 @@ export async function recordingProfile(source: string): Promise<Profile> {
   const key = await sourceKey(source);
   let pending = metadata.get(key);
   if (!pending) {
-    pending = (async () => {
+    pending = probeLimited(async () => {
       const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_packets", "-show_entries", "format=duration:stream=codec_name,pix_fmt,start_time,duration:packet=pts_time,flags", "-of", "json", source], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
       const result = JSON.parse(stdout) as { format?: { duration?: string }; streams?: Array<{ codec_name?: string; pix_fmt?: string; start_time?: string; duration?: string }>; packets?: Array<{ pts_time?: string; flags?: string }> };
       const stream = result.streams?.[0];
@@ -73,7 +110,7 @@ export async function recordingProfile(source: string): Promise<Profile> {
       }
       boundaries.push(duration);
       return { duration, copyVideo, boundaries };
-    })();
+    });
     if (metadata.size > 1000) metadata.clear();
     metadata.set(key, pending);
     pending.catch(() => metadata.delete(key));
@@ -95,8 +132,10 @@ export function recordingManifest(clipId: string, duration: number, boundaries =
   return [...lines, "#EXT-X-ENDLIST", ""].join("\n");
 }
 
-export async function recordingSegment(source: string, index: number): Promise<string> {
+export async function recordingSegment(source: string, index: number, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const profile = await recordingProfile(source);
+  signal?.throwIfAborted();
   if (!Number.isSafeInteger(index) || index < 0 || index >= profile.boundaries.length - 1) throw new Error("Ungültiges Videosegment");
   const start = profile.boundaries[index];
   const length = profile.boundaries[index + 1] - start;
@@ -105,8 +144,10 @@ export async function recordingSegment(source: string, index: number): Promise<s
   const destination = path.join(directory, `${key}.ts`);
   try { await fs.access(destination); return destination; } catch {}
   const existing = jobs.get(key);
-  if (existing) return existing;
+  if (existing && !existing.controller.signal.aborted) return watchJob(existing, signal);
+  const job: SegmentJob = { promise: Promise.resolve(""), controller: new AbortController(), users: 0, settled: false };
   const pending = limited(async () => {
+    job.controller.signal.throwIfAborted();
     await fs.mkdir(directory, { recursive: true });
     await cleanSegments(directory);
     const temporary = `${destination}.${process.pid}.tmp`;
@@ -119,12 +160,15 @@ export async function recordingSegment(source: string, index: number): Promise<s
         "-threads", "1", "-c:a", "aac", "-b:a", "96k",
         "-output_ts_offset", String(start), "-muxdelay", "0", "-muxpreload", "0",
         "-f", "mpegts", temporary,
-      ], { timeout: 60_000, maxBuffer: 64 * 1024 });
+      ], { timeout: 60_000, maxBuffer: 64 * 1024, signal: job.controller.signal });
       await fs.rename(temporary, destination);
       return destination;
     } finally { await fs.rm(temporary, { force: true }); }
   });
-  jobs.set(key, pending);
-  try { return await pending; }
-  finally { jobs.delete(key); }
+  job.promise = pending.finally(() => {
+    job.settled = true;
+    if (jobs.get(key) === job) jobs.delete(key);
+  });
+  jobs.set(key, job);
+  return watchJob(job, signal);
 }

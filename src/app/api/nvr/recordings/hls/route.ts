@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     const source = await recordingFile(clipId);
     const segment = params.get("segment");
     if (segment !== null) {
-      const file = await recordingSegment(source, Number(segment));
+      const file = await recordingSegment(source, Number(segment), request.signal);
       return new Response(new Uint8Array(await fs.readFile(file)), {
         headers: { "Content-Type": "video/mp2t", "Cache-Control": "private, max-age=3600" },
       });
@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       headers: { "Content-Type": "application/vnd.apple.mpegurl", "Cache-Control": "private, no-cache" },
     });
   } catch (error) {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
     console.error("[Recording HLS]", error);
     const message = error instanceof Error ? error.message : "Videosegment konnte nicht geladen werden";
     const failure = error as { code?: string; killed?: boolean; path?: string };

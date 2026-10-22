@@ -1,7 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const net = require('net');
 const { OnvifEventManager } = require('./onvif-events');
-const { MotionRecorder, BUFFER_SEGMENT_SECONDS, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
+const { MotionRecorder, BUFFER_SEGMENT_SECONDS, RECORDING_COMPLETE_COMMAND, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
 const { readLicensePlates } = require('./license-plate-reader');
@@ -1037,6 +1037,7 @@ async function syncMediaMtxPaths(cameras) {
           sourceOnDemand: !recordingActive,
           rtspTransport: "tcp",
           record: recordingActive,
+          runOnRecordSegmentComplete: recordMode === 'motion' ? RECORDING_COMPLETE_COMMAND : '',
           ...(recordingActive ? {
             recordPath,
             recordFormat: "fmp4",
@@ -1076,6 +1077,7 @@ async function syncMediaMtxPaths(cameras) {
           existing.source !== config.source ||
           Boolean(existing.record) !== Boolean(config.record) ||
           Boolean(existing.sourceOnDemand) !== Boolean(config.sourceOnDemand) ||
+          (existing.runOnRecordSegmentComplete || '') !== config.runOnRecordSegmentComplete ||
           (config.rtspTransport && existing.rtspTransport !== config.rtspTransport) ||
           recPathChanged ||
           segDurChanged

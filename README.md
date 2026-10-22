@@ -96,6 +96,8 @@ Bei einer Bewegungsstrategie schreibt MediaMTX kurze Segmente in einen temporär
 
 Standardmäßig nutzt die Bewegungsaufnahme 10 Sekunden Vorlauf und 30 Sekunden Nachlauf. Wiederholte Ereignisse verlängern das persistente Aufnahmefenster automatisch. Nach dem Nachlauf verbindet `ffmpeg` alle zugehörigen Ringpuffer-Segmente verlustfrei zu einem Bewegungsclip. Der temporäre Puffer liegt unter `data/motion-buffer`, Arbeitsdateien unter `data/motion-staging`; nur der fertige Clip wird in das gewählte Speicherziel übernommen. Aufnahmefenster und Ereignis-Zuordnung liegen in SQLite und überstehen dadurch einen Neustart der Anwendung.
 
+Für Bewegungsaufnahmen schreibt der MediaMTX-Abschlusshook die tatsächliche Dauer eines geschlossenen Segments in eine `.complete`-Datei. Offene Segmente werden weder in einen Clip verschoben noch durch die Pufferbereinigung entfernt. Bei älteren Segmenten ohne Marker gilt ein stabiles Segment mit vorhandenem Nachfolger als abgeschlossen. Überlappende Vor- und Nachläufe werden zusammengeführt. Vor der Freigabe eines fertigen Clips werden Videospur und Dauer mit `ffprobe` geprüft; Zeitstempel und Ereignispositionen beziehen sich auf den tatsächlichen Beginn der übernommenen Segmente. Scheitert die Verarbeitung, bleiben die gestaffelten Eingangssegmente zur Fehleranalyse erhalten.
+
 Im Kamera-Editor können außerdem rote Ignorierbereiche mit einem Pinsel direkt auf das Vorschaubild gemalt und mit dem Radierer wieder entfernt werden. Ein Raster ermöglicht mehrere kleine oder unregelmäßige Masken statt nur eines großen Rechtecks. Die Koordinaten werden proportional gespeichert und funktionieren daher unabhängig von der Analyseauflösung. Sobald eine Kamera eine Maske besitzt, wird ihre Bewegung ausschließlich durch die serverseitige Bildanalyse bewertet, da ONVIF- und Webhook-Ereignisse keine räumlichen Koordinaten für die Maske liefern.
 
 Optional kann pro Kamera die lokale KI-Objekterkennung für Personen, Fahrzeuge und Tiere aktiviert werden. Sie läuft erst nach einer erkannten Bildbewegung in einem separaten Worker und belastet dadurch weder den Webserver noch dauerhaft die CPU. Das Modell wird beim ersten Einsatz geladen; die Auswertung selbst findet vollständig auf dem ONVIFscanner-Server statt. Der Objektfilter arbeitet bewusst fehlersicher: Ist die lokale KI nicht verfügbar oder liefert sie kein ausgewähltes Objekt, entsteht kein ungefilterter Bewegungsalarm. Zeitprofile erlauben zusätzlich Wochentage, auch über Mitternacht laufende Zeitfenster und eine eigene Empfindlichkeit. Masken, Objektfilter, Zeitprofil und Cooldown gelten einheitlich für Serveranalyse, ONVIF- und Webhook-Ereignisse. In der Wiedergabe zeigt die Tageszusammenfassung die Ereignis- und Objektzahlen je Tag.
@@ -103,6 +105,24 @@ Optional kann pro Kamera die lokale KI-Objekterkennung für Personen, Fahrzeuge 
 Die Wiedergabe lädt Aufnahmen als HLS-Stream in kurzen H.264/AAC-Segmenten. Bei vorhandenen H.264-Aufnahmen werden die Videodaten ohne erneute Kodierung übernommen; die Segmentgrenzen folgen den echten Schlüsselbildern, ungefähr alle sechs Sekunden. Nur inkompatible Videoformate werden umgerechnet. Die Wiedergabegeschwindigkeit ist auf maximal 2× begrenzt. Der HLS-Player puffert ungefähr 30 Sekunden tatsächliche Abspielzeit voraus: 30 Videosekunden bei 1× und 60 bei 2×. Bei aktivem Auto-Play wird erst kurz vor dem Clipende der nächste Clip derselben Kamera vorbereitet. Scheitert HLS, versucht der aktive Player die Originaldatei direkt zu öffnen. Browser ohne MediaSource-Unterstützung verwenden, soweit verfügbar, den nativen HLS-Player; dessen Puffergröße bestimmt der Browser. Echte Aufnahmelücken und ein zu langsames Speicherziel können weiterhin Unterbrechungen verursachen.
 
 Videosegmente liegen unter `data/playback-cache/segments` und werden wiederverwendet. Es wird höchstens ein Segment gleichzeitig vorbereitet; eine erforderliche Videokonvertierung verwendet einen FFmpeg-Thread und ist auf maximal 1280×720 Pixel sowie 4 Mbit/s mit begrenztem Bitratenpuffer ausgelegt. Der H.264-Kopierpfad behält die Originalqualität. Die Ermittlung der Metadaten wartet nicht hinter der Videokonvertierung. Bei neuen Segmenten werden alte Cachedateien nach 24 Stunden bereinigt; über etwa 2 GiB werden zusätzlich die ältesten, mindestens fünf Minuten alten Segmente entfernt. Die Originalaufnahmen und Downloads bleiben unverändert. `npm run test:playback` prüft Zeitzuordnung, Segmentgrenzen, Bildgleichheit beim H.264-Kopierpfad und FFmpeg-Ausgabe und benötigt `ffmpeg` und `ffprobe`.
+
+Abgebrochene Wiedergabeanforderungen beenden nicht mehr benötigte Segmentarbeiten. Verwenden mehrere Betrachter denselben Auftrag, bleibt dieser für die übrigen Betrachter erhalten. Metadatenprüfungen sind auf zwei gleichzeitige Prozesse begrenzt. Scheitert das Vorladen des Folgeclips, kann der Player beim Wechsel auf dessen Originaldatei zurückfallen.
+
+### Automatische Aufnahme- und Wiedergabetests
+
+Voraussetzungen sind die Entwicklungsabhängigkeiten, `ffmpeg` und `ffprobe`. Für die Browserprüfung wird Chromium einmalig mit `npx playwright install chromium` installiert.
+
+```bash
+npm test
+npm run test:recording
+npm run test:recording:api
+npm run test:playback
+npm run test:playback:browser
+npm run test:recording:rtsp
+npm run build
+```
+
+Der Aufnahmetest prüft offene Segmente, Vor-/Nachlauf, vollständige Bildanzahl und den Erhalt fehlerhafter Eingangsdateien. Die API-Prüfung deckt fertige Metadaten, ausgeblendete Teildateien sowie fehlende und nicht freigegebene Aufnahmepfade ab. Der Wiedergabetest prüft Zeitstempel einschließlich Sekundenbruchteilen, Mitternacht und Zeitumstellung, MP4/fMP4-Segmentierung sowie Abbruch und gemeinsame Nutzung von Aufträgen. Die Browserprüfung verwendet den echten Player mit simulierten API-Antworten in Desktop- und mobiler Chromium-Ansicht; sie prüft Pause, Zeitsprung, maximal 2×, Folgeclip, erhaltene Aufnahmeliste und absichtliche HTTP-500-Fehler. Der RTSP-Test benötigt ein zum Betriebssystem passendes MediaMTX-Binary unter `./mediamtx` oder in `MEDIAMTX_BIN`; er veröffentlicht lokal einen Teststream, unterbricht ihn und prüft die Bild-/Tonsegmente nach Wiederanlauf. Diese Prüfungen laufen auch in GitHub Actions. Sie ersetzen keinen Dauertest mit den eigenen Kameras, Netz- und Speicherzielen; natives iPhone-Safari wird durch die mobile Chromium-Ansicht nicht abgedeckt.
 
 Unter `Aufnahmen` zeigt jede Kamera außerdem den Zustand ihrer Bewegungsquelle an: aktive ONVIF-PullPoint-Verbindung, Webhook, Snapshot-Fallback, laufende Prüfung oder einen konkreten Fehler. In der Wiedergabe ist jedes Bewegungsereignis direkt mit dem daraus erzeugten Clip verknüpft; die bisherige zeitbasierte Zuordnung bleibt als Fallback für ältere Aufnahmen erhalten.
 

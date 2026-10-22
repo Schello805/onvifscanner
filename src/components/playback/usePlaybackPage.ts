@@ -7,7 +7,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { type ActivityStatsResponse, type CameraSimple, type RecordingClip, type RecordingCalendarDay, type ClipSortBy, type ClipSizeFilter, type TimelineWindowMinutes, cameraNameCollator, type MotionEvent, type DailySummary, type ClipMotionEvent } from "@/components/playback/playbackTypes";
 import { parseTimeToSeconds, getMotionEventsForClip, getTodayStr } from "@/components/playback/playbackUtils";
-import { chronologicalCameraClips, recordingAt, recordingStart } from "./playbackTiming";
+import { chronologicalCameraClips, recordingAt, recordingStart, recordingDayPosition } from "./playbackTiming";
 
 export function usePlaybackPage() {
   const { toast } = useToast();
@@ -799,7 +799,7 @@ export function usePlaybackPage() {
     }
     const dateStr = selectedDate || getTodayStr();
 
-    let camClips = clips.filter((c) => c.cameraId === camId && (!selectedDate || c.dateStr === dateStr));
+    let camClips = clips.filter((c) => c.cameraId === camId);
 
     if (camClips.length === 0) {
       try {
@@ -828,7 +828,7 @@ export function usePlaybackPage() {
 
     // 1. Exact clip that contains targetSec
     const matchingClip = camClips.find((c) => {
-      const clipStart = parseTimeToSeconds(c.timeStr);
+      const clipStart = recordingDayPosition(c, dateStr);
       const clipDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0
         ? c.durationSeconds
         : configuredSegSec;
@@ -837,7 +837,7 @@ export function usePlaybackPage() {
     });
 
     if (matchingClip) {
-      const clipStart = parseTimeToSeconds(matchingClip.timeStr);
+      const clipStart = recordingDayPosition(matchingClip, dateStr);
       const offset = Math.max(0, targetSec - clipStart);
       openClipWithOffset(matchingClip, offset);
       toast.success(`Video gestartet um ${timeStr} Uhr (${matchingClip.cameraName})`);

@@ -6,19 +6,21 @@ const Module = require('node:module');
 const { execFileSync } = require('node:child_process');
 const ts = require('typescript');
 
-async function loadTypescript(filename) {
+async function loadTypescript(filename, imports = {}) {
   const absolute = path.resolve(filename);
   const source = await fs.readFile(absolute, 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } });
   const loaded = new Module(absolute, module);
   loaded.filename = absolute;
   loaded.paths = module.paths;
+  loaded.require = (name) => imports[name] || Module.prototype.require.call(loaded, name);
   loaded._compile(compiled.outputText, absolute);
   return loaded.exports;
 }
 
 async function main() {
-  const { chronologicalCameraClips, recordingAt, recordingStart } = await loadTypescript('src/components/playback/playbackTiming.ts');
+  const timing = await loadTypescript('src/components/playback/playbackTiming.ts');
+  const { chronologicalCameraClips, recordingAt, recordingStart, recordingDayPosition } = timing;
   const first = { id: 'first', cameraId: 'garage', dateStr: '2026-10-21', timeStr: '23:59:50', durationSeconds: 10 };
   const second = { id: 'second', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:00', durationSeconds: 15 };
   const later = { id: 'later', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:30', durationSeconds: 12 };
@@ -29,6 +31,29 @@ async function main() {
   assert.equal(click - recordingStart(first), 7.375);
   assert.equal(recordingAt(clips, recordingStart(first) + 10, 900).id, 'second');
   assert.equal(recordingAt(clips, recordingStart(second) + 20, 900), undefined);
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'Europe/Berlin';
+  try {
+    const { recordingFileTime } = await loadTypescript('src/lib/recordingTime.ts');
+    const local = recordingFileTime('2026-10-22_10-00-00-782606.mp4', Date.parse('2026-10-22T08:15:00Z'));
+    const legacy = recordingFileTime('2026-10-22_08-00-00-782606.mp4', Date.parse('2026-10-22T08:15:00Z'));
+    assert.equal(local.timestamp, '2026-10-22T08:00:00.782Z');
+    assert.equal(legacy.timestamp, local.timestamp);
+    assert.equal(local.timeStr, legacy.timeStr);
+    const overnight = { ...first, timestamp: '2026-10-21T21:59:50.245Z' };
+    assert.ok(Math.abs(recordingDayPosition(overnight, '2026-10-22') + 9.755) < 0.001);
+    const { getMotionEventsForClip } = await loadTypescript('src/components/playback/playbackUtils.ts', { './playbackTiming': timing });
+    const events = getMotionEventsForClip(overnight, [{ id: 'midnight', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:00', timestamp: '2026-10-21T22:00:00Z' }]);
+    assert.equal(events.length, 1);
+    assert.ok(Math.abs(events[0].offsetSec - 9.755) < 0.001);
+    assert.equal(getMotionEventsForClip(overnight, [{ id: 'previous-day', cameraId: 'garage', dateStr: '2026-10-20', timeStr: '23:59:55', timestamp: '2026-10-20T21:59:55Z' }]).length, 0);
+    const summer = { ...first, timestamp: '2026-10-25T00:30:00Z' };
+    const winter = { ...first, timestamp: '2026-10-25T01:30:00Z' };
+    assert.equal(recordingStart(winter) - recordingStart(summer), 3600);
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'onvif-playback-'));
   const previousCache = process.env.PLAYBACK_CACHE_DIR;
@@ -83,6 +108,20 @@ async function main() {
     const frameHashes = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args, '-map', '0:v:0', '-frames:v', '150', '-f', 'framemd5', '-'], { encoding: 'utf8' })
       .split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split(',').pop().trim());
     assert.deepEqual(frameHashes(['-i', copied]), frameHashes(['-ss', '7.5', '-i', copySource]));
+    const controller = new AbortController();
+    const canceled = hls.recordingSegment(copySource, 0, controller.signal);
+    const shared = hls.recordingSegment(copySource, 0);
+    controller.abort();
+    await assert.rejects(canceled, error => error.name === 'AbortError');
+    const sharedFile = await shared;
+    assert.ok((await fs.stat(sharedFile)).size > 0);
+    assert.equal(await hls.recordingSegment(copySource, 0), sharedFile);
+    const fragmented = path.join(directory, 'fragmented.mp4');
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', copySource, '-c', 'copy', '-movflags', 'frag_keyframe+empty_moov+default_base_moof', fragmented]);
+    const fragmentedProfile = await hls.recordingProfile(fragmented);
+    assert.equal(fragmentedProfile.copyVideo, true);
+    const fragment = await hls.recordingSegment(fragmented, 1);
+    assert.deepEqual(frameHashes(['-i', fragment]), frameHashes(['-ss', String(fragmentedProfile.boundaries[1]), '-i', fragmented]));
     console.log('Playback timing, clip boundaries and FFmpeg compatibility tests passed.');
   } finally {
     if (previousCache === undefined) delete process.env.PLAYBACK_CACHE_DIR;

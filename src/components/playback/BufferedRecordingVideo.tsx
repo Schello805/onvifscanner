@@ -17,6 +17,8 @@ type Props = VideoHTMLAttributes<HTMLVideoElement> & {
 function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
   const elementRef = useRef<HTMLVideoElement | null>(null);
   const controllerRef = useRef<Hls | null>(null);
+  const sourceFailureRef = useRef<string | null>(null);
+  const fallbackActionRef = useRef<(() => boolean) | null>(null);
   const fallbackRef = useRef(fallbackSource);
   fallbackRef.current = fallbackSource;
   const initialPosition = useRef(startPosition);
@@ -31,6 +33,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
   useEffect(() => {
     const video = elementRef.current;
     if (!video || !source) return;
+    sourceFailureRef.current = null;
     let hls: Hls | undefined;
     let restoreFallback: (() => void) | undefined;
     let usedFallback = false;
@@ -50,9 +53,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
       video.load();
       return true;
     };
-    const startupTimeout = window.setTimeout(() => {
-      if (isActive.current && video.readyState < 2) playOriginal();
-    }, 15_000);
+    fallbackActionRef.current = playOriginal;
     if (Hls.isSupported()) {
       hls = new Hls({
         maxBufferLength: 30 * Math.max(1, rateRef.current), maxMaxBufferLength: 30 * Math.max(1, rateRef.current), maxBufferSize: 0,
@@ -62,9 +63,15 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
       });
       controllerRef.current = hls;
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal || !isActive.current) return;
+        if (!data.fatal) return;
+        const message = `Videodaten konnten nicht geladen werden (${data.details}${data.response?.code ? `, HTTP ${data.response.code}` : ""}). Bitte erneut starten.`;
+        sourceFailureRef.current = message;
+        if (!isActive.current) {
+          hls?.stopLoad();
+          return;
+        }
         if (playOriginal()) return;
-        errorHandler.current(`Videodaten konnten nicht geladen werden (${data.details}${data.response?.code ? `, HTTP ${data.response.code}` : ""}). Bitte erneut starten.`);
+        errorHandler.current(message);
       });
       hls.loadSource(source);
       hls.attachMedia(video);
@@ -74,10 +81,10 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
       video.load();
     } else errorHandler.current("Dieser Browser unterstützt die segmentierte Wiedergabe nicht.");
     return () => {
-      window.clearTimeout(startupTimeout);
       hls?.destroy();
       if (restoreFallback) video.removeEventListener("loadedmetadata", restoreFallback);
       controllerRef.current = null;
+      fallbackActionRef.current = null;
       video.removeAttribute("src");
       video.load();
     };
@@ -89,11 +96,23 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
     if (active) {
       mediaRef.current = video;
       video.playbackRate = rateRef.current;
+      if (sourceFailureRef.current) {
+        if (!fallbackActionRef.current?.()) errorHandler.current(sourceFailureRef.current);
+        return;
+      }
       if (video.readyState >= 1) video.dispatchEvent(new Event("loadedmetadata"));
       if (video.readyState >= 3) video.dispatchEvent(new Event("canplay"));
       void video.play().catch(() => undefined);
     } else video.pause();
   }, [active, mediaRef]);
+
+  useEffect(() => {
+    if (!active || !source) return;
+    const timer = window.setTimeout(() => {
+      if (elementRef.current && elementRef.current.readyState < 2) fallbackActionRef.current?.();
+    }, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [active, source]);
 
   useEffect(() => {
     if (active && elementRef.current) elementRef.current.playbackRate = rate;
