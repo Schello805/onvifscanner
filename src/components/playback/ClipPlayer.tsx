@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BufferedRecordingVideo } from "./BufferedRecordingVideo";
+import { PlaybackScrubber } from "./PlaybackScrubber";
 import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX, ChevronLeft, ChevronRight, RotateCcw, RotateCw, Clock } from "lucide-react";
 import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
@@ -10,6 +11,11 @@ import type { PlaybackState } from "./usePlaybackPage";
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const startupAttemptedRef = useRef(false);
   const startupClipRef = useRef<string | undefined>(undefined);
+  const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
+  useEffect(() => setBufferedRanges([]), [pb.activeClip?.id]);
+  const updateBufferedRanges = (video: HTMLVideoElement) => {
+    setBufferedRanges(Array.from({ length: video.buffered.length }, (_, index) => ({ start: video.buffered.start(index), end: video.buffered.end(index) })));
+  };
   if (startupClipRef.current !== pb.activeClip?.id) {
     startupClipRef.current = pb.activeClip?.id;
     startupAttemptedRef.current = false;
@@ -113,7 +119,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
             {/* Scrollable Player Body: Ensures Video, Timeline, and Toolbar are ALWAYS visible on any display */}
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* Video Element */}
-              <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
+              <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'aspect-video w-full max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
                 <BufferedRecordingVideo
                   mediaRef={videoRef}
                   source={activePlaybackUrl}
@@ -122,16 +128,19 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   attempt={playbackAttempt}
                   startPosition={pendingSeekRef.current ?? 0}
                   rate={playbackRate}
+                  playRequested={pb.playbackIntentRef.current}
+                  scrubbing={pb.isScrubbing}
                   onStreamError={(message) => {
                     setPlayerPreparing(false);
                     setPlayerError(message);
                   }}
-                  autoPlay
+                  autoPlay={pb.playbackIntentRef.current}
                   preload="auto"
                   playsInline
                   muted={isMuted}
                   className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[50vh] sm:max-h-[55vh]'}`}
                   onPlay={() => {
+                    if (!pb.playbackIntentRef.current) { videoRef.current?.pause(); return; }
                     setIsPlaying(true);
                     setPlayerNeedsStart(false);
                   }}
@@ -146,7 +155,11 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerError("");
                   }}
                   onWaiting={() => setPlayerPreparing(true)}
-                  onSeeked={() => setPlayerPreparing(false)}
+                  onSeeked={(event) => {
+                    setPlayerPreparing(false);
+                    updateBufferedRanges(event.currentTarget);
+                  }}
+                  onProgress={(event) => updateBufferedRanges(event.currentTarget)}
                   onCanPlay={(event) => {
                     if (pendingSeekRef.current !== null) return;
                     setPlayerPreparing(false);
@@ -155,7 +168,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     if (Number.isFinite(dur) && dur > 0) {
                       setVideoDuration(dur);
                     }
-                    if (startupAttemptedRef.current || !event.currentTarget.paused) return;
+                    if (!pb.playbackIntentRef.current || startupAttemptedRef.current || !event.currentTarget.paused) return;
                     startupAttemptedRef.current = true;
                     const video = event.currentTarget;
                     void video.play()
@@ -205,29 +218,21 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     }
                   }}
                 onTimeUpdate={(e) => {
-                  setVideoCurrentTime(e.currentTarget.currentTime || 0);
+                  if (!pb.scrubbingRef.current && pendingSeekRef.current === null) setVideoCurrentTime(e.currentTarget.currentTime || 0);
                 }}
                 onEnded={() => {
-                  if (autoPlayNext) playNextClip();
+                  if (autoPlayNext && !pb.scrubbingRef.current) playNextClip();
                 }}
               />
               <div
                 className="absolute inset-0 z-10 select-none cursor-pointer"
-                onClick={() => {
-                  if (!videoRef.current) return;
-                  if (videoRef.current.paused) void videoRef.current.play();
-                  else videoRef.current.pause();
-                }}
+                onClick={togglePlay}
                 aria-label="Klick zum Abspielen oder Pausieren"
               />
               <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!videoRef.current) return;
-                    if (videoRef.current.paused) void videoRef.current.play();
-                    else videoRef.current.pause();
-                  }}
+                  onClick={togglePlay}
                   className="flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/65 text-white shadow-xl backdrop-blur-md transition hover:bg-black/85"
                   aria-label={isPlaying ? "Pause" : "Abspielen"}
                   title={isPlaying ? "Pause" : "Abspielen"}
@@ -253,7 +258,11 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   <span className="rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md">{seekFeedback}</span>
                 </div>
               ) : null}
-              {(playerPreparing || playerError || playerNeedsStart) && (
+              {playerPreparing && !playerError && !playerNeedsStart && (pb.isScrubbing || (videoRef.current?.readyState || 0) >= 2) ? (
+                <div className="pointer-events-none absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded-lg bg-black/65 px-3 py-2 text-xs text-white backdrop-blur-sm" role="status">
+                  <RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" /> Stelle wird geladen…
+                </div>
+              ) : (playerPreparing || playerError || playerNeedsStart) && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-5 text-center">
                   <div className="max-w-xs rounded-xl border border-slate-700 bg-slate-950/95 px-4 py-3 shadow-xl">
                     {playerPreparing ? (
@@ -269,6 +278,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                         <button
                           type="button"
                           onClick={() => {
+                            pb.playbackIntentRef.current = true;
+                            setIsPlaying(true);
                             void videoRef.current?.play().then(() => setPlayerNeedsStart(false));
                           }}
                           className="mt-3 rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-slate-950"
@@ -361,21 +372,26 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
 
               {/* In-Clip Interactive Scrubber Track with Motion Pins */}
               {effectiveDuration > 0 && (
-                <div
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-                    const pct = clickX / rect.width;
-                    seekToOffset(Math.floor(pct * effectiveDuration));
-                  }}
-                  className="relative h-4.5 w-full rounded-md bg-slate-900 border border-slate-800/80 cursor-pointer overflow-hidden group select-none shadow-inner"
-                  title="Klicke auf den Zeitstrahl zum Springen"
+                <PlaybackScrubber
+                  label="Position im Clip"
+                  max={effectiveDuration}
+                  value={effectiveCurrentTime}
+                  formatValue={formatSeconds}
+                  onSeek={seekToOffset}
+                  onScrubStart={pb.beginScrubbing}
+                  onScrubEnd={pb.endScrubbing}
+                  className="relative h-7 sm:h-6 w-full rounded-md bg-slate-900 border border-slate-800/80 cursor-pointer overflow-hidden group select-none shadow-inner"
                 >
+                  {(position) => <>
+                  {bufferedRanges.map((range, index) => (
+                    <div key={index} className="absolute inset-y-0 bg-slate-600/55 pointer-events-none" style={{ left: `${100 * range.start / effectiveDuration}%`, width: `${100 * (range.end - range.start) / effectiveDuration}%` }} />
+                  ))}
                   {/* Played progress */}
                   <div
-                    className="absolute top-0 bottom-0 left-0 bg-sky-500/25 border-r-2 border-sky-400 pointer-events-none transition-all duration-75"
-                    style={{ width: `${Math.min(100, (effectiveCurrentTime / effectiveDuration) * 100)}%` }}
+                    className="absolute top-0 bottom-0 left-0 bg-sky-500/40 border-r-2 border-sky-400 pointer-events-none"
+                    style={{ width: `${Math.min(100, (position / effectiveDuration) * 100)}%` }}
                   />
+                  <div className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300 pointer-events-none z-20" style={{ left: `${Math.max(0.6, Math.min(99.4, position / effectiveDuration * 100))}%` }} />
 
                   {/* Motion Markers */}
                   {activeClipMotionEvents.map((ev, idx) => {
@@ -384,6 +400,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     return (
                       <div
                         key={ev.id || idx}
+                        data-scrub-marker
                         onClick={(e) => {
                           e.stopPropagation();
                           seekToOffset(ev.offsetSec);
@@ -402,7 +419,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       </div>
                     );
                   })}
-                </div>
+                  </>}
+                </PlaybackScrubber>
               )}
 
               {/* Clickable Motion Pills with Exact Timestamps and Video Offsets */}

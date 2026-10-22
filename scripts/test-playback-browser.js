@@ -29,6 +29,9 @@ async function main() {
     const makeClip = (id, cameraId, seconds) => ({ id, cameraId, cameraName: cameraId, filename: `${id}.mp4`, dateStr: date, timeStr: `12:00:${String(seconds).padStart(2, '0')}`, timestamp: `${date}T10:00:${String(seconds).padStart(2, '0')}.245Z`, durationSeconds: 24, sizeBytes: sourceBytes.length, storageTargetName: 'test', streamUrl: `/direct?clipId=${id}`, downloadUrl: `/direct?clipId=${id}` });
     const clips = [makeClip('next', 'camera', 24), makeClip('other', 'other-camera', 12), makeClip('first', 'camera', 0)];
     const cameras = [{ id: 'camera', name: 'camera', ip: '127.0.0.1', recordSegmentMinutes: 1 }, { id: 'other-camera', name: 'other-camera', ip: '127.0.0.2' }];
+    const stylesFile = path.join(directory, 'styles.css');
+    execFileSync(process.execPath, [require.resolve('tailwindcss/lib/cli'), '-i', 'src/app/globals.css', '-o', stylesFile, '--minify'], { stdio: 'pipe' });
+    const styles = await fs.readFile(stylesFile);
     const bundle = await esbuild.build({
       stdin: { resolveDir: process.cwd(), loader: 'tsx', contents: `
         import React,{useEffect} from 'react';
@@ -36,28 +39,41 @@ async function main() {
         import {ToastProvider} from './src/components/ToastProvider';
         import {LanguageProvider} from './src/components/LanguageProvider';
         import {ClipPlayer} from './src/components/playback/ClipPlayer';
+        import {PlaybackTimeline} from './src/components/playback/PlaybackTimeline';
         import {usePlaybackPage} from './src/components/playback/usePlaybackPage';
-        function App(){const pb=usePlaybackPage();useEffect(()=>{window.pb=pb});return <ClipPlayer pb={pb}/>}
+        function App(){const pb=usePlaybackPage();useEffect(()=>{window.pb=pb});return <main className="mx-auto max-w-6xl space-y-4"><ClipPlayer pb={pb}/><PlaybackTimeline pb={pb}/></main>}
         createRoot(document.getElementById('app')).render(<LanguageProvider><ToastProvider><App/></ToastProvider></LanguageProvider>);
       ` }, bundle: true, write: false, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' },
     });
     let breakManifests = false;
     let directRequests = 0;
+    const manifestRequests = [];
+    let slowClip = '';
+    let interruptedSegments = 0;
     server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url, 'http://localhost');
         if (url.pathname === '/bundle.js') {
           response.setHeader('Content-Type', 'application/javascript'); response.end(bundle.outputFiles[0].contents); return;
         }
+        if (url.pathname === '/styles.css') {
+          response.setHeader('Content-Type', 'text/css'); response.end(styles); return;
+        }
         if (url.pathname === '/api/nvr/recordings/hls') {
           if (breakManifests === true || (breakManifests === 'next' && url.searchParams.get('clipId') === 'next')) { response.statusCode = 500; response.end('simulated HLS failure'); return; }
           const segment = url.searchParams.get('segment');
           if (segment !== null) {
-            const file = await hls.recordingSegment(source, Number(segment));
+            const controller = new AbortController();
+            response.once('close', () => {
+              if (!response.writableEnded) { interruptedSegments++; controller.abort(); }
+            });
+            if (url.searchParams.get('clipId') === slowClip) await new Promise(resolve => setTimeout(resolve, 1500));
+            const file = await hls.recordingSegment(source, Number(segment), controller.signal);
             response.setHeader('Content-Type', 'video/mp2t');
             response.setHeader('Cache-Control', 'public, max-age=3600');
             response.end(await fs.readFile(file));
           } else {
+            manifestRequests.push(url.searchParams.get('clipId'));
             const profile = await hls.recordingProfile(source);
             response.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
             response.end(hls.recordingManifest(url.searchParams.get('clipId'), profile.duration, profile.boundaries));
@@ -79,7 +95,7 @@ async function main() {
             : url.pathname.endsWith('/recordings') ? { clips, days: [] }
             : url.pathname.endsWith('/events') ? { events: [] } : { ok: false })); return;
         }
-        response.setHeader('Content-Type', 'text/html'); response.end('<div id="app"></div><script src="/bundle.js"></script>');
+        response.setHeader('Content-Type', 'text/html'); response.end('<meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><div id="app"></div><script src="/bundle.js"></script>');
       } catch (error) { response.statusCode = 500; response.end(String(error)); }
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -92,12 +108,23 @@ async function main() {
     await page.addInitScript(() => {
       window.process = { env: { NODE_ENV: 'production' } };
       window.played = []; window.ended = [];
+      window.seekTimes = []; window.loadStarts = 0; window.frames = new WeakMap();
+      const tracked = new WeakSet();
+      document.addEventListener('loadedmetadata', (event) => {
+        const video = event.target;
+        if (!(video instanceof HTMLVideoElement) || tracked.has(video) || !video.requestVideoFrameCallback) return;
+        tracked.add(video);
+        const frame = (_, metadata) => { window.frames.set(video, metadata.mediaTime); video.requestVideoFrameCallback(frame); };
+        video.requestVideoFrameCallback(frame);
+      }, true);
+      document.addEventListener('seeking', () => window.seekTimes.push(performance.now()), true);
+      document.addEventListener('loadstart', () => window.loadStarts++, true);
       document.addEventListener('playing', () => window.played.push({ clip: window.pb.activeClip.id, rate: window.pb.videoRef.current.playbackRate, at: performance.now() }), true);
       document.addEventListener('ended', () => window.ended.push({ clip: window.pb.activeClip.id, at: performance.now() }), true);
     });
     await page.goto(url);
     await page.waitForFunction(() => window.pb?.clips.length === 3);
-    await page.evaluate(() => { window.pb.setIsMuted(true); window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 2.375); });
+    await page.evaluate(() => { window.pb.setIsMuted(true); window.pb.setAutoPlayNext(false); window.pb.setSelectedCameraId('camera'); window.pb.setTimelineWindowMinutes(5); window.pb.setTimelineStartMin(720); window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 2.375); });
     await page.waitForFunction(() => window.played.length > 0);
     await page.getByRole('button', { name: '2x', exact: true }).click();
     await page.waitForFunction(() => window.pb.videoRef.current.playbackRate === 2);
@@ -106,6 +133,67 @@ async function main() {
     const pausedAt = await page.evaluate(() => window.pb.videoRef.current.currentTime);
     await page.waitForTimeout(400);
     assert.ok(Math.abs(await page.evaluate(() => window.pb.videoRef.current.currentTime) - pausedAt) < 0.1);
+    const clipScrubber = page.getByRole('slider', { name: 'Position im Clip' });
+    await clipScrubber.scrollIntoViewIfNeeded();
+    const track = await clipScrubber.boundingBox();
+    const beforeScrub = await page.evaluate(() => ({ loads: window.loadStarts, seeks: window.seekTimes.length, attempt: window.pb.playbackAttempt, source: window.pb.videoRef.current.currentSrc }));
+    await page.mouse.move(track.x + track.width * 0.2, track.y + track.height / 2);
+    await page.mouse.down();
+    await page.waitForFunction(() => window.pb.isScrubbing && window.pb.videoRef.current.paused);
+    await page.mouse.move(track.x + track.width * 0.85, track.y + track.height / 2, { steps: 20 });
+    await page.waitForTimeout(180);
+    await page.waitForFunction(() => window.pb.isScrubbing && !window.pb.videoRef.current.seeking && window.pb.videoRef.current.readyState >= 2);
+    const previewFrame = await page.evaluate(() => ({ frame: window.frames.get(window.pb.videoRef.current), position: window.pb.videoRef.current.currentTime }));
+    assert.ok(Math.abs(previewFrame.frame - previewFrame.position) < 0.15, JSON.stringify(previewFrame));
+    await page.mouse.move(track.x + track.width * 0.35, track.y + track.height / 2, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForFunction(() => !window.pb.isScrubbing && !window.pb.videoRef.current.seeking);
+    assert.ok(Math.abs(await page.evaluate(() => window.pb.videoRef.current.currentTime) - 8.4) < 0.05);
+    const afterScrub = await page.evaluate(() => ({ loads: window.loadStarts, seeks: window.seekTimes.length, attempt: window.pb.playbackAttempt, source: window.pb.videoRef.current.currentSrc, paused: window.pb.videoRef.current.paused }));
+    assert.equal(afterScrub.loads, beforeScrub.loads); assert.equal(afterScrub.source, beforeScrub.source); assert.equal(afterScrub.attempt, beforeScrub.attempt);
+    assert.ok(afterScrub.seeks - beforeScrub.seeks < 15); assert.equal(afterScrub.paused, true);
+    await clipScrubber.press('ArrowRight');
+    await page.waitForFunction(() => !window.pb.videoRef.current.seeking);
+    assert.ok(Math.abs(await page.evaluate(() => window.pb.videoRef.current.currentTime) - 9.4) < 0.05);
+    const dayScrubber = page.getByRole('slider', { name: 'Aufnahmezeit', exact: true });
+    await dayScrubber.scrollIntoViewIfNeeded();
+    const dayTrack = await dayScrubber.boundingBox();
+    const dayPosition = (seconds) => dayTrack.x + seconds / 300 * dayTrack.width;
+    const initialManifests = manifestRequests.length;
+    await page.mouse.click(dayPosition(17.375), dayTrack.y + dayTrack.height / 2);
+    await page.waitForFunction(() => !window.pb.videoRef.current.seeking && Math.abs(window.pb.videoRef.current.currentTime - 17.13) < 0.1);
+    assert.equal(manifestRequests.length, initialManifests);
+    await page.mouse.move(dayPosition(18), dayTrack.y + dayTrack.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dayPosition(37.625), dayTrack.y + dayTrack.height / 2, { steps: 15 });
+    await page.mouse.up();
+    await page.waitForFunction(() => window.pb.activeClip.id === 'next' && !window.pb.videoRef.current.seeking && window.pb.videoRef.current.readyState >= 2 && Math.abs(window.pb.videoRef.current.currentTime - 13.38) < 0.1);
+    assert.equal(await page.evaluate(() => window.pb.videoRef.current.paused), true);
+    await dayScrubber.scrollIntoViewIfNeeded();
+    await dayScrubber.click({ position: { x: 60 / 300 * dayTrack.width, y: dayTrack.height / 2 } });
+    assert.equal(await page.evaluate(() => window.pb.activeClip.id), 'next');
+    await page.getByText(/Keine Aufnahme für 12:01:00/).waitFor();
+    slowClip = 'next';
+    const networkSession = await context.newCDPSession(page);
+    await networkSession.send('Network.clearBrowserCache');
+    await page.evaluate(() => window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 6));
+    await page.waitForFunction(() => window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.seeking);
+    await dayScrubber.scrollIntoViewIfNeeded();
+    const delayedRequest = page.waitForRequest(request => request.url().includes('clipId=next&segment='));
+    await page.mouse.move(dayPosition(37.625), dayTrack.y + dayTrack.height / 2);
+    await page.mouse.down();
+    await page.waitForFunction(() => window.pb.activeClip?.id === 'next');
+    await delayedRequest;
+    await page.waitForTimeout(200);
+    await page.mouse.move(dayPosition(9.625), dayTrack.y + dayTrack.height / 2);
+    await page.mouse.up();
+    await page.waitForFunction(() => window.pb.activeClip.id === 'first' && window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.seeking && window.pb.videoRef.current.currentTime >= 9.38);
+    assert.equal(await page.evaluate(() => window.pb.playerError), '');
+    await page.waitForTimeout(1700);
+    assert.equal(await page.evaluate(() => window.pb.activeClip.id), 'first');
+    assert.ok(interruptedSegments > 0);
+    slowClip = '';
+    await page.evaluate(() => window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 7.125));
     await page.evaluate(() => { window.pb.setAutoPlayNext(false); window.pb.seekToOffset(7.125); });
     await page.waitForFunction(() => !window.pb.videoRef.current.seeking && window.pb.videoRef.current.currentTime >= 7.125);
     assert.ok(await page.evaluate(() => Math.abs(window.pb.videoRef.current.currentTime - 7.125)) < 0.6);
@@ -119,6 +207,54 @@ async function main() {
     await page.waitForFunction(() => window.pb.activeClip === null);
     assert.equal(await page.evaluate(() => window.pb.clips.length), 3);
     await context.close();
+    const touchContext = await browser.newContext({ timezoneId: 'Europe/Berlin', locale: 'de-DE', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const touchPage = await touchContext.newPage();
+    await touchPage.addInitScript(() => { window.process = { env: { NODE_ENV: 'production' } }; });
+    touchPage.on('pageerror', error => errors.push(String(error)));
+    await touchPage.goto(url);
+    await touchPage.waitForFunction(() => window.pb?.clips.length === 3);
+    await touchPage.evaluate(() => { window.pb.setIsMuted(true); window.pb.setSpeed(2); window.pb.setAutoPlayNext(false); window.pb.setSelectedCameraId('camera'); window.pb.setTimelineWindowMinutes(5); window.pb.setTimelineStartMin(720); window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 2); });
+    await touchPage.waitForFunction(() => window.pb.videoRef.current?.readyState >= 2 && !window.pb.videoRef.current.paused);
+    await touchPage.evaluate(() => window.pb.togglePlay());
+    const touchScrubber = touchPage.getByRole('slider', { name: 'Position im Clip' });
+    await touchScrubber.scrollIntoViewIfNeeded();
+    await touchPage.waitForTimeout(500);
+    const touchTrack = await touchScrubber.boundingBox();
+    const scrollBeforeTouch = await touchPage.evaluate(() => window.scrollY);
+    const touchSession = await touchContext.newCDPSession(touchPage);
+    const touchPoint = (ratio) => ({ x: touchTrack.x + touchTrack.width * ratio, y: touchTrack.y + touchTrack.height / 2 });
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touchPoint(0.2)] });
+    for (let index = 1; index <= 20; index++) {
+      await touchSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [touchPoint(0.2 + index * 0.03)] });
+    }
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await touchPage.waitForFunction(() => !window.pb.isScrubbing && !window.pb.videoRef.current.seeking && Math.abs(window.pb.videoRef.current.currentTime - 19.2) < 0.1);
+    assert.equal(await touchPage.evaluate(() => window.pb.videoRef.current.paused), true);
+    assert.ok(Math.abs(await touchPage.evaluate(() => window.scrollY) - scrollBeforeTouch) < 2);
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touchPoint(0.3)] });
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [touchPoint(0.4)] });
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await touchPage.waitForFunction(() => !window.pb.isScrubbing);
+    await touchPage.waitForTimeout(300);
+    assert.equal(await touchPage.evaluate(() => window.pb.videoRef.current.paused), true);
+    const touchDayScrubber = touchPage.getByRole('slider', { name: 'Aufnahmezeit', exact: true });
+    await touchDayScrubber.scrollIntoViewIfNeeded();
+    const touchDayTrack = await touchDayScrubber.boundingBox();
+    const dayTouchPoint = (seconds) => ({ x: touchDayTrack.x + seconds / 300 * touchDayTrack.width, y: touchDayTrack.y + touchDayTrack.height / 2 });
+    const scrollBeforeDayTouch = await touchPage.evaluate(() => window.scrollY);
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [dayTouchPoint(10)] });
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [dayTouchPoint(32.245)] });
+    await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await touchPage.waitForFunction(() => window.pb.activeClip?.id === 'next' && !window.pb.videoRef.current.seeking && window.pb.videoRef.current.readyState >= 2 && Math.abs(window.pb.videoRef.current.currentTime - 8) < 0.1);
+    await touchPage.waitForTimeout(400);
+    assert.ok(Math.abs(await touchPage.evaluate(() => window.scrollY) - scrollBeforeDayTouch) < 2);
+    assert.equal(await touchPage.evaluate(() => window.pb.videoRef.current.paused), true);
+    assert.equal(await touchPage.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
+    if (process.env.PLAYBACK_SCREENSHOT_DIR) {
+      await fs.mkdir(process.env.PLAYBACK_SCREENSHOT_DIR, { recursive: true });
+      await touchPage.screenshot({ path: path.join(process.env.PLAYBACK_SCREENSHOT_DIR, 'playback-mobile.png'), fullPage: true });
+    }
+    await touchContext.close();
     breakManifests = true;
     const mobile = await browser.newContext({ timezoneId: 'Europe/Berlin', locale: 'de-DE', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const phone = await mobile.newPage();
@@ -145,7 +281,7 @@ async function main() {
     assert.equal(await retry.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
     assert.deepEqual(errors, []);
     await retryContext.close();
-    console.log('Desktop/mobile playback tests passed: exact seek, pause, 2x, next clip, preserved list, HTTP-500 and failed prefetch recovery.');
+    console.log('Desktop/mobile playback tests passed: exact seek, live scrub preview, throttled mouse/touch drag, keyboard, cross-clip timeline, stable page scroll, canceled requests/gestures, gaps, pause, 2x, next clip, preserved list, HTTP-500 and failed prefetch recovery.');
   } finally {
     await browser?.close();
     if (server?.listening) await new Promise(resolve => server.close(resolve));

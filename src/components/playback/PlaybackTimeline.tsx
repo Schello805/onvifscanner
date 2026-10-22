@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Play, Clock, Search, Video, Zap, Image as ImageIcon } from "lucide-react";
 import { TIMELINE_WINDOWS, objectClassLabels } from "@/components/playback/playbackTypes";
 import { formatGermanDate, formatMinutesToTime, parseTimeToSeconds, formatBytes, getTodayStr } from "@/components/playback/playbackUtils";
 import type { RecordingClip } from "@/components/playback/playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
 import { recordingDayPosition } from "./playbackTiming";
+import { PlaybackScrubber } from "./PlaybackScrubber";
+
+function formatTimelineTime(seconds: number) {
+  const time = Math.max(0, Math.min(86400, Math.floor(seconds)));
+  return [Math.floor(time / 3600), Math.floor(time / 60) % 60, time % 60].map((part) => String(part).padStart(2, "0")).join(":");
+}
 
 export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
   const { toast, cameras, selectedDate, timeFrom, timeTo, timelineWindowMinutes, timelineStartMin, showEventLog, setShowEventLog, eventLogSearch, setEventLogSearch, eventLogTimeOfDay, setEventLogTimeOfDay, showVideoTrack, setShowVideoTrack, motionEvents, hoverScrubber, setHoverScrubber, activeClip, videoCurrentTime, setSelectedSnapshot, selectRecordingDate, timelineClips, openClipWithOffset, zoomToWindow, goToNow, panTimeline, jumpToMotionCluster, playEvent, focusEventOnTimeline, timelineTicks, timelinePanStepMinutes, timelinePanLabel, filteredMotionEvents } = pb;
@@ -89,6 +95,12 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
 
     return spans;
   }, [timelineClips, cameras, selectedDate]);
+
+  const missingRecording = useRef<number | null>(null);
+  const recordingAtPosition = (seconds: number) => {
+    const matches = streamSpans.flatMap((span) => span.clips).filter((item) => seconds >= item.startSec && seconds < item.endSec);
+    return matches.find((item) => item.clip.cameraId === (pb.selectedCameraId || activeClip?.cameraId)) || matches[0];
+  };
 
   // Active clip highlight within the timeline
   const activeClipHighlight = useMemo(() => {
@@ -225,69 +237,31 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
         </div>
 
         {/* Timeline Bar Track */}
-        <div
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-            const pct = clickX / rect.width;
-            const spanMin = timelineWindowMinutes;
-            const clickSeconds = (timelineStartMin + pct * spanMin) * 60;
-            const totalMinutes = Math.floor(clickSeconds / 60);
-            const hour = Math.floor(totalMinutes / 60) % 24;
-            const minute = totalMinutes % 60;
-            const timeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
-
-            // Check if within any stream span
-            const matchingSpan = streamSpans.find(
-              (span) => clickSeconds >= span.startSec && clickSeconds <= span.endSec
-            );
-
-            const hasMotion = motionEvents.some(
-              (ev) => Math.abs(ev.totalMinutes - totalMinutes) <= (timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4)
-            );
-
-            setHoverScrubber({
-              pct,
-              timeStr,
-              hasRecording: Boolean(matchingSpan),
-              hasMotion,
-              clipName: matchingSpan?.cameraName,
-            });
+        <PlaybackScrubber
+          label="Aufnahmezeit"
+          min={timelineStartMin * 60}
+          max={(timelineStartMin + timelineWindowMinutes) * 60}
+          value={activeClip ? recordingDayPosition(activeClip, selectedDate || activeClip.dateStr) + videoCurrentTime : timelineStartMin * 60}
+          formatValue={formatTimelineTime}
+          onPreview={(seconds, pct) => {
+            if (seconds === null) { setHoverScrubber(null); return; }
+            const recording = recordingAtPosition(seconds);
+            const proximityMin = timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4;
+            setHoverScrubber({ pct, timeStr: formatTimelineTime(seconds), hasRecording: Boolean(recording), hasMotion: motionEvents.some((ev) => Math.abs(ev.totalMinutes - seconds / 60) <= proximityMin), clipName: recording?.clip.cameraName });
           }}
-          onMouseLeave={() => setHoverScrubber(null)}
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-            const pct = clickX / rect.width;
-            const spanMin = timelineWindowMinutes;
-            const clickSeconds = (timelineStartMin + pct * spanMin) * 60;
-            const totalMinutes = Math.floor(clickSeconds / 60);
-
-            // Find matching stream span
-            const matchingSpan = streamSpans.find(
-              (span) => clickSeconds >= span.startSec && clickSeconds <= span.endSec
-            );
-
-            if (matchingSpan) {
-              const targetItem = matchingSpan.clips.find(
-                (item) => clickSeconds >= item.startSec && clickSeconds < item.endSec
-              );
-              if (targetItem) {
-                const offset = Math.max(0, clickSeconds - targetItem.startSec);
-                openClipWithOffset(targetItem.clip, offset);
-                return;
-              }
-            }
-
-            // Fallback: check if a motion event is near this point on the timeline
-            const hour = Math.floor(totalMinutes / 60) % 24;
-            const minute = totalMinutes % 60;
-            const timeFormatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
-            toast.info(`Keine Aufnahme für ${timeFormatted} vorhanden.`);
+          onScrubStart={() => { missingRecording.current = null; pb.beginScrubbing(); }}
+          onSeek={(seconds) => {
+            const recording = recordingAtPosition(seconds);
+            missingRecording.current = recording ? null : seconds;
+            if (recording) openClipWithOffset(recording.clip, seconds - recording.startSec);
+          }}
+          onScrubEnd={() => {
+            pb.endScrubbing(missingRecording.current === null);
+            if (missingRecording.current !== null) toast.info(`Keine Aufnahme für ${formatTimelineTime(missingRecording.current)} Uhr vorhanden.`);
           }}
           className="relative h-14 sm:h-16 w-full rounded-xl bg-slate-950 border border-slate-800/90 shadow-inner overflow-hidden cursor-crosshair select-none group"
-          title="Klicke auf die Zeitleiste zum Abspielen oder Vorfall-Prüfen"
         >
+          {(position) => <>
           {/* Subtle background hour/slot grid stripes */}
           <div className="absolute inset-0 flex pointer-events-none opacity-20">
             {timelineTicks.map((_, i) => (
@@ -350,24 +324,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
               return (
                 <div
                   key={span.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    const rStartSec = rStartMin * 60;
-                    const rEndSec = rEndMin * 60;
-                    const clickedSec = rStartSec + clickRatio * (rEndSec - rStartSec);
-
-                    // Find matching clip in this span
-                    const targetItem = span.clips.find(
-                      (item) => clickedSec >= item.startSec && clickedSec < item.endSec
-                    );
-
-                    if (targetItem) {
-                      const offset = Math.max(0, clickedSec - targetItem.startSec);
-                      openClipWithOffset(targetItem.clip, offset);
-                    }
-                  }}
                   className={`absolute top-2.5 bottom-2.5 bg-sky-500/35 hover:bg-sky-400/45 border-y border-sky-400/60 shadow-inner cursor-pointer z-10 transition-colors ${
                     isLeftCapped ? "rounded-l-md border-l" : ""
                   } ${isRightCapped ? "rounded-r-md border-r" : ""}`}
@@ -408,6 +364,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             return (
               <div
                 key={ev.id}
+                data-scrub-marker
                 onClick={(e) => {
                   e.stopPropagation();
                   playEvent(ev);
@@ -445,12 +402,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
               const spanMin = timelineWindowMinutes;
               const vStart = timelineStartMin;
               const vEnd = timelineStartMin + spanMin;
-              const timeParts = activeClip.timeStr.split(":").map(Number);
-              const hh = isNaN(timeParts[0]) ? 0 : timeParts[0];
-              const mm = isNaN(timeParts[1]) ? 0 : timeParts[1];
-              const ss = isNaN(timeParts[2]) ? 0 : timeParts[2];
-              const startMin = hh * 60 + mm + ss / 60;
-              const currentMin = startMin + (videoCurrentTime / 60);
+              const currentMin = position / 60;
 
               if (currentMin < vStart || currentMin > vEnd) return null;
               const leftPct = ((currentMin - vStart) / spanMin) * 100;
@@ -495,7 +447,9 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
               </div>
             </>
           )}
-        </div>
+          </>}
+        </PlaybackScrubber>
+        <p className="mt-1 text-[10px] text-slate-500">Tippen oder ziehen zum Springen · Bildvorschau beim Ziehen · Lücken enthalten keine Aufnahme</p>
 
         {/* Dynamic Zoom Ruler Axis with German time formatting */}
         <div className="relative mt-2 h-4 select-none">

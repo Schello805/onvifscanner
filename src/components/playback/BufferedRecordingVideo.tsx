@@ -11,10 +11,12 @@ type Props = VideoHTMLAttributes<HTMLVideoElement> & {
   mediaRef: MutableRefObject<HTMLVideoElement | null>;
   startPosition: number;
   rate: number;
+  playRequested: boolean;
+  scrubbing: boolean;
   onStreamError: (message: string) => void;
 };
 
-function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
+function Slot({ source, active, mediaRef, startPosition, rate, playRequested, scrubbing, onStreamError, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
   const elementRef = useRef<HTMLVideoElement | null>(null);
   const controllerRef = useRef<Hls | null>(null);
   const sourceFailureRef = useRef<string | null>(null);
@@ -25,6 +27,10 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
   initialPosition.current = startPosition;
   const rateRef = useRef(rate);
   rateRef.current = rate;
+  const playRequestedRef = useRef(playRequested);
+  playRequestedRef.current = playRequested;
+  const scrubbingRef = useRef(scrubbing);
+  scrubbingRef.current = scrubbing;
   const errorHandler = useRef(onStreamError);
   errorHandler.current = onStreamError;
   const isActive = useRef(active);
@@ -56,8 +62,8 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
     fallbackActionRef.current = playOriginal;
     if (Hls.isSupported()) {
       hls = new Hls({
-        maxBufferLength: 30 * Math.max(1, rateRef.current), maxMaxBufferLength: 30 * Math.max(1, rateRef.current), maxBufferSize: 0,
-        backBufferLength: 12, startPosition: initialPosition.current,
+        maxBufferLength: scrubbingRef.current ? 6 : 30 * Math.max(1, rateRef.current), maxMaxBufferLength: scrubbingRef.current ? 6 : 30 * Math.max(1, rateRef.current), maxBufferSize: 0,
+        backBufferLength: 30, startPosition: initialPosition.current,
         fragLoadingTimeOut: 60_000,
         manifestLoadPolicy: { default: { ...Hls.DefaultConfig.manifestLoadPolicy.default, maxTimeToFirstByteMs: 60_000, maxLoadTimeMs: 90_000 } },
       });
@@ -102,7 +108,8 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
       }
       if (video.readyState >= 1) video.dispatchEvent(new Event("loadedmetadata"));
       if (video.readyState >= 3) video.dispatchEvent(new Event("canplay"));
-      void video.play().catch(() => undefined);
+      if (playRequestedRef.current) void video.play().catch(() => undefined);
+      else video.pause();
     } else video.pause();
   }, [active, mediaRef]);
 
@@ -115,12 +122,16 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
   }, [active, source]);
 
   useEffect(() => {
-    if (active && elementRef.current) elementRef.current.playbackRate = rate;
-    if (controllerRef.current) {
-      controllerRef.current.config.maxBufferLength = 30 * Math.max(1, rate);
-      controllerRef.current.config.maxMaxBufferLength = 30 * Math.max(1, rate);
+    if (active && elementRef.current) {
+      elementRef.current.playbackRate = rate;
+      if (playRequested) void elementRef.current.play().catch(() => undefined);
+      else elementRef.current.pause();
     }
-  }, [active, rate]);
+    if (controllerRef.current) {
+      controllerRef.current.config.maxBufferLength = scrubbing ? 6 : 30 * Math.max(1, rate);
+      controllerRef.current.config.maxMaxBufferLength = scrubbing ? 6 : 30 * Math.max(1, rate);
+    }
+  }, [active, rate, playRequested, scrubbing]);
 
   return <video {...(active ? props : {})} ref={elementRef} playsInline disableRemotePlayback muted={active ? props.muted : true}
     preload="auto" style={active ? props.style : { display: "none" }} aria-hidden={!active}

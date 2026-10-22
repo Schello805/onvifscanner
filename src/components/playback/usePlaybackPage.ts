@@ -99,6 +99,11 @@ export function usePlaybackPage() {
   const [activeClip, setActiveClip] = useState<RecordingClip | null>(null);
   const [playbackOffset, setPlaybackOffset] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const playbackIntentRef = useRef(true);
+  const scrubbingRef = useRef(false);
+  const resumeAfterScrubRef = useRef(true);
+  const suppressPlayerScrollRef = useRef(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [playerFullscreen, setPlayerFullscreen] = useState(false);
@@ -568,7 +573,57 @@ export function usePlaybackPage() {
   }, [activeClip, motionEvents, videoDuration, cameras]);
 
   // Open clip handlers
+  const playRequestedVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !playbackIntentRef.current) return;
+    void video.play().catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (videoRef.current === video && playbackIntentRef.current) setPlayerNeedsStart(true);
+    });
+  }, []);
+
+  const seekToOffset = useCallback((seconds: number) => {
+    let target = Math.max(0, seconds);
+    const video = videoRef.current;
+    if (video && Number.isFinite(video.duration)) {
+      target = Math.min(target, Math.max(0, video.duration - 0.001));
+    }
+    pendingSeekRef.current = target;
+    playbackIntentRef.current = !scrubbingRef.current;
+    if (video && video.readyState >= 1) {
+      video.currentTime = target;
+      pendingSeekRef.current = null;
+      if (playbackIntentRef.current) playRequestedVideo();
+      else video.pause();
+    }
+    setVideoCurrentTime(target);
+    setPlayerError("");
+    setIsPlaying(playbackIntentRef.current);
+  }, [playRequestedVideo]);
+
+  const beginScrubbing = useCallback(() => {
+    if (scrubbingRef.current) return;
+    resumeAfterScrubRef.current = activeClip ? playbackIntentRef.current : true;
+    scrubbingRef.current = true;
+    playbackIntentRef.current = false;
+    videoRef.current?.pause();
+    setIsPlaying(false);
+    setIsScrubbing(true);
+  }, [activeClip]);
+
+  const endScrubbing = useCallback((resume = true) => {
+    if (!scrubbingRef.current) return;
+    scrubbingRef.current = false;
+    playbackIntentRef.current = resume && resumeAfterScrubRef.current;
+    setIsScrubbing(false);
+    setIsPlaying(playbackIntentRef.current);
+    if (playbackIntentRef.current) playRequestedVideo();
+    else videoRef.current?.pause();
+  }, [playRequestedVideo]);
+
   const openClip = (clip: RecordingClip) => {
+    suppressPlayerScrollRef.current = false;
+    playbackIntentRef.current = true;
     setVideoDuration(0);
     setVideoCurrentTime(0);
     setPlaybackOffset(0);
@@ -585,6 +640,12 @@ export function usePlaybackPage() {
 
   const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
     const target = Math.max(0, offsetSec);
+    if (activeClip?.id === clip.id) {
+      seekToOffset(target);
+      return;
+    }
+    suppressPlayerScrollRef.current = Boolean(activeClip?.id) && scrubbingRef.current;
+    playbackIntentRef.current = !scrubbingRef.current;
     setPlaybackOffset(0);
     setVideoDuration(0);
     setVideoCurrentTime(0);
@@ -596,8 +657,8 @@ export function usePlaybackPage() {
     setPlayerOptionsOpen(false);
     setActiveClip(clip);
     setPlaybackAttempt((attempt) => attempt + 1);
-    setIsPlaying(true);
-  }, []);
+    setIsPlaying(playbackIntentRef.current);
+  }, [activeClip?.id, seekToOffset]);
 
   useEffect(() => {
     if (activeClip?.timeStr) {
@@ -695,31 +756,16 @@ export function usePlaybackPage() {
   const togglePlay = useCallback(() => {
     if (videoRef.current) {
       if (videoRef.current.paused) {
-        void videoRef.current.play().catch(() => null);
+        playbackIntentRef.current = true;
+        playRequestedVideo();
         setIsPlaying(true);
       } else {
+        playbackIntentRef.current = false;
         videoRef.current.pause();
         setIsPlaying(false);
       }
     }
-  }, []);
-
-  const seekToOffset = useCallback((seconds: number) => {
-    let target = Math.max(0, seconds);
-    if (videoRef.current && Number.isFinite(videoRef.current.duration)) {
-      target = Math.min(target, Math.max(0, videoRef.current.duration - 0.001));
-    }
-    pendingSeekRef.current = target;
-    const video = videoRef.current;
-    if (video && video.readyState >= 1) {
-      video.currentTime = target;
-      pendingSeekRef.current = null;
-      void video.play().catch(() => setPlayerNeedsStart(true));
-    }
-    setVideoCurrentTime(target);
-    setPlayerError("");
-    setIsPlaying(true);
-  }, []);
+  }, [playRequestedVideo]);
 
   const seekRelative = useCallback((seconds: number) => {
     if (!activeClip) return;
@@ -1166,12 +1212,12 @@ export function usePlaybackPage() {
   }, [activeClip]);
 
   const nextPlaybackUrl = useMemo(() => {
-    if (!activeClip || !autoPlayNext) return "";
+    if (!activeClip || !autoPlayNext || isScrubbing) return "";
     if (videoDuration <= 0 || videoDuration - videoCurrentTime > 30 * Math.max(1, playbackRate)) return "";
     const next = chronologicalCameraClips(clips, activeClip.cameraId)
       .find((clip) => recordingStart(clip) > recordingStart(activeClip));
     return next ? `/api/nvr/recordings/hls?clipId=${encodeURIComponent(next.id)}` : "";
-  }, [activeClip, autoPlayNext, clips, videoDuration, videoCurrentTime, playbackRate]);
+  }, [activeClip, autoPlayNext, clips, videoDuration, videoCurrentTime, playbackRate, isScrubbing]);
 
   const playPreviousClip = () => {
     if (!activeClip) return;
@@ -1201,7 +1247,7 @@ export function usePlaybackPage() {
     if (!activeClip) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if user is typing in an input
-      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) {
+      if (e.defaultPrevented || ["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
       if (e.key === " " || e.key === "k") {
@@ -1248,7 +1294,7 @@ export function usePlaybackPage() {
   }, [showStatsModal]);
 
   useEffect(() => {
-    if (activeClip && !playerFullscreen) {
+    if (activeClip && !playerFullscreen && !scrubbingRef.current && !suppressPlayerScrollRef.current) {
       playerContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [activeClip, playerFullscreen]);
@@ -1340,6 +1386,11 @@ export function usePlaybackPage() {
     setActiveClip,
     isPlaying,
     setIsPlaying,
+    playbackIntentRef,
+    isScrubbing,
+    scrubbingRef,
+    beginScrubbing,
+    endScrubbing,
     isMuted,
     setIsMuted,
     playbackRate,
