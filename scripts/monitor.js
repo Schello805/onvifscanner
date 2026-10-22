@@ -4,6 +4,7 @@ const { OnvifEventManager } = require('./onvif-events');
 const { MotionRecorder, BUFFER_SEGMENT_SECONDS, RECORDING_COMPLETE_COMMAND, motionBufferDirectory, motionBufferRecordPattern } = require('./motion-recorder');
 const { sendCameraNotification } = require('./ntfy');
 const { ObjectDetector } = require('./object-detector');
+const { mediaSourceConfig } = require('./legacy-rtsp-source');
 const { readLicensePlates } = require('./license-plate-reader');
 const { findKnownEntity, touchKnownEntity } = require('./known-entities');
 const { matchKnownPersons } = require('./face-recognizer');
@@ -992,7 +993,8 @@ async function syncMediaMtxPaths(cameras) {
       }
       
       if (uris && uris.length > 0) {
-        let uri = selectMainstreamForRecording(uris);
+        const originalUri = selectMainstreamForRecording(uris);
+        let uri = originalUri;
         if (!uri) continue;
         if (cam.username) {
            try {
@@ -1033,9 +1035,7 @@ async function syncMediaMtxPaths(cameras) {
         }
 
         desiredPaths[cam.id] = {
-          source: uri,
-          sourceOnDemand: !recordingActive,
-          rtspTransport: "tcp",
+          ...mediaSourceConfig({ camera: cam, uri: originalUri, source: uri, alwaysOn: recordingActive }),
           record: recordingActive,
           runOnRecordSegmentComplete: recordMode === 'motion' ? RECORDING_COMPLETE_COMMAND : '',
           ...(recordingActive ? {
@@ -1078,6 +1078,10 @@ async function syncMediaMtxPaths(cameras) {
           Boolean(existing.record) !== Boolean(config.record) ||
           Boolean(existing.sourceOnDemand) !== Boolean(config.sourceOnDemand) ||
           (existing.runOnRecordSegmentComplete || '') !== config.runOnRecordSegmentComplete ||
+          (existing.runOnInit || '') !== config.runOnInit ||
+          Boolean(existing.runOnInitRestart) !== config.runOnInitRestart ||
+          (existing.runOnDemand || '') !== config.runOnDemand ||
+          Boolean(existing.runOnDemandRestart) !== config.runOnDemandRestart ||
           (config.rtspTransport && existing.rtspTransport !== config.rtspTransport) ||
           recPathChanged ||
           segDurChanged

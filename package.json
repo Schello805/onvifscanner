@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.18.72",
+  "version": "0.18.73",
   "private": true,
   "description": "Local-first camera discovery, monitoring and NVR for ONVIF/RTSP cameras.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -19,7 +19,9 @@
     "test:recording": "node scripts/test-recording.js",
     "test:recording:api": "node scripts/test-recording-api.js",
     "test:recording:rtsp": "node scripts/test-recording-rtsp.js",
-    "test": "npm run test:motion-policy && npm run test:object-detection-policy && npm run test:object-detector && npm run test:build && npm run test:license-plate-reader && npm run test:image-annotator",
+    "test:legacy-rtsp": "node scripts/test-legacy-rtsp.js",
+    "test:legacy-rtsp:integration": "node scripts/test-legacy-rtsp-integration.js",
+    "test": "npm run test:motion-policy && npm run test:object-detection-policy && npm run test:object-detector && npm run test:build && npm run test:license-plate-reader && npm run test:image-annotator && npm run test:legacy-rtsp",
     "test:object-detector": "node scripts/test-object-detector.js",
     "test:build": "node scripts/test-build.js",
     "test:motion-policy": "node scripts/test-motion-policy.js",

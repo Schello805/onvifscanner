@@ -12,6 +12,7 @@ if (!process.env.DATABASE_URL) {
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { internalRtspEnvironment } = require("./scripts/legacy-rtsp-source");
 const {
   SESSION_COOKIE_NAME,
   isAppAuthEnabled,
@@ -63,11 +64,12 @@ app.prepare().then(async () => {
 
   let mediaMtx = null;
   let mediaRestartTimer = null;
+  let mediaStarting = false;
   let monitorController = null;
   let shuttingDown = false;
 
-  const startMediaMtx = () => {
-    if (shuttingDown || mediaMtx) return;
+  const startMediaMtx = async () => {
+    if (shuttingDown || mediaMtx || mediaStarting) return;
     let mediamtxPath = path.join(__dirname, "mediamtx");
     if (!fs.existsSync(mediamtxPath)) {
       for (const candidate of ["/usr/local/bin/mediamtx", "/usr/bin/mediamtx"]) {
@@ -84,9 +86,22 @@ app.prepare().then(async () => {
 
     console.log(`🚀 Starting MediaMTX (${mediamtxPath})...`);
     const configPath = path.join(__dirname, "mediamtx.yml");
+    mediaStarting = true;
+    let mediaEnvironment;
+    try {
+      mediaEnvironment = await internalRtspEnvironment();
+    } catch {
+      mediaStarting = false;
+      console.error("Lokaler RTSP-Relay-Port konnte nicht vorbereitet werden.");
+      if (!shuttingDown) mediaRestartTimer = setTimeout(startMediaMtx, 2_000);
+      return;
+    }
+    mediaStarting = false;
+    if (shuttingDown) return;
     mediaMtx = spawn(mediamtxPath, fs.existsSync(configPath) ? [configPath] : [], {
       cwd: __dirname,
-      stdio: "inherit"
+      stdio: "inherit",
+      env: mediaEnvironment,
     });
     mediaMtx.on("error", (err) => console.error("Failed to start MediaMTX:", err));
     mediaMtx.on("exit", (code, signal) => {
@@ -173,10 +188,10 @@ app.prepare().then(async () => {
       console.error(err);
       process.exit(1);
     })
-    .listen(port, hostname, () => {
+    .listen(port, hostname, async () => {
       console.log(`> Ready on http://${hostname}:${port}`);
       
-      startMediaMtx();
+      await startMediaMtx();
 
       // Start Background Services
       try {

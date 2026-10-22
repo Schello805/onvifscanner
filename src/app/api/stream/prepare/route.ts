@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { isPrivateIpv4 } from "@/lib/net/ip";
 import { decryptSecret } from "@/lib/security";
+import { mediaSourceConfig } from "@/lib/mediaSource";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
 
     const allowPublic = (process.env.ALLOW_PUBLIC_SCAN ?? "false") === "true";
     let chosenSource: URL | null = null;
+    let chosenUri = "";
     let chosenCodec: string | null = null;
     let chosenIsSub = false;
     let unsupportedCodecSeen: string | null = null;
@@ -116,6 +118,7 @@ export async function POST(request: Request) {
       }
 
       chosenSource = parsed;
+      chosenUri = candidate;
       chosenCodec = codec;
       chosenIsSub = isLikelySubStream(candidate, rtspCandidates.indexOf(candidate));
       break;
@@ -143,10 +146,7 @@ export async function POST(request: Request) {
     const pathName = chosenIsSub && rtspCandidates.length > 1 ? `${camera.id}_sub` : `${camera.id}_live`;
     const encodedPath = encodeURIComponent(pathName);
     const config = {
-      source: chosenSource.toString(),
-      sourceOnDemand: true,
-      sourceOnDemandCloseAfter: "30s",
-      rtspTransport: "tcp",
+      ...mediaSourceConfig({ camera, uri: chosenUri, source: chosenSource.toString() }),
     };
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4000);
