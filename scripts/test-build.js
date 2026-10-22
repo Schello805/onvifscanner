@@ -53,6 +53,15 @@ async function main() {
     assert.ok(restored);
     assert.equal(current(), 'after-interruption');
 
+    fs.renameSync(dist, backup);
+    publish('incomplete-with-build-id');
+    await build({ ...options, run: async () => {
+      assert.equal(fs.readFileSync(path.join(backup, 'BUILD_ID'), 'utf8'), 'after-interruption');
+      publish('complete-after-interruption');
+      return 0;
+    } });
+    assert.equal(current(), 'complete-after-interruption');
+
     fs.rmSync(dist, { recursive: true });
     await assert.rejects(build({ ...options, run: async () => { fs.mkdirSync(dist); return 0; } }), /kein neuer Produktionsbuild/);
     assert.equal(fs.existsSync(dist), false);

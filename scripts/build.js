@@ -53,7 +53,7 @@ async function build({ directory = process.cwd(), isServiceActive = serviceActiv
   let buildStarted = false;
   try {
     const hasBuild = folder => fs.existsSync(path.join(folder, 'BUILD_ID'));
-    if (!hasBuild(dist) && hasBuild(backup)) {
+    if (hasBuild(backup)) {
       fs.rmSync(dist, { recursive: true, force: true });
       fs.renameSync(backup, dist);
     }
