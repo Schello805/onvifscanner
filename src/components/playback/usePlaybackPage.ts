@@ -113,7 +113,7 @@ export function usePlaybackPage() {
   const [seekFeedback, setSeekFeedback] = useState("");
   const [playerOptionsOpen, setPlayerOptionsOpen] = useState(false);
   const pendingSeekRef = useRef<number | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const seekFeedbackTimerRef = useRef<number | null>(null);
   const lastPlayerTapRef = useRef<{ side: "left" | "right"; at: number } | null>(null);
@@ -1161,15 +1161,15 @@ export function usePlaybackPage() {
 
   const activePlaybackUrl = useMemo(() => {
     if (!activeClip) return "";
-    const params = new URLSearchParams();
-    if (liveTranscode) {
-      params.set("transcode", "1");
-    }
-    const qs = params.toString();
-    if (!qs) return activeClip.streamUrl;
-    const sep = activeClip.streamUrl.includes("?") ? "&" : "?";
-    return `${activeClip.streamUrl}${sep}${qs}`;
-  }, [activeClip, liveTranscode]);
+    return `/api/nvr/recordings/hls?clipId=${encodeURIComponent(activeClip.id)}`;
+  }, [activeClip]);
+
+  const nextPlaybackUrl = useMemo(() => {
+    if (!activeClip || !autoPlayNext) return "";
+    const next = chronologicalCameraClips(clips, activeClip.cameraId)
+      .find((clip) => recordingStart(clip) > recordingStart(activeClip));
+    return next ? `/api/nvr/recordings/hls?clipId=${encodeURIComponent(next.id)}` : "";
+  }, [activeClip, autoPlayNext, clips]);
 
   const playPreviousClip = () => {
     if (!activeClip) return;
@@ -1431,6 +1431,7 @@ export function usePlaybackPage() {
     filteredMotionEvents,
     activeClipIndex,
     activePlaybackUrl,
+    nextPlaybackUrl,
     playbackOffset,
     playPreviousClip,
     playNextClip,

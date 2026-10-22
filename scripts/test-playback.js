@@ -48,6 +48,24 @@ async function main() {
     assert.equal((await fs.stat(converted)).mtimeMs, before.mtimeMs);
     const data = await fs.readFile(converted);
     assert.ok(data.indexOf(Buffer.from('moov')) < data.indexOf(Buffer.from('mdat')));
+    const hls = await loadTypescript('src/lib/recordingHls.ts');
+    const longSource = path.join(directory, 'long.mp4');
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=20', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '14.5', '-c:v', 'mpeg4', '-c:a', 'aac', longSource]);
+    const duration = await hls.recordingDuration(longSource);
+    const manifest = hls.recordingManifest('test-id', duration);
+    assert.equal((manifest.match(/#EXTINF:/g) || []).length, 3);
+    assert.ok(manifest.includes('#EXT-X-ENDLIST'));
+    assert.ok(manifest.includes('segment=2'));
+    const segments = await Promise.all([0, 1, 2].map((index) => hls.recordingSegment(longSource, index)));
+    for (let index = 0; index < segments.length; index += 1) {
+      const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', segments[index]], { encoding: 'utf8' }));
+      const video = probe.streams.find((stream) => stream.codec_type === 'video');
+      assert.equal(video.codec_name, 'h264');
+      assert.ok(Math.abs(Number(video.start_time) - index * 6) < 0.1);
+      assert.ok(Math.abs(Number(video.duration) - Math.min(6, 14.5 - index * 6)) < 0.1);
+    }
+    await assert.rejects(hls.recordingSegment(longSource, 3));
+    assert.equal(await hls.recordingSegment(longSource, 1), segments[1]);
     console.log('Playback timing, clip boundaries and FFmpeg compatibility tests passed.');
   } finally {
     if (previousCache === undefined) delete process.env.PLAYBACK_CACHE_DIR;

@@ -2,12 +2,18 @@
 
 import Link from "next/link";
 import { useRef } from "react";
+import { BufferedRecordingVideo } from "./BufferedRecordingVideo";
 import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX, ChevronLeft, ChevronRight, RotateCcw, RotateCw, Clock } from "lucide-react";
 import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const startupAttemptedRef = useRef(false);
+  const startupClipRef = useRef<string | undefined>(undefined);
+  if (startupClipRef.current !== pb.activeClip?.id) {
+    startupClipRef.current = pb.activeClip?.id;
+    startupAttemptedRef.current = false;
+  }
   const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playbackOffset, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
 
   const camSegmentSec = (selectedCamera?.recordSegmentMinutes || 15) * 60;
@@ -108,10 +114,17 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
             <div className="flex-1 flex flex-col min-h-0 relative">
               {/* Video Element */}
               <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
-                <video
-                  ref={videoRef}
-                  key={`${activeClip.id}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
-                  src={activePlaybackUrl}
+                <BufferedRecordingVideo
+                  mediaRef={videoRef}
+                  source={activePlaybackUrl}
+                  nextSource={pb.nextPlaybackUrl}
+                  attempt={playbackAttempt}
+                  startPosition={pendingSeekRef.current ?? 0}
+                  rate={playbackRate}
+                  onStreamError={(message) => {
+                    setPlayerPreparing(false);
+                    setPlayerError(message);
+                  }}
                   autoPlay
                   preload="auto"
                   playsInline
@@ -166,12 +179,6 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     const mediaErr = event.currentTarget.error;
                     if (!mediaErr || mediaErr.code === 1) return;
                     console.warn("Video playback error:", mediaErr?.code, mediaErr?.message);
-                    if (!liveTranscode && (mediaErr?.code === 3 || mediaErr?.code === 4)) {
-                      pendingSeekRef.current = pendingSeekRef.current ?? event.currentTarget.currentTime;
-                      setLiveTranscode(true);
-                      setPlayerError("");
-                      return;
-                    }
                     setPlayerPreparing(false);
                     setPlayerError(mediaErr?.code === 2
                       ? "Die Videoverbindung wurde unterbrochen. Bitte Verbindung und Speicherziel prüfen und die Wiedergabe erneut starten."
@@ -252,7 +259,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       <>
                         <RefreshCw className="mx-auto h-6 w-6 animate-spin text-amber-400" />
                         <p className="mt-2 text-sm font-semibold text-white">Videodaten werden geladen…</p>
-                        <p className="mt-1 text-xs text-slate-400">{liveTranscode ? "Das kompatible Video wird vorbereitet oder gepuffert. Die erste Konvertierung kann länger dauern." : "Die Wiedergabe wird an derselben Position fortgesetzt, sobald genügend Daten vorhanden sind."}</p>
+                        <p className="mt-1 text-xs text-slate-400">Kurze Videosegmente werden gepuffert. Die Wiedergabe läuft anschließend an derselben Position weiter.</p>
                       </>
                     ) : playerNeedsStart ? (
                       <>

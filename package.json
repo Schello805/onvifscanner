@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.18.66",
+  "version": "0.18.67",
   "private": true,
   "description": "Local-first camera discovery, monitoring and NVR for ONVIF/RTSP cameras.",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -28,6 +28,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "framer-motion": "^14.1.0",
+    "hls.js": "^1.7.3",
     "jimp": "^1.6.1",
     "lucide-react": "^1.8.0",
     "next": "^14.2.0",
