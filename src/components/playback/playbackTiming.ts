@@ -8,6 +8,12 @@ export function recordingStart(clip: RecordingClip): number {
   return new Date(`${clip.dateStr}T${clip.timeStr}`).getTime() / 1000;
 }
 
+export function recordingPlaybackMoment(clip: RecordingClip, offsetSeconds: number): Date | null {
+  const timestamp = recordingStart(clip) + (Number.isFinite(offsetSeconds) ? Math.max(0, offsetSeconds) : 0);
+  const moment = new Date(timestamp * 1000);
+  return Number.isFinite(moment.getTime()) ? moment : null;
+}
+
 export function chronologicalCameraClips(clips: RecordingClip[], cameraId: string): RecordingClip[] {
   return clips.filter((clip) => clip.cameraId === cameraId)
     .sort((first, second) => recordingStart(first) - recordingStart(second));

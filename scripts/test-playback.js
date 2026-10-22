@@ -20,7 +20,7 @@ async function loadTypescript(filename, imports = {}) {
 
 async function main() {
   const timing = await loadTypescript('src/components/playback/playbackTiming.ts');
-  const { chronologicalCameraClips, recordingAt, recordingStart, recordingDayPosition } = timing;
+  const { chronologicalCameraClips, recordingAt, recordingStart, recordingDayPosition, recordingPlaybackMoment } = timing;
   const first = { id: 'first', cameraId: 'garage', dateStr: '2026-10-21', timeStr: '23:59:50', durationSeconds: 10 };
   const second = { id: 'second', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:00', durationSeconds: 15 };
   const later = { id: 'later', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:30', durationSeconds: 12 };
@@ -41,6 +41,10 @@ async function main() {
     assert.equal(legacy.timestamp, local.timestamp);
     assert.equal(local.timeStr, legacy.timeStr);
     const overnight = { ...first, timestamp: '2026-10-21T21:59:50.245Z' };
+    assert.equal(recordingPlaybackMoment(overnight, 10.375).toISOString(), '2026-10-21T22:00:00.620Z');
+    assert.equal(recordingPlaybackMoment(overnight, -10).toISOString(), overnight.timestamp);
+    assert.equal(recordingPlaybackMoment(overnight, NaN).toISOString(), overnight.timestamp);
+    assert.equal(recordingPlaybackMoment({ ...first, dateStr: 'invalid', timestamp: '' }, 10), null);
     assert.ok(Math.abs(recordingDayPosition(overnight, '2026-10-22') + 9.755) < 0.001);
     const { getMotionEventsForClip } = await loadTypescript('src/components/playback/playbackUtils.ts', { './playbackTiming': timing });
     const events = getMotionEventsForClip(overnight, [{ id: 'midnight', cameraId: 'garage', dateStr: '2026-10-22', timeStr: '00:00:00', timestamp: '2026-10-21T22:00:00Z' }]);
@@ -49,6 +53,9 @@ async function main() {
     assert.equal(getMotionEventsForClip(overnight, [{ id: 'previous-day', cameraId: 'garage', dateStr: '2026-10-20', timeStr: '23:59:55', timestamp: '2026-10-20T21:59:55Z' }]).length, 0);
     const summer = { ...first, timestamp: '2026-10-25T00:30:00Z' };
     const winter = { ...first, timestamp: '2026-10-25T01:30:00Z' };
+    const autumnChange = { ...first, timestamp: '2026-10-25T00:59:55Z' };
+    assert.equal(recordingPlaybackMoment(autumnChange, 10).getHours(), 2);
+    assert.equal(recordingPlaybackMoment(autumnChange, 10).getMinutes(), 0);
     assert.equal(recordingStart(winter) - recordingStart(summer), 3600);
   } finally {
     if (originalTimezone === undefined) delete process.env.TZ;

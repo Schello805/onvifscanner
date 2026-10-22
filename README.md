@@ -115,6 +115,8 @@ Videosegmente liegen unter `data/playback-cache/segments` und werden wiederverwe
 
 Abgebrochene Wiedergabeanforderungen beenden nicht mehr benötigte Segmentarbeiten. Verwenden mehrere Betrachter denselben Auftrag, bleibt dieser für die übrigen Betrachter erhalten. Metadatenprüfungen sind auf zwei gleichzeitige Prozesse begrenzt. Scheitert das Vorladen des Folgeclips, kann der Player beim Wechsel auf dessen Originaldatei zurückfallen.
 
+Im Videobild zeigt eine dezente Einblendung die tatsächliche Aufnahme-Uhrzeit mit Sekunden und Datum in der lokalen Zeitzone des Browsers. Sie folgt der aktuellen Abspielposition, auch bei Zeitsprüngen, 2× und über Mitternacht; die Clipdauer bleibt zusätzlich am Fortschrittsbalken sichtbar. Die Zeit im Player-Kopf ist ausdrücklich als Clip-Start gekennzeichnet.
+
 ### Automatische Aufnahme- und Wiedergabetests
 
 Voraussetzungen sind die Entwicklungsabhängigkeiten, `ffmpeg` und `ffprobe`. Für die Browserprüfung wird Chromium einmalig mit `npx playwright install chromium` installiert.

@@ -158,6 +158,8 @@ async function main() {
     await page.mouse.up();
     await page.waitForFunction(() => !window.pb.isScrubbing && !window.pb.videoRef.current.seeking);
     assert.ok(Math.abs(await page.evaluate(() => window.pb.videoRef.current.currentTime) - 8.4) < 0.05);
+    await page.getByLabel('Aktuelle Aufnahmezeit').getByText('12:00:08 Uhr', { exact: true }).waitFor();
+    assert.ok(Math.abs(Date.parse(await page.getByLabel('Aktuelle Aufnahmezeit').getAttribute('datetime')) - Date.parse(`${date}T10:00:08.645Z`)) < 2);
     const afterScrub = await page.evaluate(() => ({ loads: window.loadStarts, seeks: window.seekTimes.length, attempt: window.pb.playbackAttempt, source: window.pb.videoRef.current.currentSrc, paused: window.pb.videoRef.current.paused }));
     assert.equal(afterScrub.loads, beforeScrub.loads); assert.equal(afterScrub.source, beforeScrub.source); assert.equal(afterScrub.attempt, beforeScrub.attempt);
     assert.ok(afterScrub.seeks - beforeScrub.seeks < 15); assert.equal(afterScrub.paused, true);
@@ -238,6 +240,7 @@ async function main() {
     }
     await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await touchPage.waitForFunction(() => !window.pb.isScrubbing && !window.pb.videoRef.current.seeking && Math.abs(window.pb.videoRef.current.currentTime - 19.2) < 0.1);
+    await touchPage.getByLabel('Aktuelle Aufnahmezeit').getByText('12:00:19 Uhr', { exact: true }).waitFor();
     assert.equal(await touchPage.evaluate(() => window.pb.videoRef.current.paused), true);
     assert.ok(Math.abs(await touchPage.evaluate(() => window.scrollY) - scrollBeforeTouch) < 2);
     await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touchPoint(0.3)] });
