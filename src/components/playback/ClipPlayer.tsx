@@ -108,7 +108,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
               <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
-                  key={`${activeClip.id}-${playbackOffset}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
+                  key={`${activeClip.id}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
                   src={activePlaybackUrl}
                   autoPlay
                   playsInline
@@ -119,10 +119,9 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerNeedsStart(false);
                   }}
                   onPause={() => setIsPlaying(false)}
-                  onLoadStart={() => {
-                    setPlayerPreparing(false);
-                  }}
+                  onLoadStart={() => setPlayerPreparing(true)}
                   onCanPlay={(event) => {
+                    if (pendingSeekRef.current !== null) return;
                     setPlayerPreparing(false);
                     setPlayerError("");
                     const dur = event.currentTarget.duration || 0;
@@ -148,6 +147,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     const mediaErr = videoRef.current?.error;
                     console.warn("Video playback error:", mediaErr?.code, mediaErr?.message);
                     if (!liveTranscode) {
+                      pendingSeekRef.current = pendingSeekRef.current ?? videoRef.current?.currentTime ?? 0;
                       setLiveTranscode(true);
                       setPlayerError("");
                       return;
@@ -156,7 +156,18 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerError("Dieser Aufnahme-Abschnitt ist unvollständig oder konnte nicht geladen werden.");
                   }}
                   onLoadedMetadata={(e) => {
-                    setPlayerPreparing(false);
+                    e.currentTarget.playbackRate = playbackRate;
+                    if (pendingSeekRef.current !== null) {
+                      const target = pendingSeekRef.current;
+                      if (Number.isFinite(e.currentTarget.duration) && target >= e.currentTarget.duration) {
+                        e.currentTarget.pause();
+                        setPlayerPreparing(false);
+                        setPlayerError("Für diesen Zeitpunkt enthält die Datei keine Videodaten.");
+                        return;
+                      }
+                      pendingSeekRef.current = null;
+                      e.currentTarget.currentTime = target;
+                    }
                     setPlayerError("");
                     const dur = e.currentTarget.duration || 0;
                     if (Number.isFinite(dur) && dur > 0) {
@@ -167,9 +178,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   setVideoCurrentTime(e.currentTarget.currentTime || 0);
                 }}
                 onEnded={() => {
-                  if (autoPlayNext && activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1) {
-                    playNextClip();
-                  }
+                  if (autoPlayNext) playNextClip();
                 }}
               />
               <div

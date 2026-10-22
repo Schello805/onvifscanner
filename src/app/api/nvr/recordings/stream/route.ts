@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
-import { spawn } from "child_process";
+import { compatiblePlaybackVideo } from "@/lib/playbackVideo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +14,6 @@ export async function GET(req: Request) {
     const clipId = searchParams.get("clipId");
     const download = searchParams.get("download") === "1";
     const liveTranscode = searchParams.get("transcode") === "1";
-    const offset = Math.max(0, Number(searchParams.get("offset") || "0"));
 
     if (!clipId) {
       return new Response("Clip ID missing", { status: 400 });
@@ -27,7 +26,7 @@ export async function GET(req: Request) {
       return new Response("Invalid clip ID", { status: 400 });
     }
 
-    const resolved = path.resolve(decodedPath);
+    let resolved = path.resolve(decodedPath);
 
     // Verify file is within an approved storage target or system recording directories
     const targets = await prisma.storageTarget.findMany();
@@ -62,42 +61,8 @@ export async function GET(req: Request) {
       return new Response("File not found", { status: 404 });
     }
 
-    // 1. Server-side seek & stream via FFmpeg when offset > 0 or liveTranscode requested
-    // Fast input seek (-ss before -i) takes < 30ms, video is copied directly (-c:v copy, 0% CPU),
-    // audio is transcoded to AAC for universal browser playback, streamed via pipe:1 with ZERO disk writes!
-    if ((offset > 0 || liveTranscode) && !download) {
-      const ffmpegArgs = [
-        "-y", "-hide_banner", "-loglevel", "error",
-      ];
-      if (offset > 0) {
-        ffmpegArgs.push("-ss", String(offset));
-      }
-      ffmpegArgs.push(
-        "-i", resolved,
-        "-map", "0:v:0", "-map", "0:a:0?",
-        "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "128k",
-        "-f", "mp4",
-        "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-        "pipe:1"
-      );
-
-      const ffmpegProc = spawn("ffmpeg", ffmpegArgs, { stdio: ["ignore", "pipe", "ignore"] });
-
-      req.signal.addEventListener("abort", () => {
-        try { ffmpegProc.kill("SIGKILL"); } catch {}
-      });
-      ffmpegProc.on("error", () => {});
-
-      const webStream = Readable.toWeb(ffmpegProc.stdout) as ReadableStream<Uint8Array>;
-      return new Response(webStream, {
-        status: 200,
-        headers: {
-          "Content-Type": "video/mp4",
-          "Cache-Control": "no-cache, no-store",
-          "X-Accel-Buffering": "no",
-        },
-      });
+    if (liveTranscode && !download) {
+      resolved = await compatiblePlaybackVideo(resolved);
     }
 
     // 2. Direct native streaming (default): 0 ms latency, 0% CPU, instant YouTube-style seeking

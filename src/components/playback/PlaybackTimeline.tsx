@@ -29,7 +29,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
       const cam = cameras.find((c) => c.id === clip.cameraId);
       const segSec = (cam?.recordSegmentMinutes || 15) * 60;
       const clipDuration = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0
-        ? Math.min(clip.durationSeconds, segSec)
+        ? clip.durationSeconds
         : segSec;
       const endSec = startSec + clipDuration;
 
@@ -272,18 +272,13 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
                 (item) => clickSeconds >= item.startSec && clickSeconds < item.endSec
               );
               if (targetItem) {
-                const offset = Math.max(0, Math.floor(clickSeconds - targetItem.startSec));
+                const offset = Math.max(0, clickSeconds - targetItem.startSec);
                 openClipWithOffset(targetItem.clip, offset);
                 return;
               }
             }
 
             // Fallback: check if a motion event is near this point on the timeline
-            const nearbyEvent = motionEvents.find((ev) => Math.abs(ev.totalMinutes - totalMinutes) <= 2);
-            if (nearbyEvent) {
-              void playEvent(nearbyEvent);
-              return;
-            }
             const hour = Math.floor(totalMinutes / 60) % 24;
             const minute = totalMinutes % 60;
             const timeFormatted = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} Uhr`;
@@ -368,7 +363,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
                     );
 
                     if (targetItem) {
-                      const offset = Math.max(0, Math.floor(clickedSec - targetItem.startSec));
+                      const offset = Math.max(0, clickedSec - targetItem.startSec);
                       openClipWithOffset(targetItem.clip, offset);
                     }
                   }}

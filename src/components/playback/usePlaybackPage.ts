@@ -7,6 +7,7 @@ import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { type ActivityStatsResponse, type CameraSimple, type RecordingClip, type RecordingCalendarDay, type ClipSortBy, type ClipSizeFilter, type TimelineWindowMinutes, cameraNameCollator, type MotionEvent, type DailySummary, type ClipMotionEvent } from "@/components/playback/playbackTypes";
 import { parseTimeToSeconds, getMotionEventsForClip, getTodayStr } from "@/components/playback/playbackUtils";
+import { chronologicalCameraClips, recordingAt, recordingStart } from "./playbackTiming";
 
 export function usePlaybackPage() {
   const { toast } = useToast();
@@ -583,21 +584,18 @@ export function usePlaybackPage() {
   };
 
   const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
-    let target = Math.max(0, Math.floor(offsetSec));
-    if (typeof clip.durationSeconds === "number" && clip.durationSeconds > 0) {
-      target = Math.min(target, Math.max(0, clip.durationSeconds - 1));
-    }
-    setPlaybackOffset(target);
+    const target = Math.max(0, offsetSec);
+    setPlaybackOffset(0);
     setVideoDuration(0);
     setVideoCurrentTime(0);
-    pendingSeekRef.current = null;
+    pendingSeekRef.current = target;
     setLiveTranscode(false);
     setPlayerPreparing(false);
     setPlayerError("");
     setPlayerNeedsStart(false);
-    setPlaybackAttempt(0);
     setPlayerOptionsOpen(false);
     setActiveClip(clip);
+    setPlaybackAttempt((attempt) => attempt + 1);
     setIsPlaying(true);
   }, []);
 
@@ -707,25 +705,32 @@ export function usePlaybackPage() {
   }, []);
 
   const seekToOffset = useCallback((seconds: number) => {
-    let target = Math.max(0, Math.floor(seconds));
-    if (activeClip && typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0) {
-      target = Math.min(target, Math.max(0, activeClip.durationSeconds - 1));
+    let target = Math.max(0, seconds);
+    if (videoRef.current && Number.isFinite(videoRef.current.duration)) {
+      target = Math.min(target, Math.max(0, videoRef.current.duration - 0.001));
     }
-    setPlaybackOffset(target);
-    setVideoCurrentTime(0);
-    setVideoDuration(0);
+    pendingSeekRef.current = target;
+    const video = videoRef.current;
+    if (video && video.readyState >= 1) {
+      video.currentTime = target;
+      pendingSeekRef.current = null;
+      void video.play().catch(() => setPlayerNeedsStart(true));
+    }
+    setVideoCurrentTime(target);
     setPlayerError("");
     setIsPlaying(true);
-  }, [activeClip]);
+  }, []);
 
   const seekRelative = useCallback((seconds: number) => {
     if (!activeClip) return;
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
     const configuredSegSec = (cam?.recordSegmentMinutes || 15) * 60;
-    const segSec = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
+    const segSec = videoRef.current && Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
+      ? videoRef.current.duration
+      : typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
       ? activeClip.durationSeconds
       : configuredSegSec;
-    const currentPos = (playbackOffset || 0) + (videoCurrentTime || 0);
+    const currentPos = pendingSeekRef.current ?? videoRef.current?.currentTime ?? videoCurrentTime;
     const newTarget = currentPos + seconds;
 
     // Inside current clip bounds
@@ -736,16 +741,23 @@ export function usePlaybackPage() {
     }
 
     // Crossing clip boundary:
-    const sameCameraClips = clips
-      .filter((c) => c.cameraId === activeClip.cameraId && c.dateStr === activeClip.dateStr)
-      .sort((a, b) => parseTimeToSeconds(a.timeStr) - parseTimeToSeconds(b.timeStr));
+    const sameCameraClips = chronologicalCameraClips(clips, activeClip.cameraId);
+
+    const targetTimestamp = recordingStart(activeClip) + newTarget;
+    const matchingClip = recordingAt(sameCameraClips, targetTimestamp, configuredSegSec);
+    if (matchingClip && matchingClip.id !== activeClip.id) {
+      openClipWithOffset(matchingClip, targetTimestamp - recordingStart(matchingClip));
+      showSeekFeedback(`${seconds > 0 ? "+" : ""}${seconds}s`);
+      return;
+    }
 
     const currentIndex = sameCameraClips.findIndex((c) => c.id === activeClip.id);
 
     if (newTarget < 0) {
       if (currentIndex > 0) {
         const prevClip = sameCameraClips[currentIndex - 1];
-        const targetOffset = Math.max(0, segSec + newTarget);
+        const previousDuration = prevClip.durationSeconds || configuredSegSec;
+        const targetOffset = Math.max(0, previousDuration - 0.001);
         openClipWithOffset(prevClip, targetOffset);
         showSeekFeedback(seconds < 0 ? `${seconds}s (Vorheriger Clip)` : `Clip gewechselt`);
         return;
@@ -759,7 +771,7 @@ export function usePlaybackPage() {
     if (newTarget >= segSec) {
       if (currentIndex >= 0 && currentIndex < sameCameraClips.length - 1) {
         const nextClip = sameCameraClips[currentIndex + 1];
-        const targetOffset = Math.max(0, newTarget - segSec);
+        const targetOffset = 0;
         openClipWithOffset(nextClip, targetOffset);
         showSeekFeedback(`+${seconds}s (Nächster Clip)`);
         return;
@@ -769,7 +781,7 @@ export function usePlaybackPage() {
         return;
       }
     }
-  }, [activeClip, clips, cameras, playbackOffset, videoCurrentTime, seekToOffset, openClipWithOffset, showSeekFeedback]);
+  }, [activeClip, clips, cameras, videoCurrentTime, seekToOffset, openClipWithOffset, showSeekFeedback]);
 
   const jumpToTime = useCallback(async (timeStr: string) => {
     if (!timeStr) {
@@ -818,7 +830,7 @@ export function usePlaybackPage() {
     const matchingClip = camClips.find((c) => {
       const clipStart = parseTimeToSeconds(c.timeStr);
       const clipDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0
-        ? Math.min(c.durationSeconds, configuredSegSec)
+        ? c.durationSeconds
         : configuredSegSec;
       const offset = targetSec - clipStart;
       return offset >= 0 && offset < clipDur;
@@ -832,28 +844,7 @@ export function usePlaybackPage() {
       return;
     }
 
-    // 2. Nearest clip
-    const sorted = [...camClips].sort((a, b) => parseTimeToSeconds(a.timeStr) - parseTimeToSeconds(b.timeStr));
-    let nearestClip = sorted[0];
-    let minDiff = Infinity;
-    for (const c of sorted) {
-      const clipStart = parseTimeToSeconds(c.timeStr);
-      const diff = Math.abs(clipStart - targetSec);
-      if (diff < minDiff) {
-        minDiff = diff;
-        nearestClip = c;
-      }
-    }
-
-    if (nearestClip) {
-      const clipStart = parseTimeToSeconds(nearestClip.timeStr);
-      const clipDur = typeof nearestClip.durationSeconds === "number" && nearestClip.durationSeconds > 0
-        ? Math.min(nearestClip.durationSeconds, configuredSegSec)
-        : configuredSegSec;
-      const offset = targetSec > clipStart ? Math.min(clipDur - 1, targetSec - clipStart) : 0;
-      openClipWithOffset(nearestClip, offset);
-      toast.info(`Kein Clip exakt um ${timeStr} Uhr – spiele Aufnahme ab ${nearestClip.timeStr.slice(0, 5)} Uhr`);
-    }
+    toast.info(`Keine Aufnahme für ${timeStr} Uhr vorhanden.`);
   }, [clips, selectedCameraId, selectedDate, cameras, selectedCamera, openClipWithOffset, toast]);
 
   const clearPlayerGesture = useCallback(() => {
@@ -1174,25 +1165,24 @@ export function usePlaybackPage() {
     if (liveTranscode) {
       params.set("transcode", "1");
     }
-    if (playbackOffset > 0) {
-      params.set("offset", String(Math.floor(playbackOffset)));
-    }
     const qs = params.toString();
     if (!qs) return activeClip.streamUrl;
     const sep = activeClip.streamUrl.includes("?") ? "&" : "?";
     return `${activeClip.streamUrl}${sep}${qs}`;
-  }, [activeClip, liveTranscode, playbackOffset]);
+  }, [activeClip, liveTranscode]);
 
   const playPreviousClip = () => {
-    if (activeClipIndex > 0) {
-      openClip(filteredClips[activeClipIndex - 1]);
-    }
+    if (!activeClip) return;
+    const previous = chronologicalCameraClips(clips, activeClip.cameraId)
+      .filter((clip) => recordingStart(clip) < recordingStart(activeClip)).pop();
+    if (previous) openClipWithOffset(previous, 0);
   };
 
   const playNextClip = () => {
-    if (activeClipIndex >= 0 && activeClipIndex < filteredClips.length - 1) {
-      openClip(filteredClips[activeClipIndex + 1]);
-    }
+    if (!activeClip) return;
+    const next = chronologicalCameraClips(clips, activeClip.cameraId)
+      .find((clip) => recordingStart(clip) > recordingStart(activeClip));
+    if (next) openClipWithOffset(next, 0);
   };
 
   const toggleFullscreen = useCallback(() => {
