@@ -551,7 +551,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   {/* Playback Speed */}
                   <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900 p-0.5">
                     <Gauge className="h-3 w-3 text-slate-400 ml-1.5 mr-1 hidden sm:inline" />
-                    {[0.5, 1, 1.5, 2, 4].map((rate) => (
+                    {[0.5, 1, 1.5, 2].map((rate) => (
                       <button
                         key={rate}
                         onClick={() => setSpeed(rate)}

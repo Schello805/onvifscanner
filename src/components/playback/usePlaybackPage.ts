@@ -924,9 +924,10 @@ export function usePlaybackPage() {
   }, [activeClipMotionEvents, playbackOffset, videoCurrentTime, seekToOffset]);
 
   const setSpeed = (rate: number) => {
-    setPlaybackRate(rate);
+    const speed = Number.isFinite(rate) ? Math.min(2, Math.max(0.5, rate)) : 1;
+    setPlaybackRate(speed);
     if (videoRef.current) {
-      videoRef.current.playbackRate = rate;
+      videoRef.current.playbackRate = speed;
     }
   };
 
