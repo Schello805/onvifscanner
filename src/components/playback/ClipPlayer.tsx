@@ -12,7 +12,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const startupAttemptedRef = useRef(false);
   const startupClipRef = useRef<string | undefined>(undefined);
   const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
-  useEffect(() => setBufferedRanges([]), [pb.activeClip?.id]);
+  const [hasVideoFrame, setHasVideoFrame] = useState(false);
+  useEffect(() => { setBufferedRanges([]); setHasVideoFrame(false); }, [pb.activeClip?.id]);
   const updateBufferedRanges = (video: HTMLVideoElement) => {
     setBufferedRanges(Array.from({ length: video.buffered.length }, (_, index) => ({ start: video.buffered.start(index), end: video.buffered.end(index) })));
   };
@@ -130,6 +131,12 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   rate={playbackRate}
                   playRequested={pb.playbackIntentRef.current}
                   scrubbing={pb.isScrubbing}
+                  onRecoveryStart={(position) => {
+                    setPlayerError("");
+                    setPlayerNeedsStart(false);
+                    setPlayerPreparing(true);
+                    setVideoCurrentTime(position);
+                  }}
                   onStreamError={(message) => {
                     setPlayerPreparing(false);
                     setPlayerError(message);
@@ -150,11 +157,13 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerPreparing(true);
                   }}
                   onPlaying={() => {
+                    setHasVideoFrame(true);
                     setPlayerPreparing(false);
                     setPlayerNeedsStart(false);
                     setPlayerError("");
                   }}
                   onWaiting={() => setPlayerPreparing(true)}
+                  onLoadedData={() => setHasVideoFrame(true)}
                   onSeeked={(event) => {
                     setPlayerPreparing(false);
                     updateBufferedRanges(event.currentTarget);
@@ -187,16 +196,6 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                           setPlayerNeedsStart(true);
                         }
                       });
-                  }}
-                  onError={(event) => {
-                    if (videoRef.current !== event.currentTarget) return;
-                    const mediaErr = event.currentTarget.error;
-                    if (!mediaErr || mediaErr.code === 1) return;
-                    console.warn("Video playback error:", mediaErr?.code, mediaErr?.message);
-                    setPlayerPreparing(false);
-                    setPlayerError(mediaErr?.code === 2
-                      ? "Die Videoverbindung wurde unterbrochen. Bitte Verbindung und Speicherziel prüfen und die Wiedergabe erneut starten."
-                      : "Dieser Aufnahme-Abschnitt ist unvollständig oder konnte nicht geladen werden.");
                   }}
                   onLoadedMetadata={(e) => {
                     e.currentTarget.playbackRate = playbackRate;
@@ -258,7 +257,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   <span className="rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm font-bold text-white shadow-2xl backdrop-blur-md">{seekFeedback}</span>
                 </div>
               ) : null}
-              {playerPreparing && !playerError && !playerNeedsStart && (pb.isScrubbing || (videoRef.current?.readyState || 0) >= 2) ? (
+              {playerPreparing && !playerError && !playerNeedsStart && (hasVideoFrame || pb.isScrubbing || (videoRef.current?.readyState || 0) >= 2) ? (
                 <div className="pointer-events-none absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded-lg bg-black/65 px-3 py-2 text-xs text-white backdrop-blur-sm" role="status">
                   <RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" /> Stelle wird geladen…
                 </div>
@@ -291,9 +290,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       <div className="flex flex-col items-center gap-2 p-2 max-w-sm text-center">
                         <p className="text-sm font-semibold text-rose-200">{playerError}</p>
                         <p className="text-xs text-slate-400">
-                          {effectiveDuration > 0 && effectiveDuration < (camSegmentSec - 60)
-                            ? `Dieser Clip ist nur ${formatSeconds(effectiveDuration)} lang (vorzeitiger Stream-Abbruch oder noch laufende Aufnahme).`
-                            : "Das Videoformat wird von diesem Browser nicht direkt unterstützt oder das Stream-Ende wurde erreicht."}
+                          Die automatische Wiederherstellung war nicht erfolgreich. Eine kürzere Clipdauer allein bedeutet nicht, dass die Aufnahme beschädigt ist.
                         </p>
                         <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
                           <button

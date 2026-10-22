@@ -81,12 +81,16 @@ async function limited<T>(job: () => Promise<T>): Promise<T> {
   }
 }
 
-async function sourceKey(source: string) {
+async function sourceKey(source: string, compatibility = false) {
   const stat = await fs.stat(source);
-  return createHash("sha256").update(`hls-v2:${source}:${stat.size}:${stat.mtimeMs}`).digest("hex");
+  return createHash("sha256").update(`hls-v2:${source}:${stat.size}:${stat.mtimeMs}${compatibility ? ":compatible" : ""}`).digest("hex");
 }
 
-export async function recordingProfile(source: string): Promise<Profile> {
+export async function recordingProfile(source: string, compatibility = false): Promise<Profile> {
+  if (compatibility) {
+    const profile = await recordingProfile(source);
+    return { duration: profile.duration, copyVideo: false, boundaries: Array.from({ length: Math.ceil(profile.duration / SEGMENT_SECONDS) + 1 }, (_, index) => Math.min(profile.duration, index * SEGMENT_SECONDS)) };
+  }
   const key = await sourceKey(source);
   let pending = metadata.get(key);
   if (!pending) {
@@ -122,25 +126,25 @@ export async function recordingDuration(source: string): Promise<number> {
   return (await recordingProfile(source)).duration;
 }
 
-export function recordingManifest(clipId: string, duration: number, boundaries = Array.from({ length: Math.ceil(duration / SEGMENT_SECONDS) + 1 }, (_, index) => Math.min(duration, index * SEGMENT_SECONDS))): string {
+export function recordingManifest(clipId: string, duration: number, boundaries = Array.from({ length: Math.ceil(duration / SEGMENT_SECONDS) + 1 }, (_, index) => Math.min(duration, index * SEGMENT_SECONDS)), compatibility = false): string {
   const target = Math.ceil(Math.max(...boundaries.slice(1).map((end, index) => end - boundaries[index])));
   const lines = ["#EXTM3U", "#EXT-X-VERSION:3", `#EXT-X-TARGETDURATION:${target}`, "#EXT-X-MEDIA-SEQUENCE:0", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-INDEPENDENT-SEGMENTS"];
   for (let index = 0; index < boundaries.length - 1; index += 1) {
     lines.push(`#EXTINF:${(boundaries[index + 1] - boundaries[index]).toFixed(6)},`,
-      `/api/nvr/recordings/hls?clipId=${encodeURIComponent(clipId)}&segment=${index}`);
+      `/api/nvr/recordings/hls?clipId=${encodeURIComponent(clipId)}&segment=${index}${compatibility ? "&compatibility=1" : ""}`);
   }
   return [...lines, "#EXT-X-ENDLIST", ""].join("\n");
 }
 
-export async function recordingSegment(source: string, index: number, signal?: AbortSignal): Promise<string> {
+export async function recordingSegment(source: string, index: number, signal?: AbortSignal, compatibility = false): Promise<string> {
   signal?.throwIfAborted();
-  const profile = await recordingProfile(source);
+  const profile = await recordingProfile(source, compatibility);
   signal?.throwIfAborted();
   if (!Number.isSafeInteger(index) || index < 0 || index >= profile.boundaries.length - 1) throw new Error("Ungültiges Videosegment");
   const start = profile.boundaries[index];
   const length = profile.boundaries[index + 1] - start;
   const directory = path.resolve(process.env.PLAYBACK_CACHE_DIR || "data/playback-cache", "segments");
-  const key = `${await sourceKey(source)}-${index}`;
+  const key = `${await sourceKey(source, compatibility)}-${index}`;
   const destination = path.join(directory, `${key}.ts`);
   try { await fs.access(destination); return destination; } catch {}
   const existing = jobs.get(key);

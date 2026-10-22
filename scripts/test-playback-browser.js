@@ -41,6 +41,12 @@ async function main() {
         import {ClipPlayer} from './src/components/playback/ClipPlayer';
         import {PlaybackTimeline} from './src/components/playback/PlaybackTimeline';
         import {usePlaybackPage} from './src/components/playback/usePlaybackPage';
+        import Hls from 'hls.js';
+        window.testHls=Hls;window.hlsInstances=[];window.mediaRecoveries=0;
+        const loadSource=Hls.prototype.loadSource;
+        Hls.prototype.loadSource=function(url){window.hlsInstances.push({hls:this,url});return loadSource.call(this,url)};
+        const recover=Hls.prototype.recoverMediaError;
+        Hls.prototype.recoverMediaError=function(){window.mediaRecoveries++;return recover.call(this)};
         function App(){const pb=usePlaybackPage();useEffect(()=>{window.pb=pb});return <main className="mx-auto max-w-6xl space-y-4"><ClipPlayer pb={pb}/><PlaybackTimeline pb={pb}/></main>}
         createRoot(document.getElementById('app')).render(<LanguageProvider><ToastProvider><App/></ToastProvider></LanguageProvider>);
       ` }, bundle: true, write: false, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' },
@@ -50,6 +56,7 @@ async function main() {
     const manifestRequests = [];
     let slowClip = '';
     let interruptedSegments = 0;
+    let compatibleSegments = 0;
     server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url, 'http://localhost');
@@ -60,23 +67,25 @@ async function main() {
           response.setHeader('Content-Type', 'text/css'); response.end(styles); return;
         }
         if (url.pathname === '/api/nvr/recordings/hls') {
-          if (breakManifests === true || (breakManifests === 'next' && url.searchParams.get('clipId') === 'next')) { response.statusCode = 500; response.end('simulated HLS failure'); return; }
+          const compatibility = url.searchParams.get('compatibility') === '1';
+          if (!compatibility && (breakManifests === true || (breakManifests === 'next' && url.searchParams.get('clipId') === 'next'))) { response.statusCode = 500; response.end('simulated HLS failure'); return; }
           const segment = url.searchParams.get('segment');
           if (segment !== null) {
+            if (compatibility) compatibleSegments++;
             const controller = new AbortController();
             response.once('close', () => {
               if (!response.writableEnded) { interruptedSegments++; controller.abort(); }
             });
             if (url.searchParams.get('clipId') === slowClip) await new Promise(resolve => setTimeout(resolve, 1500));
-            const file = await hls.recordingSegment(source, Number(segment), controller.signal);
+            const file = await hls.recordingSegment(source, Number(segment), controller.signal, compatibility);
             response.setHeader('Content-Type', 'video/mp2t');
             response.setHeader('Cache-Control', 'public, max-age=3600');
             response.end(await fs.readFile(file));
           } else {
             manifestRequests.push(url.searchParams.get('clipId'));
-            const profile = await hls.recordingProfile(source);
+            const profile = await hls.recordingProfile(source, compatibility);
             response.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-            response.end(hls.recordingManifest(url.searchParams.get('clipId'), profile.duration, profile.boundaries));
+            response.end(hls.recordingManifest(url.searchParams.get('clipId'), profile.duration, profile.boundaries, compatibility));
           }
           return;
         }
@@ -266,6 +275,16 @@ async function main() {
     await phone.waitForFunction(() => window.pb.videoRef.current?.currentSrc.includes('/direct') && !window.pb.videoRef.current.paused, null, { timeout: 25_000 });
     const recovered = await phone.evaluate(() => ({ rate: window.pb.videoRef.current.playbackRate, time: window.pb.videoRef.current.currentTime, error: window.pb.playerError }));
     assert.equal(recovered.rate, 2); assert.ok(recovered.time >= 3.375); assert.equal(recovered.error, ''); assert.ok(directRequests > 0);
+    await phone.evaluate(() => {
+      window.pb.setAutoPlayNext(false);
+      const video = window.pb.videoRef.current;
+      Object.defineProperty(video, 'error', { configurable: true, value: { code: 4, message: 'simulated unsupported original recording' } });
+      video.dispatchEvent(new Event('error'));
+      delete video.error;
+    });
+    await phone.waitForFunction(position => window.hlsInstances.some(entry => entry.url.includes('compatibility=1')) && window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.paused && window.pb.videoRef.current.currentTime >= position, recovered.time);
+    assert.equal(await phone.evaluate(() => window.pb.playerError), '');
+    assert.equal(await phone.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
     assert.deepEqual(errors, []);
     await mobile.close();
     breakManifests = 'next';
@@ -281,7 +300,57 @@ async function main() {
     assert.equal(await retry.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
     assert.deepEqual(errors, []);
     await retryContext.close();
-    console.log('Desktop/mobile playback tests passed: exact seek, live scrub preview, throttled mouse/touch drag, keyboard, cross-clip timeline, stable page scroll, canceled requests/gestures, gaps, pause, 2x, next clip, preserved list, HTTP-500 and failed prefetch recovery.');
+    breakManifests = false;
+    const decodeContext = await browser.newContext({ timezoneId: 'Europe/Berlin', locale: 'de-DE' });
+    const decodePage = await decodeContext.newPage();
+    await decodePage.addInitScript(() => { window.process = { env: { NODE_ENV: 'production' } }; });
+    decodePage.on('pageerror', error => errors.push(String(error)));
+    await decodePage.goto(url);
+    await decodePage.waitForFunction(() => window.pb?.clips.length === 3);
+    await decodePage.evaluate(() => { window.pb.setIsMuted(true); window.pb.setAutoPlayNext(false); window.pb.setSpeed(2); window.pb.openClipWithOffset(window.pb.clips.find(clip => clip.id === 'first'), 8.375); });
+    await decodePage.waitForFunction(() => window.pb.videoRef.current?.readyState >= 2 && !window.pb.videoRef.current.paused && window.pb.videoRef.current.currentTime >= 8.375);
+    const beforeDecodeError = await decodePage.evaluate(() => window.pb.videoRef.current.currentTime);
+    const beforeDirectRequests = directRequests;
+    await decodePage.evaluate(() => {
+      const video = window.pb.videoRef.current;
+      Object.defineProperty(video, 'error', { configurable: true, value: { code: 3, message: 'simulated browser decode failure' } });
+      video.dispatchEvent(new Event('error'));
+      delete video.error;
+    });
+    await decodePage.waitForFunction(position => window.mediaRecoveries === 1 && window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.paused && window.pb.videoRef.current.currentTime >= position, beforeDecodeError);
+    assert.equal(await decodePage.evaluate(() => window.pb.playerError), '');
+    assert.equal(directRequests, beforeDirectRequests);
+    assert.equal(await decodePage.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
+    await decodePage.evaluate(() => { window.pb.seekToOffset(21.375); window.pb.togglePlay(); });
+    await decodePage.waitForFunction(() => window.pb.videoRef.current.paused && !window.pb.videoRef.current.seeking && window.pb.videoRef.current.readyState >= 2);
+    const fatalDecode = () => {
+      const instance = window.hlsInstances.findLast(entry => entry.hls.media === window.pb.videoRef.current).hls;
+      instance.trigger(window.testHls.Events.ERROR, { fatal: true, type: window.testHls.ErrorTypes.MEDIA_ERROR, details: window.testHls.ErrorDetails.BUFFER_APPEND_ERROR });
+    };
+    await decodePage.evaluate(fatalDecode);
+    await decodePage.waitForFunction(() => window.hlsInstances.some(entry => entry.url.includes('compatibility=1')) && window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.seeking && Math.abs(window.pb.videoRef.current.currentTime - 21.375) < 0.05);
+    assert.ok(compatibleSegments > 0);
+    assert.equal(await decodePage.evaluate(() => window.pb.playerError), '');
+    assert.equal(await decodePage.evaluate(() => window.pb.videoRef.current.paused), true);
+    assert.equal(await decodePage.evaluate(() => window.pb.videoRef.current.playbackRate), 2);
+    assert.equal(directRequests, beforeDirectRequests);
+    await decodePage.evaluate(fatalDecode);
+    await decodePage.waitForFunction(() => window.pb.videoRef.current.currentSrc.includes('/direct') && window.pb.videoRef.current.readyState >= 2 && !window.pb.videoRef.current.seeking && Math.abs(window.pb.videoRef.current.currentTime - 21.375) < 0.05);
+    assert.equal(await decodePage.evaluate(() => window.pb.videoRef.current.paused), true);
+    await decodePage.evaluate(() => {
+      const video = window.pb.videoRef.current;
+      Object.defineProperty(video, 'error', { configurable: true, value: { code: 3, message: 'persistent decode failure' } });
+      video.dispatchEvent(new Event('error'));
+      delete video.error;
+    });
+    await decodePage.waitForFunction(() => window.pb.playerError.includes('Medienfehler 3'));
+    const recoveryCount = await decodePage.evaluate(() => window.hlsInstances.length);
+    await decodePage.waitForTimeout(500);
+    assert.equal(await decodePage.evaluate(() => window.hlsInstances.length), recoveryCount);
+    assert.equal(await decodePage.getByText(/vorzeitiger Stream-Abbruch/).count(), 0);
+    assert.deepEqual(errors, []);
+    await decodeContext.close();
+    console.log('Desktop/mobile playback tests passed: exact seek, live scrub preview, throttled mouse/touch drag, keyboard, cross-clip timeline, stable page scroll, canceled requests/gestures, gaps, pause, 2x, next clip, preserved list, HTTP-500, failed prefetch, decoder recovery and bounded compatible-segment fallback at the same position.');
   } finally {
     await browser?.close();
     if (server?.listening) await new Promise(resolve => server.close(resolve));

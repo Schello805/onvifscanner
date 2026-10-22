@@ -14,9 +14,10 @@ type Props = VideoHTMLAttributes<HTMLVideoElement> & {
   playRequested: boolean;
   scrubbing: boolean;
   onStreamError: (message: string) => void;
+  onRecoveryStart: (position: number) => void;
 };
 
-function Slot({ source, active, mediaRef, startPosition, rate, playRequested, scrubbing, onStreamError, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
+function Slot({ source, active, mediaRef, startPosition, rate, playRequested, scrubbing, onStreamError, onRecoveryStart, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
   const elementRef = useRef<HTMLVideoElement | null>(null);
   const controllerRef = useRef<Hls | null>(null);
   const sourceFailureRef = useRef<string | null>(null);
@@ -35,35 +36,100 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
   errorHandler.current = onStreamError;
   const isActive = useRef(active);
   isActive.current = active;
+  const recoveryHandler = useRef(onRecoveryStart);
+  recoveryHandler.current = onRecoveryStart;
+  const nativeErrorAction = useRef<(() => void) | null>(null);
+  const restorePositionAction = useRef<(() => void) | null>(null);
+  const readyAction = useRef<(() => void) | null>(null);
+  const recovering = useRef(false);
+  const lastPosition = useRef(startPosition);
 
   useEffect(() => {
     const video = elementRef.current;
     if (!video || !source) return;
+    lastPosition.current = initialPosition.current;
     sourceFailureRef.current = null;
     let hls: Hls | undefined;
-    let restoreFallback: (() => void) | undefined;
     let usedFallback = false;
+    let usedCompatibility = false;
+    let mediaRecoveries = 0;
+    let standbyMediaFailure = false;
+    let mode: "hls" | "compatible" | "original" = "hls";
+    let positionToRestore: number | null = null;
+    let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearRecoveryTimer = () => { clearTimeout(recoveryTimer); recoveryTimer = undefined; };
+    const position = () => positionToRestore ?? (video.currentTime > 0 || (video.readyState >= 1 && !video.error) ? video.currentTime : lastPosition.current);
+    const fail = (message: string) => {
+      clearRecoveryTimer();
+      recovering.current = false;
+      sourceFailureRef.current = message;
+      hls?.stopLoad();
+      video.pause();
+      if (isActive.current) errorHandler.current(message);
+    };
+    const beginRecovery = () => {
+      positionToRestore = position();
+      recovering.current = true;
+      sourceFailureRef.current = null;
+      video.pause();
+      if (isActive.current) recoveryHandler.current(positionToRestore);
+      clearRecoveryTimer();
+      recoveryTimer = setTimeout(() => {
+        recovering.current = false;
+        if (startCompatibility() || playOriginal()) return;
+        fail("Die Wiedergabe konnte an dieser Position nicht wiederhergestellt werden. Bitte Verbindung und Aufnahme prüfen.");
+      }, 20_000);
+    };
     const playOriginal = () => {
       const fallback = fallbackRef.current;
       if (!fallback || usedFallback) return false;
       usedFallback = true;
-      const position = video.currentTime || initialPosition.current;
+      beginRecovery();
+      mode = "original";
       hls?.destroy();
+      hls = undefined;
       controllerRef.current = null;
-      restoreFallback = () => {
-        video.playbackRate = rateRef.current;
-        video.currentTime = position;
-      };
-      video.addEventListener("loadedmetadata", restoreFallback, { once: true });
       video.src = fallback;
       video.load();
       return true;
     };
-    fallbackActionRef.current = playOriginal;
-    if (Hls.isSupported()) {
+    const startCompatibility = () => {
+      if (usedCompatibility) return false;
+      usedCompatibility = true;
+      beginRecovery();
+      mode = "compatible";
+      hls?.destroy();
+      hls = undefined;
+      controllerRef.current = null;
+      const compatible = new URL(source, window.location.href);
+      compatible.searchParams.set("compatibility", "1");
+      load(compatible.href);
+      return true;
+    };
+    const recoverMedia = () => {
+      if (recovering.current && mode === "hls") return true;
+      if (hls && mode === "hls" && mediaRecoveries < 1) {
+        mediaRecoveries += 1;
+        beginRecovery();
+        hls.recoverMediaError();
+        return true;
+      }
+      return startCompatibility() || playOriginal();
+    };
+    const load = (url: string) => {
+      if (!Hls.isSupported()) {
+        if (!video.canPlayType("application/vnd.apple.mpegurl")) {
+          fail("Dieser Browser unterstützt die segmentierte Wiedergabe nicht.");
+          return;
+        }
+        video.src = url;
+        video.preload = "auto";
+        video.load();
+        return;
+      }
       hls = new Hls({
         maxBufferLength: scrubbingRef.current ? 6 : 30 * Math.max(1, rateRef.current), maxMaxBufferLength: scrubbingRef.current ? 6 : 30 * Math.max(1, rateRef.current), maxBufferSize: 0,
-        backBufferLength: 30, startPosition: initialPosition.current,
+        backBufferLength: 30, startPosition: positionToRestore ?? initialPosition.current,
         fragLoadingTimeOut: 60_000,
         manifestLoadPolicy: { default: { ...Hls.DefaultConfig.manifestLoadPolicy.default, maxTimeToFirstByteMs: 60_000, maxLoadTimeMs: 90_000 } },
       });
@@ -71,26 +137,59 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return;
         const message = `Videodaten konnten nicht geladen werden (${data.details}${data.response?.code ? `, HTTP ${data.response.code}` : ""}). Bitte erneut starten.`;
-        sourceFailureRef.current = message;
+        console.warn("[Recording playback]", { mode, type: data.type, details: data.details, status: data.response?.code, position: position() });
         if (!isActive.current) {
+          sourceFailureRef.current = message;
+          standbyMediaFailure = data.type === Hls.ErrorTypes.MEDIA_ERROR;
           hls?.stopLoad();
           return;
         }
-        if (playOriginal()) return;
-        errorHandler.current(message);
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR ? recoverMedia() : playOriginal()) return;
+        fail(message);
       });
-      hls.loadSource(source);
+      hls.loadSource(url);
       hls.attachMedia(video);
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = source;
-      video.preload = "auto";
-      video.load();
-    } else errorHandler.current("Dieser Browser unterstützt die segmentierte Wiedergabe nicht.");
+    };
+    fallbackActionRef.current = () => standbyMediaFailure ? recoverMedia() : playOriginal();
+    nativeErrorAction.current = () => {
+      const error = video.error;
+      if (!error || error.code === 1 || (recovering.current && mode === "hls")) return;
+      const message = error.code === 2
+        ? "Die Videoverbindung wurde unterbrochen. Bitte Verbindung und Speicherziel prüfen."
+        : `Der Browser konnte das Video an dieser Position nicht dekodieren (Medienfehler ${error.code}).`;
+      console.warn("[Recording playback]", { mode, code: error.code, details: error.message, position: position() });
+      if (!isActive.current) {
+        sourceFailureRef.current = message;
+        standbyMediaFailure = error.code === 3 || error.code === 4;
+        hls?.stopLoad();
+        return;
+      }
+      if (error.code === 3 || error.code === 4 ? recoverMedia() : playOriginal()) return;
+      fail(message);
+    };
+    restorePositionAction.current = () => {
+      if (positionToRestore === null) return;
+      video.playbackRate = rateRef.current;
+      video.currentTime = positionToRestore;
+    };
+    readyAction.current = () => {
+      if (!recovering.current || video.readyState < 2 || video.seeking || video.error) return;
+      clearRecoveryTimer();
+      positionToRestore = null;
+      recovering.current = false;
+      if (isActive.current && playRequestedRef.current) void video.play().catch(() => undefined);
+      else video.pause();
+    };
+    load(source);
     return () => {
+      clearRecoveryTimer();
+      recovering.current = false;
       hls?.destroy();
-      if (restoreFallback) video.removeEventListener("loadedmetadata", restoreFallback);
       controllerRef.current = null;
       fallbackActionRef.current = null;
+      nativeErrorAction.current = null;
+      restorePositionAction.current = null;
+      readyAction.current = null;
       video.removeAttribute("src");
       video.load();
     };
@@ -116,7 +215,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
   useEffect(() => {
     if (!active || !source) return;
     const timer = window.setTimeout(() => {
-      if (elementRef.current && elementRef.current.readyState < 2) fallbackActionRef.current?.();
+      if (!recovering.current && elementRef.current && elementRef.current.readyState < 2) fallbackActionRef.current?.();
     }, 15_000);
     return () => window.clearTimeout(timer);
   }, [active, source]);
@@ -135,7 +234,17 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
 
   return <video {...(active ? props : {})} ref={elementRef} playsInline disableRemotePlayback muted={active ? props.muted : true}
     preload="auto" style={active ? props.style : { display: "none" }} aria-hidden={!active}
-    onLoadedMetadata={active ? props.onLoadedMetadata : undefined} />;
+    onError={() => nativeErrorAction.current?.()}
+    onLoadedMetadata={(event) => { restorePositionAction.current?.(); if (active) props.onLoadedMetadata?.(event); }}
+    onLoadedData={(event) => { readyAction.current?.(); if (active) props.onLoadedData?.(event); }}
+    onCanPlay={(event) => { readyAction.current?.(); if (active) props.onCanPlay?.(event); }}
+    onSeeked={(event) => { readyAction.current?.(); if (active) props.onSeeked?.(event); }}
+    onPlaying={(event) => { readyAction.current?.(); if (active) props.onPlaying?.(event); }}
+    onTimeUpdate={(event) => {
+      if (recovering.current || event.currentTarget.error || event.currentTarget.readyState < 1) return;
+      lastPosition.current = event.currentTarget.currentTime;
+      if (active) props.onTimeUpdate?.(event);
+    }} />;
 }
 
 export function BufferedRecordingVideo(props: Props) {

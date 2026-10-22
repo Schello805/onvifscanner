@@ -11,15 +11,16 @@ export async function GET(request: Request) {
     const clipId = params.get("clipId");
     if (!clipId) return new Response("Clip ID missing", { status: 400 });
     const source = await recordingFile(clipId);
+    const compatibility = params.get("compatibility") === "1";
     const segment = params.get("segment");
     if (segment !== null) {
-      const file = await recordingSegment(source, Number(segment), request.signal);
+      const file = await recordingSegment(source, Number(segment), request.signal, compatibility);
       return new Response(new Uint8Array(await fs.readFile(file)), {
         headers: { "Content-Type": "video/mp2t", "Cache-Control": "private, max-age=3600" },
       });
     }
-    const profile = await recordingProfile(source);
-    return new Response(recordingManifest(clipId, profile.duration, profile.boundaries), {
+    const profile = await recordingProfile(source, compatibility);
+    return new Response(recordingManifest(clipId, profile.duration, profile.boundaries, compatibility), {
       headers: { "Content-Type": "application/vnd.apple.mpegurl", "Cache-Control": "private, no-cache" },
     });
   } catch (error) {
