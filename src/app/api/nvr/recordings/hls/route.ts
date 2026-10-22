@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import { recordingFile } from "@/lib/recordingFile";
-import { recordingDuration, recordingManifest, recordingSegment } from "@/lib/recordingHls";
+import { recordingProfile, recordingManifest, recordingSegment } from "@/lib/recordingHls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +18,17 @@ export async function GET(request: Request) {
         headers: { "Content-Type": "video/mp2t", "Cache-Control": "private, max-age=3600" },
       });
     }
-    return new Response(recordingManifest(clipId, await recordingDuration(source)), {
+    const profile = await recordingProfile(source);
+    return new Response(recordingManifest(clipId, profile.duration, profile.boundaries), {
       headers: { "Content-Type": "application/vnd.apple.mpegurl", "Cache-Control": "private, no-cache" },
     });
   } catch (error) {
+    console.error("[Recording HLS]", error);
     const message = error instanceof Error ? error.message : "Videosegment konnte nicht geladen werden";
-    return new Response(message, { status: message === "Access denied" ? 403 : 500 });
+    const failure = error as { code?: string; killed?: boolean; path?: string };
+    const status = message === "Access denied" || failure.code === "EACCES" ? 403
+      : failure.code === "ENOENT" ? (failure.path?.includes("ffprobe") || failure.path?.includes("ffmpeg") ? 503 : 404)
+      : failure.killed ? 504 : message === "Ungültiges Videosegment" ? 400 : 500;
+    return new Response(message, { status });
   }
 }

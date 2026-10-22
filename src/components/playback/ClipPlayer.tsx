@@ -117,6 +117,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                 <BufferedRecordingVideo
                   mediaRef={videoRef}
                   source={activePlaybackUrl}
+                  fallbackSource={activeClip.streamUrl}
                   nextSource={pb.nextPlaybackUrl}
                   attempt={playbackAttempt}
                   startPosition={pendingSeekRef.current ?? 0}

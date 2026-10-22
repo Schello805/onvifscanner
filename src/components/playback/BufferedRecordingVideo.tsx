@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, ty
 type Props = VideoHTMLAttributes<HTMLVideoElement> & {
   source: string;
   nextSource?: string;
+  fallbackSource?: string;
   attempt: number;
   mediaRef: MutableRefObject<HTMLVideoElement | null>;
   startPosition: number;
@@ -13,8 +14,11 @@ type Props = VideoHTMLAttributes<HTMLVideoElement> & {
   onStreamError: (message: string) => void;
 };
 
-function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, attempt, nextSource, ...props }: Props & { active: boolean }) {
+function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, attempt, nextSource, fallbackSource, ...props }: Props & { active: boolean }) {
   const elementRef = useRef<HTMLVideoElement | null>(null);
+  const controllerRef = useRef<Hls | null>(null);
+  const fallbackRef = useRef(fallbackSource);
+  fallbackRef.current = fallbackSource;
   const initialPosition = useRef(startPosition);
   initialPosition.current = startPosition;
   const rateRef = useRef(rate);
@@ -28,14 +32,39 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
     const video = elementRef.current;
     if (!video || !source) return;
     let hls: Hls | undefined;
+    let restoreFallback: (() => void) | undefined;
+    let usedFallback = false;
+    const playOriginal = () => {
+      const fallback = fallbackRef.current;
+      if (!fallback || usedFallback) return false;
+      usedFallback = true;
+      const position = video.currentTime || initialPosition.current;
+      hls?.destroy();
+      controllerRef.current = null;
+      restoreFallback = () => {
+        video.playbackRate = rateRef.current;
+        video.currentTime = position;
+      };
+      video.addEventListener("loadedmetadata", restoreFallback, { once: true });
+      video.src = fallback;
+      video.load();
+      return true;
+    };
+    const startupTimeout = window.setTimeout(() => {
+      if (isActive.current && video.readyState < 2) playOriginal();
+    }, 15_000);
     if (Hls.isSupported()) {
       hls = new Hls({
-        maxBufferLength: 30, maxMaxBufferLength: 30, maxBufferSize: 0,
+        maxBufferLength: 30 * Math.max(1, rateRef.current), maxMaxBufferLength: 30 * Math.max(1, rateRef.current), maxBufferSize: 0,
         backBufferLength: 12, startPosition: initialPosition.current,
         fragLoadingTimeOut: 60_000,
+        manifestLoadPolicy: { default: { ...Hls.DefaultConfig.manifestLoadPolicy.default, maxTimeToFirstByteMs: 60_000, maxLoadTimeMs: 90_000 } },
       });
+      controllerRef.current = hls;
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal && isActive.current) errorHandler.current("Videodaten konnten nicht geladen werden. Bitte erneut starten.");
+        if (!data.fatal || !isActive.current) return;
+        if (playOriginal()) return;
+        errorHandler.current(`Videodaten konnten nicht geladen werden (${data.details}${data.response?.code ? `, HTTP ${data.response.code}` : ""}). Bitte erneut starten.`);
       });
       hls.loadSource(source);
       hls.attachMedia(video);
@@ -45,7 +74,10 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
       video.load();
     } else errorHandler.current("Dieser Browser unterstützt die segmentierte Wiedergabe nicht.");
     return () => {
+      window.clearTimeout(startupTimeout);
       hls?.destroy();
+      if (restoreFallback) video.removeEventListener("loadedmetadata", restoreFallback);
+      controllerRef.current = null;
       video.removeAttribute("src");
       video.load();
     };
@@ -65,6 +97,10 @@ function Slot({ source, active, mediaRef, startPosition, rate, onStreamError, at
 
   useEffect(() => {
     if (active && elementRef.current) elementRef.current.playbackRate = rate;
+    if (controllerRef.current) {
+      controllerRef.current.config.maxBufferLength = 30 * Math.max(1, rate);
+      controllerRef.current.config.maxMaxBufferLength = 30 * Math.max(1, rate);
+    }
   }, [active, rate]);
 
   return <video {...(active ? props : {})} ref={elementRef} playsInline disableRemotePlayback muted={active ? props.muted : true}
@@ -105,6 +141,7 @@ export function BufferedRecordingVideo(props: Props) {
     }
   }, [props.attempt]);
   return <>{slots.map((source, index) => <Slot {...props} key={`${index}-${retries[index]}`} source={source}
+    fallbackSource={index === active ? props.fallbackSource : undefined}
     onStreamError={(message) => { failed.current = true; props.onStreamError(message); }}
     active={index === active} startPosition={index === active ? props.startPosition : 0} />)}</>;
 }

@@ -66,6 +66,23 @@ async function main() {
     }
     await assert.rejects(hls.recordingSegment(longSource, 3));
     assert.equal(await hls.recordingSegment(longSource, 1), segments[1]);
+    const copySource = path.join(directory, 'copy.mp4');
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=20', '-t', '20', '-c:v', 'libx264', '-g', '50', '-keyint_min', '50', '-sc_threshold', '0', copySource]);
+    const copyProfile = await hls.recordingProfile(copySource);
+    assert.equal(copyProfile.copyVideo, true);
+    assert.deepEqual(copyProfile.boundaries, [0, 7.5, 15, 20]);
+    const copyManifest = hls.recordingManifest('copy', copyProfile.duration, copyProfile.boundaries);
+    assert.ok(copyManifest.includes('#EXT-X-TARGETDURATION:8'));
+    assert.ok(copyManifest.includes('#EXTINF:7.500000,'));
+    const copied = await hls.recordingSegment(copySource, 1);
+    const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_packets', '-show_entries', 'packet=pts_time,data_hash', '-show_data_hash', 'sha256', '-of', 'json', copied], { encoding: 'utf8' }));
+    const original = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_packets', '-show_entries', 'packet=pts_time', '-of', 'json', copySource], { encoding: 'utf8' }));
+    assert.ok(Math.abs(Math.min(...probe.packets.map(packet => Number(packet.pts_time))) - 7.5) < 0.1);
+    assert.ok(probe.packets.length > 100);
+    assert.ok(original.packets.length > probe.packets.length);
+    const frameHashes = (args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args, '-map', '0:v:0', '-frames:v', '150', '-f', 'framemd5', '-'], { encoding: 'utf8' })
+      .split('\n').filter(line => line && !line.startsWith('#')).map(line => line.split(',').pop().trim());
+    assert.deepEqual(frameHashes(['-i', copied]), frameHashes(['-ss', '7.5', '-i', copySource]));
     console.log('Playback timing, clip boundaries and FFmpeg compatibility tests passed.');
   } finally {
     if (previousCache === undefined) delete process.env.PLAYBACK_CACHE_DIR;

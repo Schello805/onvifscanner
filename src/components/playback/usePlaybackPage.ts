@@ -1166,10 +1166,11 @@ export function usePlaybackPage() {
 
   const nextPlaybackUrl = useMemo(() => {
     if (!activeClip || !autoPlayNext) return "";
+    if (videoDuration <= 0 || videoDuration - videoCurrentTime > 30 * Math.max(1, playbackRate)) return "";
     const next = chronologicalCameraClips(clips, activeClip.cameraId)
       .find((clip) => recordingStart(clip) > recordingStart(activeClip));
     return next ? `/api/nvr/recordings/hls?clipId=${encodeURIComponent(next.id)}` : "";
-  }, [activeClip, autoPlayNext, clips]);
+  }, [activeClip, autoPlayNext, clips, videoDuration, videoCurrentTime, playbackRate]);
 
   const playPreviousClip = () => {
     if (!activeClip) return;
