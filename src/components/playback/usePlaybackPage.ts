@@ -583,21 +583,11 @@ export function usePlaybackPage() {
   };
 
   const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
-    setPlaybackOffset(offsetSec);
-    if (activeClip?.id === clip.id && videoRef.current) {
-      try {
-        videoRef.current.currentTime = offsetSec;
-      } catch {}
-      setVideoCurrentTime(offsetSec);
-      if (videoRef.current.paused) {
-        void videoRef.current.play().catch(() => null);
-        setIsPlaying(true);
-      }
-      return;
-    }
+    const target = Math.max(0, Math.floor(offsetSec));
+    setPlaybackOffset(target);
     setVideoDuration(0);
-    setVideoCurrentTime(offsetSec);
-    pendingSeekRef.current = offsetSec > 0 ? offsetSec : null;
+    setVideoCurrentTime(0);
+    pendingSeekRef.current = null;
     setLiveTranscode(false);
     setPlayerPreparing(false);
     setPlayerError("");
@@ -606,7 +596,7 @@ export function usePlaybackPage() {
     setPlayerOptionsOpen(false);
     setActiveClip(clip);
     setIsPlaying(true);
-  }, [activeClip?.id]);
+  }, []);
 
   useEffect(() => {
     if (activeClip?.timeStr) {
@@ -713,26 +703,30 @@ export function usePlaybackPage() {
     }
   }, []);
 
+  const seekToOffset = useCallback((seconds: number) => {
+    const target = Math.max(0, Math.floor(seconds));
+    setPlaybackOffset(target);
+    setVideoCurrentTime(0);
+    setVideoDuration(0);
+    setPlayerError("");
+    setIsPlaying(true);
+  }, []);
+
   const seekRelative = useCallback((seconds: number) => {
-    if (!videoRef.current || !activeClip) return;
-    const current = videoRef.current.currentTime || 0;
-    const duration = videoRef.current.duration || videoDuration || 0;
-    const newTarget = current + seconds;
+    if (!activeClip) return;
+    const cam = cameras.find((c) => c.id === activeClip.cameraId);
+    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const currentPos = (playbackOffset || 0) + (videoCurrentTime || 0);
+    const newTarget = currentPos + seconds;
 
     // Inside current clip bounds
-    if (newTarget >= 0 && (duration <= 0 || newTarget <= duration)) {
-      setPlaybackOffset(newTarget);
-      try {
-        videoRef.current.currentTime = newTarget;
-      } catch {}
-      setVideoCurrentTime(newTarget);
+    if (newTarget >= 0 && newTarget < segSec) {
+      seekToOffset(newTarget);
       showSeekFeedback(seconds < 0 ? `${seconds}s` : `+${seconds}s`);
       return;
     }
 
     // Crossing clip boundary:
-    const cam = cameras.find((c) => c.id === activeClip.cameraId);
-    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
     const sameCameraClips = clips
       .filter((c) => c.cameraId === activeClip.cameraId && c.dateStr === activeClip.dateStr)
       .sort((a, b) => parseTimeToSeconds(a.timeStr) - parseTimeToSeconds(b.timeStr));
@@ -747,28 +741,26 @@ export function usePlaybackPage() {
         showSeekFeedback(seconds < 0 ? `${seconds}s (Vorheriger Clip)` : `Clip gewechselt`);
         return;
       } else {
-        videoRef.current.currentTime = 0;
-        setVideoCurrentTime(0);
+        seekToOffset(0);
         showSeekFeedback("Anfang der Aufnahmen");
         return;
       }
     }
 
-    if (duration > 0 && newTarget > duration) {
+    if (newTarget >= segSec) {
       if (currentIndex >= 0 && currentIndex < sameCameraClips.length - 1) {
         const nextClip = sameCameraClips[currentIndex + 1];
-        const targetOffset = Math.max(0, newTarget - duration);
+        const targetOffset = Math.max(0, newTarget - segSec);
         openClipWithOffset(nextClip, targetOffset);
         showSeekFeedback(`+${seconds}s (Nächster Clip)`);
         return;
       } else {
-        videoRef.current.currentTime = duration;
-        setVideoCurrentTime(duration);
+        seekToOffset(Math.max(0, segSec - 5));
         showSeekFeedback("Ende der Aufnahmen");
         return;
       }
     }
-  }, [activeClip, clips, cameras, videoDuration, openClipWithOffset, showSeekFeedback]);
+  }, [activeClip, clips, cameras, playbackOffset, videoCurrentTime, seekToOffset, openClipWithOffset, showSeekFeedback]);
 
   const jumpToTime = useCallback(async (timeStr: string) => {
     if (!timeStr) {
@@ -903,39 +895,27 @@ export function usePlaybackPage() {
     if (seekFeedbackTimerRef.current !== null) window.clearTimeout(seekFeedbackTimerRef.current);
   }, [clearPlayerGesture]);
 
-  const seekToOffset = useCallback((seconds: number) => {
-    setPlaybackOffset(seconds);
-    if (videoRef.current) {
-      try {
-        videoRef.current.currentTime = Math.max(0, seconds);
-      } catch {}
-      setVideoCurrentTime(seconds);
-      void videoRef.current.play().catch(() => {});
-      setIsPlaying(true);
-    }
-  }, []);
-
   const jumpToNextMotion = useCallback(() => {
-    if (!videoRef.current || !activeClipMotionEvents.length) return;
-    const curr = videoRef.current.currentTime;
+    if (!activeClipMotionEvents.length) return;
+    const curr = (playbackOffset || 0) + (videoCurrentTime || 0);
     const next = activeClipMotionEvents.find((m) => m.offsetSec > curr + 1.5);
     if (next) {
       seekToOffset(next.offsetSec);
     } else {
       seekToOffset(activeClipMotionEvents[0].offsetSec);
     }
-  }, [activeClipMotionEvents]);
+  }, [activeClipMotionEvents, playbackOffset, videoCurrentTime, seekToOffset]);
 
   const jumpToPrevMotion = useCallback(() => {
-    if (!videoRef.current || !activeClipMotionEvents.length) return;
-    const curr = videoRef.current.currentTime;
+    if (!activeClipMotionEvents.length) return;
+    const curr = (playbackOffset || 0) + (videoCurrentTime || 0);
     const prev = [...activeClipMotionEvents].reverse().find((m) => m.offsetSec < curr - 1.5);
     if (prev) {
       seekToOffset(prev.offsetSec);
     } else {
       seekToOffset(activeClipMotionEvents[activeClipMotionEvents.length - 1].offsetSec);
     }
-  }, [activeClipMotionEvents]);
+  }, [activeClipMotionEvents, playbackOffset, videoCurrentTime, seekToOffset]);
 
   const setSpeed = (rate: number) => {
     setPlaybackRate(rate);
@@ -1175,11 +1155,17 @@ export function usePlaybackPage() {
 
   const activePlaybackUrl = useMemo(() => {
     if (!activeClip) return "";
+    const params = new URLSearchParams();
     if (liveTranscode) {
-      const sep = activeClip.streamUrl.includes("?") ? "&" : "?";
-      return `${activeClip.streamUrl}${sep}transcode=1&offset=${Math.floor(playbackOffset)}`;
+      params.set("transcode", "1");
     }
-    return activeClip.streamUrl;
+    if (playbackOffset > 0) {
+      params.set("offset", String(Math.floor(playbackOffset)));
+    }
+    const qs = params.toString();
+    if (!qs) return activeClip.streamUrl;
+    const sep = activeClip.streamUrl.includes("?") ? "&" : "?";
+    return `${activeClip.streamUrl}${sep}${qs}`;
   }, [activeClip, liveTranscode, playbackOffset]);
 
   const playPreviousClip = () => {
@@ -1440,6 +1426,7 @@ export function usePlaybackPage() {
     filteredMotionEvents,
     activeClipIndex,
     activePlaybackUrl,
+    playbackOffset,
     playPreviousClip,
     playNextClip,
     toggleFullscreen,

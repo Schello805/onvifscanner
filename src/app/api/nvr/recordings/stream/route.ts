@@ -62,9 +62,10 @@ export async function GET(req: Request) {
       return new Response("File not found", { status: 404 });
     }
 
-    // 1. On-the-fly live stream transcode (fallback if browser cannot decode audio)
-    // Starts in < 200ms via pipe:1, ZERO disk writes, killed instantly on client disconnect!
-    if (liveTranscode && !download) {
+    // 1. Server-side seek & stream via FFmpeg when offset > 0 or liveTranscode requested
+    // Fast input seek (-ss before -i) takes < 30ms, video is copied directly (-c:v copy, 0% CPU),
+    // audio is transcoded to AAC for universal browser playback, streamed via pipe:1 with ZERO disk writes!
+    if ((offset > 0 || liveTranscode) && !download) {
       const ffmpegArgs = [
         "-y", "-hide_banner", "-loglevel", "error",
       ];
@@ -86,6 +87,7 @@ export async function GET(req: Request) {
       req.signal.addEventListener("abort", () => {
         try { ffmpegProc.kill("SIGKILL"); } catch {}
       });
+      ffmpegProc.on("error", () => {});
 
       const webStream = Readable.toWeb(ffmpegProc.stdout) as ReadableStream<Uint8Array>;
       return new Response(webStream, {

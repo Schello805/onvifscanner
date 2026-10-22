@@ -6,7 +6,14 @@ import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/p
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
-  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
+  const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playbackOffset, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
+
+  const camSegmentSec = (selectedCamera?.recordSegmentMinutes || 15) * 60;
+  const effectiveDuration = Math.max(
+    camSegmentSec,
+    (playbackOffset || 0) + (videoDuration || 0)
+  );
+  const effectiveCurrentTime = (playbackOffset || 0) + (videoCurrentTime || 0);
   return (
     <>
       {/* Video Player Modal with Advanced NVR Controls */}
@@ -101,7 +108,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
               <div className={`relative bg-black flex items-center justify-center flex-1 overflow-hidden ${playerFullscreen ? 'h-full w-full' : 'max-h-[50vh] sm:max-h-[55vh] shrink-0'}`}>
                 <video
                   ref={videoRef}
-                  key={`${activeClip.id}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
+                  key={`${activeClip.id}-${playbackOffset}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
                   src={activePlaybackUrl}
                   autoPlay
                   playsInline
@@ -119,17 +126,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerPreparing(false);
                     setPlayerError("");
                     const dur = event.currentTarget.duration || 0;
-                    if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                      let target = pendingSeekRef.current;
-                      if (Number.isFinite(dur) && dur > 0) {
-                        if (target >= dur) {
-                          target = Math.max(0, dur - 0.5);
-                        }
-                      }
-                      try {
-                        event.currentTarget.currentTime = target;
-                      } catch {}
-                      pendingSeekRef.current = null;
+                    if (Number.isFinite(dur) && dur > 0) {
+                      setVideoDuration(dur);
                     }
                     void event.currentTarget.play()
                       .then(() => setPlayerNeedsStart(false))
@@ -163,18 +161,6 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     const dur = e.currentTarget.duration || 0;
                     if (Number.isFinite(dur) && dur > 0) {
                       setVideoDuration(dur);
-                    }
-                    if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
-                      let target = pendingSeekRef.current;
-                      if (Number.isFinite(dur) && dur > 0) {
-                        if (target >= dur) {
-                          target = Math.max(0, dur - 0.5);
-                        }
-                      }
-                      try {
-                        e.currentTarget.currentTime = target;
-                      } catch {}
-                      pendingSeekRef.current = null;
                     }
                   }}
                 onTimeUpdate={(e) => {
@@ -324,23 +310,23 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                 </div>
 
                 {/* Video Time Info */}
-                {videoDuration > 0 && (
+                {effectiveDuration > 0 && (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-slate-300 shrink-0">
-                    <span className="text-white font-bold">{formatSeconds(videoCurrentTime)}</span>
+                    <span className="text-white font-bold">{formatSeconds(effectiveCurrentTime)}</span>
                     <span className="text-slate-500">/</span>
-                    <span className="text-slate-400">{formatSeconds(videoDuration)}</span>
+                    <span className="text-slate-400">{formatSeconds(effectiveDuration)}</span>
                   </div>
                 )}
               </div>
 
               {/* In-Clip Interactive Scrubber Track with Motion Pins */}
-              {videoDuration > 0 && (
+              {effectiveDuration > 0 && (
                 <div
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
                     const pct = clickX / rect.width;
-                    seekToOffset(pct * videoDuration);
+                    seekToOffset(Math.floor(pct * effectiveDuration));
                   }}
                   className="relative h-4.5 w-full rounded-md bg-slate-900 border border-slate-800/80 cursor-pointer overflow-hidden group select-none shadow-inner"
                   title="Klicke auf den Zeitstrahl zum Springen"
@@ -348,13 +334,13 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   {/* Played progress */}
                   <div
                     className="absolute top-0 bottom-0 left-0 bg-sky-500/25 border-r-2 border-sky-400 pointer-events-none transition-all duration-75"
-                    style={{ width: `${Math.min(100, (videoCurrentTime / videoDuration) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (effectiveCurrentTime / effectiveDuration) * 100)}%` }}
                   />
 
                   {/* Motion Markers */}
                   {activeClipMotionEvents.map((ev, idx) => {
-                    const markerPct = Math.min(100, Math.max(0, (ev.offsetSec / videoDuration) * 100));
-                    const isCurrent = Math.abs(videoCurrentTime - ev.offsetSec) < 2.5;
+                    const markerPct = Math.min(100, Math.max(0, (ev.offsetSec / effectiveDuration) * 100));
+                    const isCurrent = Math.abs(effectiveCurrentTime - ev.offsetSec) < 2.5;
                     return (
                       <div
                         key={ev.id || idx}
@@ -386,7 +372,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     Genaue Zeitpunkte:
                   </span>
                   {activeClipMotionEvents.map((ev, idx) => {
-                    const isNear = Math.abs(videoCurrentTime - ev.offsetSec) < 2.5;
+                    const isNear = Math.abs(effectiveCurrentTime - ev.offsetSec) < 2.5;
                     return (
                       <button
                         key={ev.id || idx}
