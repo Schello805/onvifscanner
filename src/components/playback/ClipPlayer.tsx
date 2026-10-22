@@ -9,11 +9,11 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playbackOffset, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
 
   const camSegmentSec = (selectedCamera?.recordSegmentMinutes || 15) * 60;
-  const effectiveDuration = Math.max(
-    camSegmentSec,
-    (playbackOffset || 0) + (videoDuration || 0)
-  );
-  const effectiveCurrentTime = (playbackOffset || 0) + (videoCurrentTime || 0);
+  const clipDur = typeof activeClip?.durationSeconds === "number" && activeClip.durationSeconds > 0
+    ? activeClip.durationSeconds
+    : (videoDuration > 0 ? (playbackOffset || 0) + videoDuration : camSegmentSec);
+  const effectiveDuration = Math.max(1, clipDur);
+  const effectiveCurrentTime = Math.min(effectiveDuration, (playbackOffset || 0) + (videoCurrentTime || 0));
   return (
     <>
       {/* Video Player Modal with Advanced NVR Controls */}
@@ -44,7 +44,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   ) : (
                     <span className="rounded bg-sky-500/20 border border-sky-500/40 px-2 py-0.5 text-[10px] font-bold text-sky-300 shadow-sm flex items-center gap-1">
                       <Film className="h-3 w-3 text-sky-400" />
-                      Daueraufnahme (15 Min.)
+                      Daueraufnahme ({formatSeconds(effectiveDuration)})
                     </span>
                   )}
                   {activeClipIndex >= 0 && (
@@ -241,14 +241,15 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       <div className="flex flex-col items-center gap-2 p-2 max-w-sm text-center">
                         <p className="text-sm font-semibold text-rose-200">{playerError}</p>
                         <p className="text-xs text-slate-400">
-                          {videoDuration > 0 && videoDuration < 60
-                            ? `Dieser Clip ist nur ${formatSeconds(videoDuration)} lang (möglicherweise durch Serverneustart oder vollen Speicher unterbrochen).`
-                            : "Das Videoformat wird von diesem Browser nicht direkt unterstützt."}
+                          {effectiveDuration > 0 && effectiveDuration < (camSegmentSec - 60)
+                            ? `Dieser Clip ist nur ${formatSeconds(effectiveDuration)} lang (vorzeitiger Stream-Abbruch oder noch laufende Aufnahme).`
+                            : "Das Videoformat wird von diesem Browser nicht direkt unterstützt oder das Stream-Ende wurde erreicht."}
                         </p>
                         <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
                           <button
                             type="button"
                             onClick={() => {
+                              seekToOffset(0);
                               setPlayerError("");
                               setLiveTranscode(false);
                               setPlayerPreparing(true);
@@ -298,7 +299,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     ) : (
                       <span className="text-sky-300 font-normal flex items-center gap-1.5">
                         <Film className="h-3.5 w-3.5 text-sky-400" />
-                        Daueraufnahme aktiv (15 Min.)
+                        Daueraufnahme ({formatSeconds(effectiveDuration)})
                       </span>
                     )}
                   </div>

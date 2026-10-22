@@ -28,7 +28,10 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
       const startSec = parseTimeToSeconds(clip.timeStr);
       const cam = cameras.find((c) => c.id === clip.cameraId);
       const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-      const endSec = startSec + segSec;
+      const clipDuration = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0
+        ? Math.min(clip.durationSeconds, segSec)
+        : segSec;
+      const endSec = startSec + clipDuration;
 
       const list = clipsByCamera.get(clip.cameraId) || [];
       list.push({ clip, startSec, endSec });
@@ -64,8 +67,8 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
 
       for (let i = 1; i < items.length; i++) {
         const item = items[i];
-        // Merge segments if adjacent or overlapping (tolerance up to 60s handover gap)
-        if (item.startSec <= currentSpan.endSec + 60) {
+        // Merge segments if adjacent or overlapping (tolerance up to 5s handover gap)
+        if (item.startSec <= currentSpan.endSec + 5) {
           currentSpan.endSec = Math.max(currentSpan.endSec, item.endSec);
           currentSpan.clips.push(item);
         } else {
@@ -92,7 +95,10 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
     const startSec = parseTimeToSeconds(activeClip.timeStr);
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
     const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-    const endSec = startSec + segSec;
+    const clipDuration = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
+      ? Math.min(activeClip.durationSeconds, segSec)
+      : segSec;
+    const endSec = startSec + clipDuration;
 
     const spanMin = timelineWindowMinutes;
     const vStart = timelineStartMin;
@@ -262,18 +268,9 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             );
 
             if (matchingSpan) {
-              let targetItem = matchingSpan.clips.find(
+              const targetItem = matchingSpan.clips.find(
                 (item) => clickSeconds >= item.startSec && clickSeconds < item.endSec
               );
-              if (!targetItem) {
-                if (clickSeconds >= matchingSpan.endSec && matchingSpan.clips.length > 0) {
-                  targetItem = matchingSpan.clips[matchingSpan.clips.length - 1];
-                } else {
-                  targetItem = matchingSpan.clips.reduce((prev, curr) =>
-                    Math.abs(curr.startSec - clickSeconds) < Math.abs(prev.startSec - clickSeconds) ? curr : prev
-                  , matchingSpan.clips[0]);
-                }
-              }
               if (targetItem) {
                 const offset = Math.max(0, Math.floor(clickSeconds - targetItem.startSec));
                 openClipWithOffset(targetItem.clip, offset);
@@ -366,18 +363,9 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
                     const clickedSec = rStartSec + clickRatio * (rEndSec - rStartSec);
 
                     // Find matching clip in this span
-                    let targetItem = span.clips.find(
+                    const targetItem = span.clips.find(
                       (item) => clickedSec >= item.startSec && clickedSec < item.endSec
                     );
-                    if (!targetItem) {
-                      if (clickedSec >= span.endSec && span.clips.length > 0) {
-                        targetItem = span.clips[span.clips.length - 1];
-                      } else {
-                        targetItem = span.clips.reduce((prev, curr) =>
-                          Math.abs(curr.startSec - clickedSec) < Math.abs(prev.startSec - clickedSec) ? curr : prev
-                        , span.clips[0]);
-                      }
-                    }
 
                     if (targetItem) {
                       const offset = Math.max(0, Math.floor(clickedSec - targetItem.startSec));

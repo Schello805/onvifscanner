@@ -583,7 +583,10 @@ export function usePlaybackPage() {
   };
 
   const openClipWithOffset = useCallback((clip: RecordingClip, offsetSec = 0) => {
-    const target = Math.max(0, Math.floor(offsetSec));
+    let target = Math.max(0, Math.floor(offsetSec));
+    if (typeof clip.durationSeconds === "number" && clip.durationSeconds > 0) {
+      target = Math.min(target, Math.max(0, clip.durationSeconds - 1));
+    }
     setPlaybackOffset(target);
     setVideoDuration(0);
     setVideoCurrentTime(0);
@@ -704,18 +707,24 @@ export function usePlaybackPage() {
   }, []);
 
   const seekToOffset = useCallback((seconds: number) => {
-    const target = Math.max(0, Math.floor(seconds));
+    let target = Math.max(0, Math.floor(seconds));
+    if (activeClip && typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0) {
+      target = Math.min(target, Math.max(0, activeClip.durationSeconds - 1));
+    }
     setPlaybackOffset(target);
     setVideoCurrentTime(0);
     setVideoDuration(0);
     setPlayerError("");
     setIsPlaying(true);
-  }, []);
+  }, [activeClip]);
 
   const seekRelative = useCallback((seconds: number) => {
     if (!activeClip) return;
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
-    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const configuredSegSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const segSec = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
+      ? activeClip.durationSeconds
+      : configuredSegSec;
     const currentPos = (playbackOffset || 0) + (videoCurrentTime || 0);
     const newTarget = currentPos + seconds;
 
@@ -803,13 +812,16 @@ export function usePlaybackPage() {
     }
 
     const cam = cameras.find((c) => c.id === camId);
-    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
+    const configuredSegSec = (cam?.recordSegmentMinutes || 15) * 60;
 
     // 1. Exact clip that contains targetSec
     const matchingClip = camClips.find((c) => {
       const clipStart = parseTimeToSeconds(c.timeStr);
+      const clipDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0
+        ? Math.min(c.durationSeconds, configuredSegSec)
+        : configuredSegSec;
       const offset = targetSec - clipStart;
-      return offset >= 0 && offset < segSec;
+      return offset >= 0 && offset < clipDur;
     });
 
     if (matchingClip) {
@@ -835,7 +847,10 @@ export function usePlaybackPage() {
 
     if (nearestClip) {
       const clipStart = parseTimeToSeconds(nearestClip.timeStr);
-      const offset = targetSec > clipStart ? Math.min(segSec - 1, targetSec - clipStart) : 0;
+      const clipDur = typeof nearestClip.durationSeconds === "number" && nearestClip.durationSeconds > 0
+        ? Math.min(nearestClip.durationSeconds, configuredSegSec)
+        : configuredSegSec;
+      const offset = targetSec > clipStart ? Math.min(clipDur - 1, targetSec - clipStart) : 0;
       openClipWithOffset(nearestClip, offset);
       toast.info(`Kein Clip exakt um ${timeStr} Uhr – spiele Aufnahme ab ${nearestClip.timeStr.slice(0, 5)} Uhr`);
     }

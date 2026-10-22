@@ -16,6 +16,7 @@ export type RecordingClip = {
   timeStr: string; // HH:mm:ss
   timestamp: string; // ISO string
   sizeBytes: number;
+  durationSeconds?: number;
   durationEstimateSec?: number;
   storageTargetName: string;
   streamUrl: string;
@@ -38,7 +39,7 @@ export async function GET(req: Request) {
     const calendarMonth = calendarMonthRaw && /^\d{4}-\d{2}$/.test(calendarMonthRaw) ? calendarMonthRaw : null;
 
     const cameras = await prisma.camera.findMany({
-      select: { id: true, name: true, storageTargetId: true },
+      select: { id: true, name: true, storageTargetId: true, recordSegmentMinutes: true },
     });
     const cameraMap = new Map(cameras.map((c) => [c.id, c.name]));
 
@@ -82,6 +83,16 @@ export async function GET(req: Request) {
             let dateStr = dateMatch ? dateMatch[1] : stat.mtime.toISOString().slice(0, 10);
             let timeStr = dateMatch ? `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}` : stat.mtime.toISOString().slice(11, 19);
 
+            let durationSeconds = 900;
+            if (dateMatch) {
+              const utcMs = Date.parse(`${dateMatch[1]}T${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}Z`);
+              const baseStartMs = !isNaN(utcMs) && Math.abs(stat.mtimeMs - utcMs) < 40 * 60 * 1000
+                ? utcMs
+                : new Date(`${dateMatch[1]}T${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}`).getTime();
+              const diff = Math.floor((stat.mtimeMs - baseStartMs) / 1000);
+              if (diff > 0 && diff < 3600) durationSeconds = diff;
+            }
+
             return NextResponse.json({
               clips: [{
                 id: singleClipId,
@@ -92,6 +103,7 @@ export async function GET(req: Request) {
                 timeStr,
                 timestamp: `${dateStr}T${timeStr}Z`,
                 sizeBytes: stat.size,
+                durationSeconds,
                 storageTargetName: "Lokaler Speicher",
                 streamUrl: `/api/nvr/recordings/stream?clipId=${singleClipId}`,
                 downloadUrl: `/api/nvr/recordings/stream?clipId=${singleClipId}&download=1`,
@@ -160,6 +172,7 @@ export async function GET(req: Request) {
             let timeStr = "";
             let isoDate = stat.mtime.toISOString();
 
+            let baseStartMs = stat.mtimeMs;
             if (dateMatch) {
               dateStr = dateMatch[1];
               timeStr = `${dateMatch[2]}:${dateMatch[3]}:${dateMatch[4]}`;
@@ -167,6 +180,7 @@ export async function GET(req: Request) {
               // Legacy: Name in UTC geschrieben? (Dateiende-Zeit liegt kurz nach der Namens-Zeit als UTC gelesen)
               const utcMs = Date.parse(`${dateStr}T${timeStr}Z`);
               if (!isNaN(utcMs) && Math.abs(stat.mtimeMs - utcMs) < 40 * 60 * 1000) {
+                baseStartMs = utcMs;
                 const p = new Intl.DateTimeFormat("en-CA", {
                   timeZone: "Europe/Berlin",
                   year: "numeric",
@@ -180,6 +194,8 @@ export async function GET(req: Request) {
                 const g = (t: string) => p.find((x) => x.type === t)?.value ?? "00";
                 dateStr = `${g("year")}-${g("month")}-${g("day")}`;
                 timeStr = `${g("hour")}:${g("minute")}:${g("second")}`;
+              } else {
+                baseStartMs = new Date(`${dateStr}T${timeStr}`).getTime();
               }
               isoDate = `${dateStr}T${timeStr}Z`;
             } else {
@@ -233,7 +249,9 @@ export async function GET(req: Request) {
               storageTargetName: target.name,
               streamUrl: `/api/nvr/recordings/stream?clipId=${clipId}`,
               downloadUrl: `/api/nvr/recordings/stream?clipId=${clipId}&download=1`,
-            });
+              mtimeMs: stat.mtimeMs,
+              baseStartMs,
+            } as any);
           } catch {}
         }
       }
@@ -285,6 +303,7 @@ export async function GET(req: Request) {
 
             if (filterDate && dateStr !== filterDate) continue;
 
+            const motionDuration = Math.max(1, Math.round((new Date(rec.endedAt).getTime() - new Date(rec.startedAt).getTime()) / 1000));
             clips.push({
               id: clipId,
               cameraId: rec.cameraId,
@@ -294,6 +313,7 @@ export async function GET(req: Request) {
               timeStr,
               timestamp: rec.startedAt.toISOString(),
               sizeBytes: stat.size,
+              durationSeconds: motionDuration,
               storageTargetName: "Ereignis-Speicher",
               streamUrl: `/api/nvr/recordings/stream?clipId=${clipId}`,
               downloadUrl: `/api/nvr/recordings/stream?clipId=${clipId}&download=1`,
@@ -323,6 +343,59 @@ export async function GET(req: Request) {
         unavailableStorageTargets,
       });
     }
+
+    // Calculate accurate durationSeconds for each clip
+    const camConfigMap = new Map(cameras.map((c) => [c.id, c]));
+    const clipsByCam = new Map<string, typeof clips>();
+    for (const c of clips) {
+      const list = clipsByCam.get(c.cameraId) || [];
+      list.push(c);
+      clipsByCam.set(c.cameraId, list);
+    }
+
+    const parseTimeToSec = (t: string): number => {
+      const parts = t.split(":").map(Number);
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    };
+
+    clipsByCam.forEach((camClips, camId) => {
+      // Sort chronologically ascending
+      camClips.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      const camConfig = camConfigMap.get(camId);
+      const configuredSegmentSec = Math.max(1, (camConfig?.recordSegmentMinutes || 15) * 60);
+
+      for (let i = 0; i < camClips.length; i++) {
+        const c = camClips[i] as any;
+        if (typeof c.durationSeconds === "number" && c.durationSeconds > 0) continue;
+
+        let dur = configuredSegmentSec;
+
+        // 1. Distance to next clip on the same camera and day
+        if (i < camClips.length - 1) {
+          const next = camClips[i + 1];
+          if (next.dateStr === c.dateStr) {
+            const nextSec = parseTimeToSec(next.timeStr);
+            const currSec = parseTimeToSec(c.timeStr);
+            const gapSec = nextSec - currSec;
+            if (gapSec > 0 && gapSec < configuredSegmentSec) {
+              dur = Math.min(dur, gapSec);
+            }
+          }
+        }
+
+        // 2. Check mtime write duration
+        if (c.mtimeMs && c.baseStartMs && c.mtimeMs > c.baseStartMs) {
+          const mtimeDiffSec = Math.floor((c.mtimeMs - c.baseStartMs) / 1000);
+          if (mtimeDiffSec > 0 && mtimeDiffSec < configuredSegmentSec) {
+            dur = Math.min(dur, Math.max(1, mtimeDiffSec));
+          }
+        }
+
+        c.durationSeconds = Math.max(1, dur);
+        delete c.mtimeMs;
+        delete c.baseStartMs;
+      }
+    });
 
     // Sort newest first
     clips.sort((a, b) => b.timestamp.localeCompare(a.timestamp));

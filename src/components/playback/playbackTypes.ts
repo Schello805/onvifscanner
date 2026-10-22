@@ -40,6 +40,7 @@ export type RecordingClip = {
   timeStr: string;
   timestamp: string;
   sizeBytes: number;
+  durationSeconds?: number;
   storageTargetName: string;
   streamUrl: string;
   downloadUrl: string;
