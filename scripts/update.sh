@@ -97,6 +97,28 @@ NEW_COMMIT="$(git rev-parse --short HEAD)"
 log_ok "Projekt aktualisiert auf Commit / Tag: ${NEW_COMMIT}"
 
 # 6. Install / Update Node.js dependencies
+RESTART_SYSTEMD=false
+RESTART_PM2=false
+run_systemctl() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    systemctl "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo systemctl "$@"
+  else
+    log_err "Zum Stoppen/Starten von onvifscanner.service werden root oder sudo benötigt."
+    return 1
+  fi
+}
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet onvifscanner.service 2>/dev/null; then
+  log_warn "Stoppe onvifscanner.service vor Paketinstallation/Build; Aufnahme pausiert bis zum Neustart."
+  run_systemctl stop onvifscanner.service
+  RESTART_SYSTEMD=true
+fi
+if command -v pm2 >/dev/null 2>&1 && pm2 describe onvifscanner >/dev/null 2>&1; then
+  log_warn "Stoppe PM2-Prozess vor Paketinstallation/Build; Aufnahme pausiert bis zum Neustart."
+  pm2 stop onvifscanner
+  RESTART_PM2=true
+fi
 log_step "Aktualisiere npm-Pakete…"
 if [[ -f "package-lock.json" ]]; then
   npm ci --no-audit || npm install --no-audit
@@ -117,32 +139,19 @@ npm run build
 log_ok "Build erfolgreich abgeschlossen."
 
 # 8. Restart background service if systemd is present
-if command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet onvifscanner.service 2>/dev/null; then
-    log_step "Starte onvifscanner.service neu…"
-    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-      systemctl restart onvifscanner.service
-      systemctl --no-pager status onvifscanner.service || true
-    else
-      if command -v sudo >/dev/null 2>&1; then
-        sudo systemctl restart onvifscanner.service
-        sudo systemctl --no-pager status onvifscanner.service || true
-      else
-        log_warn "onvifscanner.service ist aktiv, aber kein sudo verfügbar zum Neustarten."
-        log_warn "Bitte führe manuell aus: systemctl restart onvifscanner.service"
-      fi
-    fi
-    log_ok "Dienst neu gestartet."
-  fi
+if [[ "$RESTART_SYSTEMD" == "true" ]]; then
+  log_step "Starte onvifscanner.service neu…"
+  run_systemctl reset-failed onvifscanner.service
+  run_systemctl start onvifscanner.service
+  systemctl --no-pager status onvifscanner.service || true
+  log_ok "Dienst neu gestartet."
 fi
 
 # 9. Restart PM2 process if active
-if command -v pm2 >/dev/null 2>&1; then
-  if pm2 describe onvifscanner >/dev/null 2>&1; then
-    log_step "Starte PM2-Prozess 'onvifscanner' neu…"
-    pm2 restart onvifscanner
-    log_ok "PM2 Prozess neu gestartet."
-  fi
+if [[ "$RESTART_PM2" == "true" ]]; then
+  log_step "Starte PM2-Prozess 'onvifscanner' neu…"
+  pm2 restart onvifscanner
+  log_ok "PM2 Prozess neu gestartet."
 fi
 
 echo ""

@@ -230,5 +230,6 @@ if [[ -f "$APP_DIR/deploy/onvifscanner-storage-helper" ]]; then
 fi
 install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
 systemctl daemon-reload
+systemctl reset-failed onvifscanner.service || true
 systemctl restart --no-block onvifscanner.service
 systemctl --no-pager --full --no-ask-password status onvifscanner.service || true

@@ -1,5 +1,7 @@
-const { parentPort } = require('worker_threads');
 const sharp = require('sharp');
+
+sharp.concurrency(1);
+sharp.cache({ memory: 8, files: 0, items: 16 });
 
 let tf;
 let modelPromise;
@@ -24,10 +26,15 @@ async function loadModel() {
   return modelPromise;
 }
 
-// Eagerly preload model in the background so it is ready before the first request
-void loadModel().catch(() => {});
+process.on('disconnect', () => process.exit(0));
 
-parentPort.on('message', async ({ id, image, minScore }) => {
+void loadModel().then(() => {
+  process.send({ type: 'ready', rss: process.memoryUsage().rss });
+}).catch(error => {
+  process.send({ type: 'init-error', error: error?.message || String(error) });
+});
+
+process.on('message', async ({ id, image, minScore }) => {
   let tensor;
   try {
     const model = await loadModel();
@@ -39,11 +46,12 @@ parentPort.on('message', async ({ id, image, minScore }) => {
     const { width, height, channels } = decoded.info;
     tensor = tf.tensor3d(new Uint8Array(decoded.data), [height, width, channels], 'int32');
     const predictions = await model.detect(tensor, 20, minScore);
-    parentPort.postMessage({
+    process.send({
       id,
       ok: true,
       width,
       height,
+      rss: process.memoryUsage().rss,
       predictions: predictions.map((prediction) => ({
         className: prediction.class,
         score: prediction.score,
@@ -51,8 +59,7 @@ parentPort.on('message', async ({ id, image, minScore }) => {
       })),
     });
   } catch (error) {
-    modelPromise = null;
-    parentPort.postMessage({ id, ok: false, error: error?.message || String(error) });
+    process.send({ id, ok: false, error: error?.message || String(error) });
   } finally {
     tensor?.dispose();
   }
