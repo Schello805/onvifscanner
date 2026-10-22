@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { Calendar, Film, Play, Pause, Download, Share2, Trash2, RefreshCw, X, Maximize2, Minimize2, Video, SkipBack, SkipForward, Gauge, Zap, Pencil, Volume2, VolumeX, ChevronLeft, ChevronRight, RotateCcw, RotateCw, Clock } from "lucide-react";
 import { formatSeconds, formatBytes, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
+  const startupAttemptedRef = useRef(false);
   const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playbackOffset, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
 
   const camSegmentSec = (selectedCamera?.recordSegmentMinutes || 15) * 60;
@@ -111,6 +113,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   key={`${activeClip.id}-${liveTranscode ? "transcode" : "direct"}-${playbackAttempt}`}
                   src={activePlaybackUrl}
                   autoPlay
+                  preload="auto"
                   playsInline
                   muted={isMuted}
                   className={`w-full h-full object-contain ${playerFullscreen ? '' : 'max-h-[50vh] sm:max-h-[55vh]'}`}
@@ -119,7 +122,17 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     setPlayerNeedsStart(false);
                   }}
                   onPause={() => setIsPlaying(false)}
-                  onLoadStart={() => setPlayerPreparing(true)}
+                  onLoadStart={() => {
+                    startupAttemptedRef.current = false;
+                    setPlayerPreparing(true);
+                  }}
+                  onPlaying={() => {
+                    setPlayerPreparing(false);
+                    setPlayerNeedsStart(false);
+                    setPlayerError("");
+                  }}
+                  onWaiting={() => setPlayerPreparing(true)}
+                  onSeeked={() => setPlayerPreparing(false)}
                   onCanPlay={(event) => {
                     if (pendingSeekRef.current !== null) return;
                     setPlayerPreparing(false);
@@ -128,14 +141,19 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     if (Number.isFinite(dur) && dur > 0) {
                       setVideoDuration(dur);
                     }
-                    void event.currentTarget.play()
+                    if (startupAttemptedRef.current || !event.currentTarget.paused) return;
+                    startupAttemptedRef.current = true;
+                    const video = event.currentTarget;
+                    void video.play()
                       .then(() => setPlayerNeedsStart(false))
-                      .catch(() => {
+                      .catch((error: unknown) => {
+                        if (error instanceof DOMException && error.name === "AbortError") return;
                         // If unmuted autoplay blocked by browser, try muted autoplay
-                        if (!isMuted && videoRef.current) {
-                          videoRef.current.muted = true;
+                        if (videoRef.current !== video || video.error || video.ended) return;
+                        if (!isMuted) {
+                          video.muted = true;
                           setIsMuted(true);
-                          void videoRef.current.play()
+                          void video.play()
                             .then(() => setPlayerNeedsStart(false))
                             .catch(() => setPlayerNeedsStart(true));
                         } else {
@@ -143,17 +161,21 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                         }
                       });
                   }}
-                  onError={() => {
-                    const mediaErr = videoRef.current?.error;
+                  onError={(event) => {
+                    if (videoRef.current !== event.currentTarget) return;
+                    const mediaErr = event.currentTarget.error;
+                    if (!mediaErr || mediaErr.code === 1) return;
                     console.warn("Video playback error:", mediaErr?.code, mediaErr?.message);
-                    if (!liveTranscode) {
-                      pendingSeekRef.current = pendingSeekRef.current ?? videoRef.current?.currentTime ?? 0;
+                    if (!liveTranscode && (mediaErr?.code === 3 || mediaErr?.code === 4)) {
+                      pendingSeekRef.current = pendingSeekRef.current ?? event.currentTarget.currentTime;
                       setLiveTranscode(true);
                       setPlayerError("");
                       return;
                     }
                     setPlayerPreparing(false);
-                    setPlayerError("Dieser Aufnahme-Abschnitt ist unvollständig oder konnte nicht geladen werden.");
+                    setPlayerError(mediaErr?.code === 2
+                      ? "Die Videoverbindung wurde unterbrochen. Bitte Verbindung und Speicherziel prüfen und die Wiedergabe erneut starten."
+                      : "Dieser Aufnahme-Abschnitt ist unvollständig oder konnte nicht geladen werden.");
                   }}
                   onLoadedMetadata={(e) => {
                     e.currentTarget.playbackRate = playbackRate;
@@ -229,8 +251,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     {playerPreparing ? (
                       <>
                         <RefreshCw className="mx-auto h-6 w-6 animate-spin text-amber-400" />
-                        <p className="mt-2 text-sm font-semibold text-white">Video wird vorbereitet...</p>
-                        <p className="mt-1 text-xs text-slate-400">Audiospur wird für den Webbrowser angepasst (wenige Sekunden).</p>
+                        <p className="mt-2 text-sm font-semibold text-white">Videodaten werden geladen…</p>
+                        <p className="mt-1 text-xs text-slate-400">{liveTranscode ? "Das kompatible Video wird vorbereitet oder gepuffert. Die erste Konvertierung kann länger dauern." : "Die Wiedergabe wird an derselben Position fortgesetzt, sobald genügend Daten vorhanden sind."}</p>
                       </>
                     ) : playerNeedsStart ? (
                       <>
