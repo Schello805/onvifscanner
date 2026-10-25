@@ -118,7 +118,7 @@ export default function RecordingsConfigPage() {
 
   // Single Camera Toggle
   const handleToggleRecord = async (cam: CameraNvrItem) => {
-    const nextMode = cam.recordMode === "off" ? "motion" : "off";
+    const nextMode = cam.recordMode === "off" ? "continuous" : "off";
     try {
       const res = await fetch("/api/nvr/cameras", {
         method: "PATCH",
@@ -133,7 +133,7 @@ export default function RecordingsConfigPage() {
       );
       toast.success(
         nextMode !== "off"
-          ? `Bewegungsaufnahme für "${cam.name}" aktiviert.`
+          ? `Daueraufnahme für "${cam.name}" aktiviert.`
           : `Aufnahme für "${cam.name}" gestoppt.`
       );
     } catch (err: any) {
@@ -153,18 +153,18 @@ export default function RecordingsConfigPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ids: idsToUpdate,
-          recordMode: enabled ? "motion" : "off",
+          recordMode: enabled ? "continuous" : "off",
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Fehler beim Aktualisieren");
 
       setCameras((prev) =>
-        prev.map((c) => (idsToUpdate.includes(c.id) ? { ...c, recordEnabled: enabled, recordMode: enabled ? "motion" : "off" } : c))
+        prev.map((c) => (idsToUpdate.includes(c.id) ? { ...c, recordEnabled: enabled, recordMode: enabled ? "continuous" : "off" } : c))
       );
       toast.success(
         enabled
-          ? `Bewegungsaufnahme für ${idsToUpdate.length} Kamera(s) aktiviert.`
+          ? `Daueraufnahme für ${idsToUpdate.length} Kamera(s) aktiviert.`
           : `Aufnahme für ${idsToUpdate.length} Kamera(s) gestoppt.`
       );
     } catch (err: any) {
@@ -445,29 +445,14 @@ export default function RecordingsConfigPage() {
         </Link>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <select
-            onChange={(event) => {
-              if (event.target.value) void handleBatchSetMotionSensitivity(Number(event.target.value), true);
-              event.currentTarget.value = "";
-            }}
-            defaultValue=""
-            disabled={batchLoading || cameras.length === 0}
-            className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 focus:outline-none disabled:opacity-50"
-            title="Bewegungsempfindlichkeit aller Kameras gleichzeitig ändern"
-          >
-            <option value="" disabled>Empfindlichkeit alle…</option>
-            {[20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
-              <option key={value} value={value}>{value} %</option>
-            ))}
-          </select>
           <button
             onClick={() => handleBatchToggleRecord(true, true)}
             disabled={batchLoading}
             className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 text-xs font-semibold shadow-sm active:scale-95 transition-all"
-            title="Bewegungsaufnahme für alle Kameras aktivieren"
+            title="Daueraufnahme für alle Kameras aktivieren"
           >
             <Radio className="h-3.5 w-3.5" />
-            Alle bei Bewegung
+            Daueraufnahme alle
           </button>
           <button
             onClick={() => handleBatchToggleRecord(false, true)}
@@ -627,21 +612,6 @@ export default function RecordingsConfigPage() {
                 <option value="60">60 Minuten</option>
               </select>
 
-              <select
-                onChange={(event) => {
-                  if (event.target.value) void handleBatchSetMotionSensitivity(Number(event.target.value), false);
-                  event.currentTarget.value = "";
-                }}
-                defaultValue=""
-                disabled={batchLoading}
-                className="rounded border border-amber-600/60 bg-slate-950 px-2 py-1 text-xs text-amber-200 focus:outline-none"
-              >
-                <option value="" disabled>Empfindlichkeit setzen…</option>
-                {[20, 30, 40, 50, 60, 70, 80, 90, 100].map((value) => (
-                  <option key={value} value={value}>{value} %</option>
-                ))}
-              </select>
-
               <button
                 onClick={() => handleDeleteCameraClips(Array.from(selectedCamIds))}
                 disabled={batchLoading}
@@ -718,7 +688,7 @@ export default function RecordingsConfigPage() {
                         {cam.recordEnabled && (
                           <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold shadow-sm ${isRecordingNow ? "border-rose-500/50 bg-rose-500/25 text-rose-200 animate-pulse" : "border-slate-600 bg-slate-800 text-slate-400"}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${isRecordingNow ? "bg-rose-500" : "bg-slate-500"}`}></span>
-                            {effectiveMode === "motion" ? "MOTION" : effectiveMode === "continuous" ? "REC" : "ZEITPAUSE"}
+                            {effectiveMode === "continuous" ? "REC" : "ZEITPAUSE"}
                           </span>
                         )}
                         <span
@@ -736,35 +706,6 @@ export default function RecordingsConfigPage() {
                           </span>
                         )}
                       </div>
-                      {recordingModeUsesMotion(cam.recordMode) && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-medium">
-                          <span
-                            className={`rounded-full border px-2 py-0.5 ${
-                              cam.motionEventState === "active"
-                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                : cam.motionEventState === "probing"
-                                ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                                : "border-rose-500/40 bg-rose-500/10 text-rose-300"
-                            }`}
-                            title={cam.motionEventLastError || "Status des Bewegungssignals"}
-                          >
-                            {cam.motionEventState === "active"
-                              ? `✓ Ereignisse aktiv (${cam.motionEventSource || "ONVIF"})`
-                              : cam.motionEventState === "probing"
-                              ? "Ereignisquelle wird geprüft"
-                              : cam.motionEventState === "unsupported"
-                              ? "ONVIF-Ereignisse nicht unterstützt"
-                              : cam.motionEventState === "error"
-                              ? "Ereignisquelle gestört"
-                              : "Ereignisquelle noch unbekannt"}
-                          </span>
-                          {cam.motionEventLastSeen && (
-                            <span className="text-slate-500" title={new Date(cam.motionEventLastSeen).toLocaleString("de-DE")}>
-                              letzte Bewegung {new Date(cam.motionEventLastSeen).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -871,81 +812,7 @@ export default function RecordingsConfigPage() {
                           );
                         })}
                       </div>
-                      {recordingModeUsesMotion(cam.recordMode) && (
-                        <label className="grid gap-1">
-                          <span className="flex justify-between text-[11px] text-slate-400">
-                            <span>Empfindlichkeit im Zeitfenster</span>
-                            <strong className="text-violet-300">{cam.motionScheduleSensitivity ?? 90}%</strong>
-                          </span>
-                          <input
-                            type="range"
-                            min={1}
-                            max={100}
-                            value={cam.motionScheduleSensitivity ?? 90}
-                            onChange={(event) => void handleUpdateSchedule(cam.id, { motionScheduleSensitivity: Number(event.target.value) })}
-                            className="motion-sensitivity-range range range-secondary range-sm"
-                          />
-                        </label>
-                      )}
                     </div>
-                  )}
-
-                  {recordingModeUsesMotion(cam.recordMode) && (
-                    <>
-                      <div className="col-span-2">
-                        <label className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-400">
-                          <span>Bewegungsempfindlichkeit</span>
-                          <strong className="text-amber-300">{cam.motionSensitivity ?? 80}%</strong>
-                        </label>
-                        <input
-                          type="range"
-                          min={1}
-                          max={100}
-                          step={1}
-                          value={cam.motionSensitivity ?? 80}
-                          onInput={(event) => {
-                            const motionSensitivity = Number(event.currentTarget.value);
-                            setCameras((prev) => prev.map((camera) => camera.id === cam.id
-                              ? { ...camera, motionSensitivity }
-                              : camera));
-                          }}
-                          onPointerDown={(event) => {
-                            try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-                          }}
-                          onPointerUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
-                          onPointerCancel={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
-                          onKeyUp={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
-                          onBlur={(event) => void handleUpdateMotionSensitivity(cam.id, Number(event.currentTarget.value))}
-                          draggable={false}
-                          className="motion-sensitivity-range range range-warning range-sm sm:range-xs"
-                          aria-label={`Bewegungsempfindlichkeit für ${cam.name}`}
-                        />
-                        <div className="mt-1 flex justify-between text-[9px] text-slate-600">
-                          <span>Weniger Fehlalarme</span>
-                          <span>Kleinere Bewegungen</span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1 font-medium">Vorlauf</label>
-                        <select
-                          value={cam.motionPreRollSeconds ?? 10}
-                          onChange={(event) => handleUpdateMotionTiming(cam.id, "motionPreRollSeconds", Number(event.target.value))}
-                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
-                        >
-                          {[0, 5, 10, 15, 30].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1 font-medium">Nachlauf</label>
-                        <select
-                          value={cam.motionPostRollSeconds || 30}
-                          onChange={(event) => handleUpdateMotionTiming(cam.id, "motionPostRollSeconds", Number(event.target.value))}
-                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200"
-                        >
-                          {[10, 20, 30, 60, 120].map((seconds) => <option key={seconds} value={seconds}>{seconds} Sekunden</option>)}
-                        </select>
-                      </div>
-                    </>
                   )}
 
                   {recordingModeUsesContinuous(cam.recordMode) && <div>

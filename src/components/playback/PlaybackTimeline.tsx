@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { Play, Clock, Search, Video, Zap, Image as ImageIcon } from "lucide-react";
-import { TIMELINE_WINDOWS, objectClassLabels } from "@/components/playback/playbackTypes";
+import { Play, Clock, Video } from "lucide-react";
+import { TIMELINE_WINDOWS } from "@/components/playback/playbackTypes";
 import { formatGermanDate, formatMinutesToTime, parseTimeToSeconds, formatBytes, getTodayStr } from "@/components/playback/playbackUtils";
 import type { RecordingClip } from "@/components/playback/playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
@@ -15,7 +15,7 @@ function formatTimelineTime(seconds: number) {
 }
 
 export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
-  const { toast, cameras, selectedDate, timeFrom, timeTo, timelineWindowMinutes, timelineStartMin, showEventLog, setShowEventLog, eventLogSearch, setEventLogSearch, eventLogTimeOfDay, setEventLogTimeOfDay, showVideoTrack, setShowVideoTrack, motionEvents, hoverScrubber, setHoverScrubber, activeClip, videoCurrentTime, setSelectedSnapshot, selectRecordingDate, timelineClips, openClipWithOffset, zoomToWindow, goToNow, panTimeline, jumpToMotionCluster, playEvent, focusEventOnTimeline, timelineTicks, timelinePanStepMinutes, timelinePanLabel, filteredMotionEvents } = pb;
+  const { toast, cameras, selectedDate, timeFrom, timeTo, timelineWindowMinutes, timelineStartMin, showVideoTrack, setShowVideoTrack, hoverScrubber, setHoverScrubber, activeClip, videoCurrentTime, selectRecordingDate, timelineClips, openClipWithOffset, zoomToWindow, goToNow, panTimeline, timelineTicks, timelinePanStepMinutes, timelinePanLabel } = pb;
 
   // Merge contiguous / adjacent recording segments into unbroken continuous stream spans ("durchgehender Stream")
   const streamSpans = useMemo(() => {
@@ -143,16 +143,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
               <h2 className="text-sm font-bold text-white tracking-wide">
                 Zeitleiste
               </h2>
-              {motionEvents.length > 0 && (
-                <button
-                  onClick={jumpToMotionCluster}
-                  className="rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-medium flex items-center gap-1 transition active:scale-95"
-                  title="Fokus auf erste Bewegung"
-                >
-                  <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
-                  <span>{motionEvents.length} {motionEvents.length === 1 ? "Bewegung" : "Bewegungen"}</span>
-                </button>
-              )}
             </div>
           </div>
 
@@ -228,10 +218,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
                 <span className={`h-1.5 w-2 rounded-sm ${showVideoTrack ? "bg-sky-400 shadow-[0_0_6px_#38bdf8]" : "bg-slate-600"}`} />
                 <span>Video-Spur</span>
               </button>
-              <span className="flex items-center gap-1 px-1.5 py-0.5 text-amber-300 font-semibold">
-                <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
-                <span>Bewegung</span>
-              </span>
             </div>
           </div>
         </div>
@@ -247,7 +233,7 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             if (seconds === null) { setHoverScrubber(null); return; }
             const recording = recordingAtPosition(seconds);
             const proximityMin = timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4;
-            setHoverScrubber({ pct, timeStr: formatTimelineTime(seconds), hasRecording: Boolean(recording), hasMotion: motionEvents.some((ev) => Math.abs(ev.totalMinutes - seconds / 60) <= proximityMin), clipName: recording?.clip.cameraName });
+            setHoverScrubber({ pct, timeStr: formatTimelineTime(seconds), hasRecording: Boolean(recording), hasMotion: false, clipName: recording?.clip.cameraName });
           }}
           onScrubStart={() => { missingRecording.current = null; pb.beginScrubbing(); }}
           onSeek={(seconds) => {
@@ -350,52 +336,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             />
           )}
 
-          {/* Motion Event Markers Layer */}
-          {motionEvents.map((ev) => {
-            const spanMin = timelineWindowMinutes;
-            const vStart = timelineStartMin;
-            const vEnd = timelineStartMin + spanMin;
-            const evMin = ev.totalMinutes;
-
-            if (evMin < vStart || evMin > vEnd) return null;
-            const leftPct = ((evMin - vStart) / spanMin) * 100;
-            const isHighZoom = timelineWindowMinutes <= 120;
-
-            return (
-              <div
-                key={ev.id}
-                data-scrub-marker
-                onClick={(e) => {
-                  e.stopPropagation();
-                  playEvent(ev);
-                }}
-                className={`group/ev absolute top-1 bottom-3 z-25 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform ${
-                  isHighZoom ? "w-4 -ml-2 hover:scale-125" : "w-2.5 -ml-[5px] hover:scale-110"
-                }`}
-                style={{ left: `${leftPct}%` }}
-                title={`⚡ ${ev.timeStr} Uhr: ${ev.message} (${ev.cameraName}) - Klick zum Abspielen`}
-              >
-                <div
-                  className={`rounded-full bg-amber-400 border border-white shadow-[0_0_10px_#f59e0b] group-hover/ev:scale-125 transition-transform flex items-center justify-center ${
-                    isHighZoom ? "h-3.5 w-3.5" : "h-2 w-2"
-                  }`}
-                >
-                  {isHighZoom && <Zap className="h-2 w-2 text-slate-950 fill-slate-950" />}
-                </div>
-                <div
-                  className={`flex-1 bg-amber-400/80 shadow-[0_0_6px_#f59e0b] ${
-                    isHighZoom ? "w-[2px] bg-amber-300" : "w-[1px]"
-                  }`}
-                />
-                <div
-                  className={`rounded-full bg-amber-400 ${
-                    isHighZoom ? "h-2 w-2" : "h-1.5 w-1.5"
-                  }`}
-                />
-              </div>
-            );
-          })}
-
           {/* Indicator for currently playing clip */}
           {activeClip && (
             (() => {
@@ -437,11 +377,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
                 {hoverScrubber.hasRecording && (
                   <span className="text-sky-300 flex items-center gap-1">
                     • 📹 Video
-                  </span>
-                )}
-                {hoverScrubber.hasMotion && (
-                  <span className="text-amber-400 font-medium flex items-center gap-0.5">
-                    • <Zap className="h-2.5 w-2.5 fill-amber-400" /> Bewegung
                   </span>
                 )}
               </div>
@@ -496,143 +431,6 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
             </span>
           </div>
         )}
-
-        {/* Ereignis-Chronik (Detaillierter Bewegungs-Inspektor) */}
-        <div className="mt-4 pt-3.5 border-t border-slate-800/80">
-          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2.5">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowEventLog(!showEventLog)}
-                className="flex items-center gap-2 text-xs font-bold text-white hover:text-amber-400 transition"
-              >
-                <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>Ereignis-Chronik für {formatGermanDate(selectedDate)}</span>
-                <span className="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.2 text-[10px] font-mono">
-                  {motionEvents.length} {motionEvents.length === 1 ? "Ereignis" : "Ereignisse"}
-                </span>
-                <span className="text-slate-400 text-xs">
-                  {showEventLog ? "▲" : "▼"}
-                </span>
-              </button>
-            </div>
-
-            {showEventLog && (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {/* Search */}
-                <input
-                  type="text"
-                  placeholder="Filter (z.B. 11:25)..."
-                  value={eventLogSearch}
-                  onChange={(e) => setEventLogSearch(e.target.value)}
-                  className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
-                />
-
-                {/* Tageszeit Dropdown Filter */}
-                <select
-                  value={eventLogTimeOfDay}
-                  onChange={(e) => setEventLogTimeOfDay(e.target.value as any)}
-                  className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white focus:outline-none cursor-pointer"
-                >
-                  <option value="all">Alle Tageszeiten</option>
-                  <option value="morning">🌅 Vormittag (06–12 Uhr)</option>
-                  <option value="afternoon">☀️ Nachmittag (12–18 Uhr)</option>
-                  <option value="evening">🌙 Abend (18–24 Uhr)</option>
-                  <option value="night">🌌 Nacht (00–06 Uhr)</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {showEventLog && (
-            <div className="space-y-2">
-              {filteredMotionEvents.length === 0 ? (
-                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/40 text-center text-xs text-slate-400">
-                  {motionEvents.length === 0
-                    ? `Keine Bewegungsereignisse für ${formatGermanDate(selectedDate)} erfasst.`
-                    : "Keine Ereignisse für den gewählten Filter gefunden."}
-                </div>
-              ) : (
-                <div className="max-h-72 overflow-y-auto pr-1 space-y-1.5 scrollbar-thin">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                    {filteredMotionEvents.map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:border-amber-500/50 hover:bg-slate-900 transition-all shadow-sm group"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <Zap className="h-3 w-3 text-amber-400 fill-amber-400 shrink-0" />
-                            <span className="text-xs font-mono font-bold text-white">
-                              {ev.timeStr} Uhr
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                            {ev.cameraName} · {ev.message}
-                          </p>
-                          {ev.objectDetections && ev.objectDetections.length > 0 ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {ev.objectDetections.map((detection, index) => (
-                                <span key={`${detection.className || detection.group}-${index}`} className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">
-                                  {objectClassLabels[detection.className || ""] || detection.className || detection.group || "Objekt"}
-                                  {typeof detection.score === "number" ? ` ${Math.round(detection.score * 100)} %` : ""}
-                                </span>
-                              ))}
-                            </div>
-                          ) : ev.objectClasses && ev.objectClasses.length > 0 ? (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {ev.objectClasses.map((group) => (
-                                <span key={group} className="rounded bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-300">
-                                  {group === "person" ? "Person" : group === "vehicle" ? "Fahrzeug" : group === "animal" ? "Tier" : group}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                          {ev.motionRecordingStatus && !["ready", "continuous"].includes(ev.motionRecordingStatus) && (
-                            <p className={`mt-0.5 text-[9px] ${["failed", "disabled"].includes(ev.motionRecordingStatus) ? "text-rose-400" : "text-amber-400"}`} title={ev.motionRecordingError || undefined}>
-                              {ev.motionRecordingStatus === "failed"
-                                ? "Clip konnte nicht erstellt werden"
-                                : ev.motionRecordingStatus === "disabled"
-                                  ? "Bewegungsaufnahme war nicht aktiv"
-                                  : "Clip wird erstellt …"}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          {ev.imageUrl && (
-                            <button
-                              onClick={() => setSelectedSnapshot({ url: ev.imageUrl!, title: `${ev.cameraName} (${ev.timeStr} Uhr) · ${ev.message}` })}
-                              className="rounded p-1 text-slate-400 hover:text-red-400 hover:bg-slate-800 transition"
-                              title="Schnappschuss mit rotem Erkennungsrahmen ansehen"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => focusEventOnTimeline(ev)}
-                            className="rounded p-1 text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                            title="Zeitleiste auf diese Minute zoomen"
-                          >
-                            <Search className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => playEvent(ev)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2 py-1 text-[11px] shadow-sm transition active:scale-95"
-                            title={`Abspielen ab ${ev.timeStr} Uhr`}
-                          >
-                            <Play className="h-3 w-3 fill-current" />
-                            Play
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
       </div>
     </>
   );

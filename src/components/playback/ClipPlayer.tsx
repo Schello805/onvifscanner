@@ -56,17 +56,10 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   <span className="rounded bg-slate-800 px-2 py-0.5 text-[11px] font-mono text-slate-300">
                     Start: {activeClip.timeStr} Uhr
                   </span>
-                  {activeClipMotionEvents.length > 0 ? (
-                    <span className="inline-flex items-center gap-1 rounded bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-300 shadow-sm">
-                      <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
-                      {activeClipMotionEvents.length} {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip
-                    </span>
-                  ) : (
-                    <span className="rounded bg-sky-500/20 border border-sky-500/40 px-2 py-0.5 text-[10px] font-bold text-sky-300 shadow-sm flex items-center gap-1">
-                      <Film className="h-3 w-3 text-sky-400" />
-                      Daueraufnahme ({formatSeconds(effectiveDuration)})
-                    </span>
-                  )}
+                  <span className="rounded bg-sky-500/20 border border-sky-500/40 px-2 py-0.5 text-[10px] font-bold text-sky-300 shadow-sm flex items-center gap-1">
+                    <Film className="h-3 w-3 text-sky-400" />
+                    Daueraufnahme ({formatSeconds(effectiveDuration)})
+                  </span>
                   {activeClipIndex >= 0 && (
                     <span className="text-[10px] text-slate-500 font-mono">
                       ({activeClipIndex + 1}/{filteredClips.length})
@@ -350,26 +343,9 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
               {/* In-Clip Motion Timeline & Exact Moments Bar */}
               <div className="border-t border-slate-800 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                    <Zap className="h-4 w-4 fill-amber-400 text-amber-400 animate-pulse" />
-                    {activeClipMotionEvents.length > 0 ? (
-                      <span>
-                        {activeClipMotionEvents.length}{" "}
-                        {activeClipMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"} im Clip:
-                      </span>
-                    ) : (
-                      <span className="text-sky-300 font-normal flex items-center gap-1.5">
-                        <Film className="h-3.5 w-3.5 text-sky-400" />
-                        Daueraufnahme ({formatSeconds(effectiveDuration)})
-                      </span>
-                    )}
-                  </div>
-                  {activeClipMotionEvents.length > 0 && (
-                    <span className="text-[10px] text-slate-400 hidden sm:inline">
-                      (Klicke auf eine Marke, um genau dorthin zu springen)
-                    </span>
-                  )}
+                <div className="flex items-center gap-1.5 text-xs font-bold text-sky-400">
+                  <Film className="h-3.5 w-3.5 text-sky-400" />
+                  <span>Daueraufnahme ({formatSeconds(effectiveDuration)})</span>
                 </div>
 
                 {/* Video Time Info */}
@@ -408,64 +384,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   />
                   <div className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300 pointer-events-none z-20" style={{ left: `${Math.max(0.6, Math.min(99.4, position / effectiveDuration * 100))}%` }} />
 
-                  {/* Motion Markers */}
-                  {activeClipMotionEvents.map((ev, idx) => {
-                    const markerPct = Math.min(100, Math.max(0, (ev.offsetSec / effectiveDuration) * 100));
-                    const isCurrent = Math.abs(effectiveCurrentTime - ev.offsetSec) < 2.5;
-                    return (
-                      <div
-                        key={ev.id || idx}
-                        data-scrub-marker
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          seekToOffset(ev.offsetSec);
-                        }}
-                        className="absolute top-0 bottom-0 w-3 -ml-1.5 flex items-center justify-center cursor-pointer z-10 hover:scale-125 transition-transform group/marker"
-                        style={{ left: `${markerPct}%` }}
-                        title={`⚡ ${ev.timeStr} Uhr (bei ${formatSeconds(ev.offsetSec)}) - Klick zum Abspielen`}
-                      >
-                        <div
-                          className={`w-[2px] h-full shadow-sm rounded-full ${
-                            isCurrent
-                              ? "bg-amber-300 ring-2 ring-amber-200/50 scale-125 z-20"
-                              : "bg-amber-500/80 group-hover/marker:bg-amber-400 group-hover/marker:shadow-[0_0_8px_rgba(251,191,36,0.6)]"
-                          }`}
-                        />
-                      </div>
-                    );
-                  })}
                   </>}
                 </PlaybackScrubber>
-              )}
-
-              {/* Clickable Motion Pills with Exact Timestamps and Video Offsets */}
-              {activeClipMotionEvents.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pt-2 pb-0.5 scrollbar-thin">
-                  <span className="text-[10px] text-slate-400 shrink-0 font-medium mr-1">
-                    Genaue Zeitpunkte:
-                  </span>
-                  {activeClipMotionEvents.map((ev, idx) => {
-                    const isNear = Math.abs(effectiveCurrentTime - ev.offsetSec) < 2.5;
-                    return (
-                      <button
-                        key={ev.id || idx}
-                        onClick={() => seekToOffset(ev.offsetSec)}
-                        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-mono transition-all ${
-                          isNear
-                            ? "bg-amber-400 text-slate-950 font-bold ring-2 ring-amber-300 shadow-md shadow-amber-500/30 scale-105"
-                            : "border border-amber-500/30 bg-amber-950/20 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400"
-                        }`}
-                        title={`Springe zu ${ev.timeStr} Uhr (bei ${formatSeconds(ev.offsetSec)})`}
-                      >
-                        <Zap className={`h-3 w-3 ${isNear ? "fill-slate-950 text-slate-950" : "fill-amber-400 text-amber-400"}`} />
-                        <span className="font-semibold">{ev.timeStr} Uhr</span>
-                        <span className={`text-[10px] ${isNear ? "text-slate-900" : "text-amber-200/80"}`}>
-                          (bei {formatSeconds(ev.offsetSec)})
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
               )}
               </div>
 
@@ -483,27 +403,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     <span className="hidden sm:inline">Vorheriger</span>
                   </button>
 
-                  {/* Direct Jump to Motion Buttons */}
-                  {activeClipMotionEvents.length > 0 && (
-                    <div className="flex items-center gap-1 border-l border-slate-800 pl-1.5">
-                      <button
-                        onClick={jumpToPrevMotion}
-                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-500/20 transition-colors text-xs"
-                        title="Zur vorherigen Bewegung springen (Taste P)"
-                      >
-                        <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span className="hidden md:inline">Vorh.</span>
-                      </button>
-                      <button
-                        onClick={jumpToNextMotion}
-                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-500/20 transition-colors text-xs"
-                        title="Zur nächsten Bewegung springen (Taste N oder M)"
-                      >
-                        <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span className="hidden md:inline">Nächste</span>
-                      </button>
-                    </div>
-                  )}
+
 
                   <button
                     onClick={playNextClip}

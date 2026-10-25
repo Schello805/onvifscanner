@@ -147,7 +147,7 @@ export async function GET(req: Request) {
 
       const effectiveMode = ev.camera ? effectiveRecordingMode(ev.camera, d) : "off";
       const recordingStatus = ev.motionRecording?.status
-        ?? (effectiveMode === "motion" ? "pending" : effectiveMode === "continuous" ? "continuous" : "disabled");
+        ?? (effectiveMode === "continuous" ? "continuous" : "disabled");
 
       return {
         id: ev.id,

@@ -77,14 +77,7 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
                     </button>
                   </th>
                   <th className="py-2.5 px-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleTableSort("motion-least", "motion-most")}
-                      className="inline-flex items-center gap-1 hover:text-white"
-                      title="Nach Anzahl der Bewegungen sortieren"
-                    >
-                      Bewegung <span aria-hidden="true">{sortIndicator("motion-least", "motion-most")}</span>
-                    </button>
+                    <span className="text-slate-400">Aufnahmetyp</span>
                   </th>
                   <th className="py-2.5 px-3">
                     <button
@@ -198,33 +191,14 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
 
                       {/* Bewegung */}
                       <td className="py-2 px-3">
-                        {clipMotions.length > 0 ? (
-                          <div className="flex flex-col gap-0.5">
-                            <button
-                              onClick={() => openClipWithOffset(clip, clipMotions[0].offsetSec)}
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/35 px-2 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors group/m w-fit"
-                              title={`Bewegungen um: ${clipMotions.map((m) => `${m.timeStr} (bei ${formatSeconds(m.offsetSec)})`).join(", ")} - Klick zum Abspielen`}
-                            >
-                              <Zap className="h-3 w-3 fill-amber-400 text-amber-400 group-hover/m:scale-110 transition-transform" />
-                              <span>
-                                {clipMotions.length} {clipMotions.length === 1 ? "Bewegung" : "Bewegungen"}
-                              </span>
-                            </button>
-                            <span className="text-slate-400 font-mono text-[10px] pl-0.5">
-                              {clipMotions.map((m) => m.timeStr).slice(0, 2).join(", ")}
-                              {clipMotions.length > 2 ? "..." : ""}
-                            </span>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => openClip(clip)}
-                            className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 transition-colors group/d w-fit cursor-pointer"
-                            title="Klick zum Abspielen dieser Daueraufnahme"
-                          >
-                            <Film className="h-3 w-3 text-sky-400 group-hover/d:scale-110 transition-transform" />
-                            <span>Daueraufnahme (15m)</span>
-                          </button>
-                        )}
+                        <button
+                          onClick={() => openClip(clip)}
+                          className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 text-[11px] font-semibold text-sky-300 hover:bg-sky-500/20 transition-colors group/d w-fit cursor-pointer"
+                          title="Klick zum Abspielen dieser Daueraufnahme"
+                        >
+                          <Film className="h-3 w-3 text-sky-400 group-hover/d:scale-110 transition-transform" />
+                          <span>Daueraufnahme{clip.durationSeconds ? ` (${Math.round(clip.durationSeconds / 60)}m)` : ""}</span>
+                        </button>
                       </td>
 
                       {/* Größe */}

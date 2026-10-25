@@ -161,31 +161,6 @@ export function ClipFilterBar({ pb }: { pb: PlaybackState }) {
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setFilterMotionOnly(!filterMotionOnly);
-            setCurrentPage(1);
-          }}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
-            filterMotionOnly
-              ? "bg-amber-500 font-bold text-slate-950 shadow-md shadow-amber-500/20"
-              : "border border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-700 hover:text-white"
-          }`}
-          title="Nur Aufnahmen mit erkannter Bewegung anzeigen"
-        >
-          <Zap className={`h-3.5 w-3.5 ${filterMotionOnly ? "fill-slate-950 text-slate-950" : "fill-amber-400 text-amber-400"}`} />
-          <span>Nur Bewegung</span>
-          {motionClipsCount > 0 && (
-            <span
-              className={`rounded-full px-1.5 text-[10px] font-mono ${
-                filterMotionOnly ? "bg-slate-950 text-amber-300" : "bg-slate-800 text-amber-400"
-              }`}
-            >
-              {motionClipsCount}
-            </span>
-          )}
-        </button>
       </div>
 
       {/* Erweiterte Filter */}
@@ -282,8 +257,6 @@ export function ClipFilterBar({ pb }: { pb: PlaybackState }) {
               <option value="oldest">Älteste zuerst</option>
               <option value="camera-asc">Kamera A–Z</option>
               <option value="camera-desc">Kamera Z–A</option>
-              <option value="motion-most">Meiste Bewegungen</option>
-              <option value="motion-least">Wenigste Bewegungen</option>
               <option value="largest">Größte zuerst</option>
               <option value="smallest">Kleinste zuerst</option>
               <option value="storage-asc">Speicherort A–Z</option>

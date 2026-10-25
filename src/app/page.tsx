@@ -694,7 +694,7 @@ export default function CameraWallPage() {
   }
 
   async function toggleRecord(camera: WallCamera) {
-    const nextMode: NonNullable<WallCamera["recordMode"]> = camera.recordMode === "off" || !camera.recordEnabled ? "motion" : "off";
+    const nextMode: NonNullable<WallCamera["recordMode"]> = camera.recordMode === "off" || !camera.recordEnabled ? "continuous" : "off";
     setRecordLoading((prev) => new Set(prev).add(camera.id));
     try {
       const res = await fetch("/api/nvr/cameras", {
@@ -709,7 +709,7 @@ export default function CameraWallPage() {
       persist(next);
       toast.success(
         nextMode !== "off"
-          ? `Bewegungsaufnahme für "${camera.name}" gestartet.`
+          ? `Daueraufnahme für "${camera.name}" gestartet.`
           : `Aufnahme für "${camera.name}" beendet.`
       );
     } catch (err: any) {
@@ -733,16 +733,16 @@ export default function CameraWallPage() {
       const res = await fetch("/api/nvr/cameras", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true, recordMode: enable ? "motion" : "off" }),
+        body: JSON.stringify({ all: true, recordMode: enable ? "continuous" : "off" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Fehler bei der Aufnahmesteuerung");
 
-      const next = cameras.map((c) => ({ ...c, recordEnabled: enable, recordMode: enable ? "motion" as const : "off" as const }));
+      const next = cameras.map((c) => ({ ...c, recordEnabled: enable, recordMode: enable ? "continuous" as const : "off" as const }));
       persist(next);
       toast.success(
         enable
-          ? `Bewegungsaufnahme für alle ${cameras.length} Kameras gestartet.`
+          ? `Daueraufnahme für alle ${cameras.length} Kameras gestartet.`
           : `Alle Kamera-Aufnahmen beendet.`
       );
     } catch (err: any) {
@@ -1739,7 +1739,7 @@ export default function CameraWallPage() {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-rose-500"></span>
                           </span>
-                          {effectiveRecordMode === "motion" ? "MOTION" : "REC"}
+                          REC
                         </span>
                       )}
                       {isOffline ? <span className="shrink-0 rounded bg-red-500 px-1 text-[9px] uppercase tracking-wider font-bold leading-tight">Offline</span> : null}

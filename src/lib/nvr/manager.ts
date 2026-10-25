@@ -103,16 +103,10 @@ export async function syncCameraWithMediaMtx(cameraId: string): Promise<{ ok: bo
       }
     }
 
-    const recordMode = effectiveRecordingMode(camera);
-    const recordingActive = recordMode !== "off";
-    const motionBufferRoot = process.env.MOTION_BUFFER_DIR || path.join(process.cwd(), "data", "motion-buffer");
-    const motionBufferDir = path.join(motionBufferRoot, camera.id);
-    const recordDirectory = recordMode === "motion" ? motionBufferDir : cameraRecordDir;
-    fs.mkdirSync(recordDirectory, { recursive: true });
-    const segmentDuration = recordMode === "motion"
-      ? `${MOTION_BUFFER_SEGMENT_SECONDS}s`
-      : `${Math.max(1, camera.recordSegmentMinutes || 15)}m`;
-    const recordPattern = path.join(recordDirectory, "%Y-%m-%d_%H-%M-%S-%f");
+    const recordingActive = effectiveRecordingMode(camera) !== "off";
+    fs.mkdirSync(cameraRecordDir, { recursive: true });
+    const segmentDuration = `${Math.max(1, camera.recordSegmentMinutes || 15)}m`;
+    const recordPattern = path.join(cameraRecordDir, "%Y-%m-%d_%H-%M-%S-%f");
 
     const mtxConfig: Record<string, any> = {
       source: sourceUrl,

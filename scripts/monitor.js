@@ -35,7 +35,7 @@ const motionRecorder = new MotionRecorder(prisma);
 const objectDetector = new ObjectDetector();
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
-const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
+const motionDetectionEnabled = false;
 const objectDetectionEnabled = process.env.ENABLE_OBJECT_DETECTION !== 'false';
 const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 4_000);
 const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 2));
@@ -193,8 +193,12 @@ async function runMonitorCycle() {
   try {
     if (!legacyRecordingModesMigrated) {
       await prisma.camera.updateMany({
-        where: { recordEnabled: true, recordMode: 'off' },
-        data: { recordMode: 'motion' },
+        where: { recordEnabled: true, recordMode: { in: ['off', 'motion', 'scheduled_motion'] } },
+        data: { recordMode: 'continuous' },
+      });
+      await prisma.camera.updateMany({
+        where: { recordMode: 'motion' },
+        data: { recordMode: 'continuous' },
       });
       legacyRecordingModesMigrated = true;
     }
@@ -1020,24 +1024,18 @@ async function syncMediaMtxPaths(cameras) {
             const target = await prisma.storageTarget.findUnique({ where: { id: cam.storageTargetId } });
             if (target && target.enabled) targetDir = target.path;
           }
-          const camRecordDir = recordMode === 'motion'
-            ? motionBufferDirectory(cam.id)
-            : path.join(targetDir, cam.id);
+          const camRecordDir = path.join(targetDir, cam.id);
           if (!fs.existsSync(camRecordDir)) {
             try { fs.mkdirSync(camRecordDir, { recursive: true }); } catch {}
           }
-          recordPath = recordMode === 'motion'
-            ? motionBufferRecordPattern(cam.id)
-            : path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S-%f');
-          segmentDuration = recordMode === 'motion'
-            ? `${BUFFER_SEGMENT_SECONDS}s`
-            : `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
+          recordPath = path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S-%f');
+          segmentDuration = `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
         }
 
         desiredPaths[cam.id] = {
           ...mediaSourceConfig({ camera: cam, uri: originalUri, source: uri, alwaysOn: recordingActive }),
           record: recordingActive,
-          runOnRecordSegmentComplete: recordMode === 'motion' ? RECORDING_COMPLETE_COMMAND : '',
+          runOnRecordSegmentComplete: '',
           ...(recordingActive ? {
             recordPath,
             recordFormat: "fmp4",
@@ -1264,20 +1262,7 @@ function startMonitor() {
   isMonitoring = true;
   
   console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
-  if (motionDetectionEnabled) {
-    console.log(`🎯 Server motion detection enabled (${motionDetectionIntervalMs}ms, concurrency ${motionDetectionConcurrency}, analysis ${motionAnalysisWidth}x${motionAnalysisHeight}).`);
-  } else {
-    console.log('Server motion detection is disabled.');
-  }
-  
-  // Start ONVIF event listener
-  onvifEvents.start();
-  motionRecorder.start();
-
-  if (motionDetectionEnabled) {
-    monitorTimers.push(setTimeout(() => void runMotionDetection(), 2_500));
-    monitorTimers.push(setInterval(() => void runMotionDetection(), motionDetectionIntervalMs));
-  }
+  console.log('Motion detection disabled (focus on 24/7 clean continuous recording).');
 
   // Run immediately, then every 60 seconds
   void runMonitorCycle();

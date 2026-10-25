@@ -6,18 +6,14 @@ import type { WallCamera } from "@/lib/cameraWall";
 import {
   type RecordingMode,
   recordingModeUsesContinuous,
-  recordingModeUsesMotion,
   recordingModeUsesSchedule,
   RECORDING_MODE_OPTIONS,
 } from "@/lib/recordingPolicy";
-import { MotionMaskEditor, type MotionRegion } from "./MotionMaskEditor";
+import type { MotionRegion } from "./MotionMaskEditor";
 import {
-  Car,
   Check,
   ChevronDown,
-  Cpu,
   Folder,
-  Paintbrush,
   Pencil,
   Plus,
   Sliders,
@@ -25,7 +21,6 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { KnownEntitiesModal } from "./KnownEntitiesModal";
 
 export type ExistingGroup = {
   name: string;
@@ -43,22 +38,22 @@ export type CameraEditDraft = {
   recordEnabled: boolean;
   recordMode: RecordingMode;
   recordSegmentMinutes: number;
-  motionPreRollSeconds: number;
-  motionPostRollSeconds: number;
-  alarmCooldownSeconds: number;
+  motionPreRollSeconds?: number;
+  motionPostRollSeconds?: number;
+  alarmCooldownSeconds?: number;
   motionMinAreaPercent?: number | null;
-  motionSensitivity: number;
-  motionIgnoreRegions: MotionRegion[];
-  objectDetectionEnabled: boolean;
-  objectDetectionClasses: string[];
-  objectMinConfidence: number;
-  licensePlateRecognitionEnabled: boolean;
-  motionScheduleEnabled: boolean;
-  motionScheduleStart: string;
-  motionScheduleEnd: string;
-  motionScheduleDays: number[];
-  motionScheduleSensitivity: number;
-  notificationsEnabled: boolean;
+  motionSensitivity?: number;
+  motionIgnoreRegions?: MotionRegion[];
+  objectDetectionEnabled?: boolean;
+  objectDetectionClasses?: string[];
+  objectMinConfidence?: number;
+  licensePlateRecognitionEnabled?: boolean;
+  motionScheduleEnabled?: boolean;
+  motionScheduleStart?: string;
+  motionScheduleEnd?: string;
+  motionScheduleDays?: number[];
+  motionScheduleSensitivity?: number;
+  notificationsEnabled?: boolean;
   storageTargetId: string;
 };
 
@@ -83,7 +78,7 @@ type CameraEditModalProps = {
   onTriggerDeleteGroup?: (groupName: string) => void;
 };
 
-type SectionKey = "general" | "recording" | "ai" | "mask";
+type SectionKey = "general" | "recording";
 
 export function CameraEditModal({
   camera,
@@ -100,7 +95,6 @@ export function CameraEditModal({
   onTriggerDeleteGroup,
 }: CameraEditModalProps) {
   const [showPassword, setShowPassword] = useState(false);
-  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
   const [isGroupDropdownOpen, setIsGroupDropdownOpen] = useState(false);
   const groupDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -136,9 +130,7 @@ export function CameraEditModal({
 
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     general: true,
-    recording: false,
-    ai: false,
-    mask: false,
+    recording: true,
   });
 
   const toggleSection = (key: SectionKey) => {
@@ -152,8 +144,6 @@ export function CameraEditModal({
     setOpenSections({
       general: expand,
       recording: expand,
-      ai: expand,
-      mask: expand,
     });
   };
 
@@ -501,6 +491,25 @@ export function CameraEditModal({
                       </div>
                     </div>
 
+                    <label className="grid gap-1.5 max-w-sm">
+                      <span className="font-semibold text-slate-300">Name im Bild (Overlay-Position)</span>
+                      <select
+                        value={editDraft.overlayPosition}
+                        onChange={(event) =>
+                          onUpdateDraft({
+                            ...editDraft,
+                            overlayPosition: event.target.value as CameraEditDraft["overlayPosition"],
+                          })
+                        }
+                        className="glass-input rounded-lg px-3 py-2 text-xs outline-none bg-slate-900 text-white"
+                      >
+                        <option value="top-left">Oben Links</option>
+                        <option value="top-right">Oben Rechts</option>
+                        <option value="bottom-left">Unten Links</option>
+                        <option value="bottom-right">Unten Rechts</option>
+                      </select>
+                    </label>
+
                     <label className="grid gap-1.5">
                       <span className="font-semibold text-slate-300">
                         Snapshot-URLs <span className="font-normal text-slate-500">(erste erreichbare URL wird genutzt)</span>
@@ -687,44 +696,6 @@ export function CameraEditModal({
                             </label>
                           )}
 
-                          {recordingModeUsesMotion(editDraft.recordMode) && (
-                            <>
-                              <label className="grid gap-1">
-                                <span className="text-slate-300 text-[11px] font-medium">Vorlauf (Pre-Roll):</span>
-                                <select
-                                  value={editDraft.motionPreRollSeconds}
-                                  onChange={(e) =>
-                                    onUpdateDraft({ ...editDraft, motionPreRollSeconds: Number(e.target.value) })
-                                  }
-                                  className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white"
-                                >
-                                  {[0, 5, 10, 15, 30].map((seconds) => (
-                                    <option key={seconds} value={seconds}>
-                                      {seconds} Sekunden
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <label className="grid gap-1">
-                                <span className="text-slate-300 text-[11px] font-medium">Nachlauf (Post-Roll):</span>
-                                <select
-                                  value={editDraft.motionPostRollSeconds}
-                                  onChange={(e) =>
-                                    onUpdateDraft({ ...editDraft, motionPostRollSeconds: Number(e.target.value) })
-                                  }
-                                  className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white"
-                                >
-                                  {[10, 20, 30, 60, 120].map((seconds) => (
-                                    <option key={seconds} value={seconds}>
-                                      {seconds} Sekunden
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            </>
-                          )}
-
                           {recordingModeUsesSchedule(editDraft.recordMode) && (
                             <div className="sm:col-span-2 rounded-xl border border-violet-500/25 bg-violet-950/20 p-3 space-y-3 mt-1">
                               <div>
@@ -765,13 +736,13 @@ export function CameraEditModal({
                                     onClick={() =>
                                       onUpdateDraft({
                                         ...editDraft,
-                                        motionScheduleDays: editDraft.motionScheduleDays.includes(day)
-                                          ? editDraft.motionScheduleDays.filter((entry) => entry !== day)
-                                          : [...editDraft.motionScheduleDays, day].sort(),
+                                        motionScheduleDays: (editDraft.motionScheduleDays || []).includes(day)
+                                          ? (editDraft.motionScheduleDays || []).filter((entry) => entry !== day)
+                                          : [...(editDraft.motionScheduleDays || []), day].sort(),
                                       })
                                     }
                                     className={`rounded-md border px-1 py-1.5 text-[9px] font-semibold transition-all ${
-                                      editDraft.motionScheduleDays.includes(day)
+                                      (editDraft.motionScheduleDays || []).includes(day)
                                         ? "border-violet-400 bg-violet-500/25 text-violet-200 shadow-sm"
                                         : "border-white/10 bg-slate-950/60 text-slate-500"
                                     }`}
@@ -780,380 +751,10 @@ export function CameraEditModal({
                                   </button>
                                 ))}
                               </div>
-                              {recordingModeUsesMotion(editDraft.recordMode) ? (
-                                <label className="grid gap-1 pt-1">
-                                  <span className="flex justify-between text-[11px] text-slate-400">
-                                    <span>Empfindlichkeit im Zeitfenster</span>
-                                    <strong className="text-violet-300">{editDraft.motionScheduleSensitivity}%</strong>
-                                  </span>
-                                  <input
-                                    type="range"
-                                    min={1}
-                                    max={100}
-                                    value={editDraft.motionScheduleSensitivity}
-                                    onInput={(event) =>
-                                      onUpdateDraft({
-                                        ...editDraft,
-                                        motionScheduleSensitivity: Number(event.currentTarget.value),
-                                      })
-                                    }
-                                    className="range range-secondary range-sm"
-                                  />
-                                </label>
-                              ) : null}
                             </div>
                           )}
                         </div>
                       )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 3. BEWEGUNG, KI & ALARMIERUNG */}
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-sm transition-all duration-200">
-                <button
-                  type="button"
-                  onClick={() => toggleSection("ai")}
-                  className="flex w-full items-center justify-between gap-3 p-3.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500"
-                  aria-expanded={openSections.ai}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                      <Cpu className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-200 text-sm">Bewegung, KI & Alarmierung</div>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        Sens: {editDraft.motionSensitivity}%
-                        {editDraft.objectDetectionEnabled
-                          ? ` • KI: ${editDraft.objectDetectionClasses.length} Typen (${editDraft.objectMinConfidence}%)`
-                          : " • KI: Aus"}
-                        {editDraft.notificationsEnabled ? " • Push aktiv" : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {editDraft.licensePlateRecognitionEnabled && (
-                      <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-                        <Car className="w-3 h-3" /> LPR
-                      </span>
-                    )}
-                    {editDraft.objectDetectionEnabled && (
-                      <span className="hidden sm:inline-block rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
-                        KI
-                      </span>
-                    )}
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-                        openSections.ai ? "rotate-180 text-white" : ""
-                      }`}
-                    />
-                  </div>
-                </button>
-
-                {openSections.ai && (
-                  <div className="border-t border-white/10 p-4 space-y-4 animate-in fade-in-50 duration-150">
-                    {/* Push Notification Toggle */}
-                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3">
-                      <div className="min-w-0">
-                        <span className="block text-xs font-semibold text-white">Push-Benachrichtigung</span>
-                        <span className="block text-[10px] leading-relaxed text-slate-400">
-                          Meldet Bewegungen dieser Kamera mit aktuellem Bild über Web-Push, Telegram oder ntfy.
-                        </span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={editDraft.notificationsEnabled}
-                        onChange={(event) =>
-                          onUpdateDraft({ ...editDraft, notificationsEnabled: event.target.checked })
-                        }
-                        className="toggle toggle-success toggle-sm shrink-0"
-                        aria-label="Push-Benachrichtigungen für diese Kamera aktivieren"
-                      />
-                    </label>
-
-                    {/* Notification Cooldown */}
-                    {editDraft.notificationsEnabled && (
-                      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <span className="block text-xs font-semibold text-slate-200">
-                              Wiederholungssperre (Cooldown)
-                            </span>
-                            <span className="block text-[10px] text-slate-400">
-                              Pausiert Benachrichtigungen während andauernder Bewegung. Erst nach dieser Ruhezeit wird wieder gemeldet.
-                            </span>
-                          </div>
-                          <select
-                            value={editDraft.alarmCooldownSeconds ?? 30}
-                            onChange={(e) =>
-                              onUpdateDraft({ ...editDraft, alarmCooldownSeconds: Number(e.target.value) })
-                            }
-                            className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white shrink-0 border border-white/10"
-                            aria-label="Wiederholungssperre Cooldown"
-                          >
-                            {[15, 20, 30, 45, 60, 120, 300].map((sec) => (
-                              <option key={sec} value={sec}>
-                                {sec >= 60 ? `${sec / 60} Minute${sec > 60 ? "n" : ""}` : `${sec} Sekunden`}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Motion Sensitivity */}
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3.5 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-200 text-xs">Bewegungsempfindlichkeit</span>
-                        <strong className="text-amber-300 text-xs">{editDraft.motionSensitivity}%</strong>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={100}
-                        step={1}
-                        value={editDraft.motionSensitivity}
-                        onInput={(event) =>
-                          onUpdateDraft({ ...editDraft, motionSensitivity: Number(event.currentTarget.value) })
-                        }
-                        onPointerDown={(event) => {
-                          try {
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                          } catch {}
-                        }}
-                        draggable={false}
-                        className="motion-sensitivity-range range range-warning range-sm"
-                        aria-label="Bewegungsempfindlichkeit"
-                      />
-                      <div className="flex justify-between text-[9px] text-slate-500">
-                        <span>Weniger Fehlalarme (robuster)</span>
-                        <span>Erkennt kleinste Bewegungen</span>
-                      </div>
-                    </div>
-
-                    {/* Minimum Motion Area */}
-                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-1.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <span className="block text-xs font-semibold text-slate-200">
-                            Mindest-Bewegungsfläche (% Bild)
-                          </span>
-                          <span className="block text-[10px] text-slate-400">
-                            Wie viel Prozent des Bildes sich bewegen müssen. Filtert wackelnde Kissen, Pflanzen oder kleine Tiere.
-                          </span>
-                        </div>
-                        <select
-                          value={editDraft.motionMinAreaPercent != null ? String(editDraft.motionMinAreaPercent) : "default"}
-                          onChange={(e) =>
-                            onUpdateDraft({
-                              ...editDraft,
-                              motionMinAreaPercent: e.target.value === "default" ? null : Number(e.target.value),
-                            })
-                          }
-                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white shrink-0 border border-white/10"
-                          aria-label="Mindest-Bewegungsfläche"
-                        >
-                          <option value="default">Standard (aus Gesamteinstellungen)</option>
-                          <option value="0.5">0.5% (Sehr empfindlich)</option>
-                          <option value="1.0">1.0% (Fein)</option>
-                          <option value="1.5">1.5% (Standard)</option>
-                          <option value="2.0">2.0% (Mittel)</option>
-                          <option value="3.0">3.0% (Empfohlen gegen Fehlalarme)</option>
-                          <option value="5.0">5.0% (Groß / Personen)</option>
-                          <option value="8.0">8.0% (Sehr groß)</option>
-                          <option value="10.0">10.0% (Nur massive Bewegung)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Local Object Detection */}
-                    <div className="rounded-xl border border-cyan-500/25 bg-cyan-950/15 p-3.5 space-y-3">
-                      <label className="flex cursor-pointer items-start gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={editDraft.objectDetectionEnabled}
-                          onChange={(event) =>
-                            onUpdateDraft({ ...editDraft, objectDetectionEnabled: event.target.checked })
-                          }
-                          className="mt-0.5 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
-                        />
-                        <span>
-                          <strong className="block text-xs text-white">Lokale KI-Objekterkennung</strong>
-                          <span className="block text-[10px] leading-relaxed text-slate-400">
-                            Nur Bewegungen mit den ausgewählten Objektarten erzeugen Ereignisse. Schlägt die Prüfung fehl, wird kein ungefilterter Alarm ausgelöst.
-                          </span>
-                        </span>
-                      </label>
-                      {editDraft.objectDetectionEnabled && (
-                        <div className="space-y-3 border-t border-cyan-500/15 pt-3">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            {(
-                              [
-                                ["person", "Personen"],
-                                ["vehicle", "Fahrzeuge/Räder"],
-                                ["animal", "Tiere"],
-                              ] as const
-                            ).map(([value, label]) => (
-                              <label
-                                key={value}
-                                className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-slate-950/60 px-2.5 py-2 hover:bg-slate-950 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={editDraft.objectDetectionClasses.includes(value)}
-                                  onChange={(event) =>
-                                    onUpdateDraft({
-                                      ...editDraft,
-                                      objectDetectionClasses: event.target.checked
-                                        ? Array.from(new Set([...editDraft.objectDetectionClasses, value]))
-                                        : editDraft.objectDetectionClasses.filter((entry) => entry !== value),
-                                    })
-                                  }
-                                  className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
-                                />
-                                <span className="truncate text-[11px] text-slate-200 font-medium">{label}</span>
-                              </label>
-                            ))}
-                          </div>
-                          <label className="grid gap-1">
-                            <span className="flex justify-between text-[11px] text-slate-400">
-                              <span>Mindest-Sicherheit (Konfidenz)</span>
-                              <strong className="text-cyan-300">{editDraft.objectMinConfidence}%</strong>
-                            </span>
-                            <input
-                              type="range"
-                              min={20}
-                              max={95}
-                              value={editDraft.objectMinConfidence}
-                              onInput={(event) =>
-                                onUpdateDraft({
-                                  ...editDraft,
-                                  objectMinConfidence: Number(event.currentTarget.value),
-                                })
-                              }
-                              className="range range-info range-sm"
-                            />
-                          </label>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* License Plate Recognition (LPR) */}
-                    <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-3.5 space-y-2.5">
-                      <label className="flex cursor-pointer items-start gap-2.5">
-                        <input
-                          type="checkbox"
-                          checked={editDraft.licensePlateRecognitionEnabled}
-                          onChange={(event) =>
-                            onUpdateDraft({
-                              ...editDraft,
-                              licensePlateRecognitionEnabled: event.target.checked,
-                            })
-                          }
-                          className="mt-0.5 rounded border-slate-700 bg-slate-900 text-amber-500 focus:ring-0"
-                        />
-                        <span>
-                          <strong className="block text-xs text-white">Fahrzeuge und Kennzeichen lokal erkennen (LPR)</strong>
-                          <span className="block text-[10px] leading-relaxed text-slate-400">
-                            Prüft bestätigte Bewegungen auf Fahrzeuge und liest sichtbare Kennzeichen lokal per OCR aus. Rot maskierte Bildbereiche werden dabei ebenfalls ignoriert.
-                          </span>
-                        </span>
-                      </label>
-                      {editDraft.licensePlateRecognitionEnabled && (
-                        <div className="pt-2 border-t border-amber-500/20 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setIsKnownEntitiesOpen(true)}
-                            className="btn btn-xs border border-amber-500/30 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25 rounded-lg gap-1.5"
-                          >
-                            <Car className="w-3.5 h-3.5" />
-                            <span>Bekannte Kennzeichen verwalten...</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 4. MASKEN & BILD-OVERLAY */}
-              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-sm transition-all duration-200">
-                <button
-                  type="button"
-                  onClick={() => toggleSection("mask")}
-                  className="flex w-full items-center justify-between gap-3 p-3.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500"
-                  aria-expanded={openSections.mask}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                      <Paintbrush className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-slate-200 text-sm">Masken & Bild-Overlay</div>
-                      <p className="text-[11px] text-slate-400 truncate">
-                        {editDraft.motionIgnoreRegions?.length
-                          ? `${editDraft.motionIgnoreRegions.length} Ignorier-Bereich(e)`
-                          : "Keine Masken"}
-                        {" • Overlay: "}
-                        {editDraft.overlayPosition === "top-left"
-                          ? "Oben Links"
-                          : editDraft.overlayPosition === "top-right"
-                          ? "Oben Rechts"
-                          : editDraft.overlayPosition === "bottom-left"
-                          ? "Unten Links"
-                          : "Unten Rechts"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="rounded-full bg-slate-800 border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300 font-mono">
-                      {editDraft.motionIgnoreRegions?.length || 0} Masken
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-                        openSections.mask ? "rotate-180 text-white" : ""
-                      }`}
-                    />
-                  </div>
-                </button>
-
-                {openSections.mask && (
-                  <div className="border-t border-white/10 p-4 space-y-4 animate-in fade-in-50 duration-150">
-                    <label className="grid gap-1.5 max-w-sm">
-                      <span className="font-semibold text-slate-300">Name im Bild (Overlay-Position)</span>
-                      <select
-                        value={editDraft.overlayPosition}
-                        onChange={(event) =>
-                          onUpdateDraft({
-                            ...editDraft,
-                            overlayPosition: event.target.value as CameraEditDraft["overlayPosition"],
-                          })
-                        }
-                        className="glass-input rounded-lg px-3 py-2 text-xs outline-none bg-slate-900 text-white"
-                      >
-                        <option value="top-left">Oben Links</option>
-                        <option value="top-right">Oben Rechts</option>
-                        <option value="bottom-left">Unten Links</option>
-                        <option value="bottom-right">Unten Rechts</option>
-                      </select>
-                    </label>
-
-                    <div>
-                      <span className="block font-semibold text-slate-300 mb-1">
-                        Ignorier-Masken (Bewegungserkennung & KI)
-                      </span>
-                      <span className="block text-[11px] text-slate-400 mb-2">
-                        Mit dem Pinsel rot markierte Bereiche (z. B. Bäume, Straßenverkehr, Reflexionen) werden von der Bewegungserkennung und KI ignoriert.
-                      </span>
-                      <MotionMaskEditor
-                        imageSrc={previewImageSrc}
-                        regions={editDraft.motionIgnoreRegions}
-                        onChange={(motionIgnoreRegions) =>
-                          onUpdateDraft({ ...editDraft, motionIgnoreRegions })
-                        }
-                      />
                     </div>
                   </div>
                 )}
@@ -1194,10 +795,6 @@ export function CameraEditModal({
         </div>,
         document.body
       )}
-      <KnownEntitiesModal
-        isOpen={isKnownEntitiesOpen}
-        onClose={() => setIsKnownEntitiesOpen(false)}
-      />
     </>
   );
 }
