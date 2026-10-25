@@ -7,13 +7,11 @@ import { SourceBar } from "@/components/playback/SourceBar";
 import { DayCalendar } from "@/components/playback/DayCalendar";
 import { ClipPlayer } from "@/components/playback/ClipPlayer";
 import { PlaybackTimeline } from "@/components/playback/PlaybackTimeline";
-import { ClipFilterBar } from "@/components/playback/ClipFilterBar";
-import { ClipList } from "@/components/playback/ClipList";
 import { CameraPickerSheet } from "@/components/playback/CameraPickerSheet";
 
 /**
- * Wiedergabe: klassischer NVR-Aufbau
- * 1. Kopf + Quelle (Kamera / Tag)  2. Player  3. Zeitleiste  4. Clip-Liste mit Filtern
+ * Wiedergabe: Moderner NVR-Aufbau
+ * 1. Kopf + Quelle (Kamera / Tag)  2. Player  3. Zeitleiste (Scrubber)
  */
 export default function PlaybackPage() {
   const pb = usePlaybackPage();
@@ -30,11 +28,6 @@ export default function PlaybackPage() {
 
       <ClipPlayer pb={pb} />
       <PlaybackTimeline pb={pb} />
-
-      <section className="space-y-3" aria-label="Aufnahmen">
-        <ClipFilterBar pb={pb} />
-        <ClipList pb={pb} />
-      </section>
 
       <CameraPickerSheet pb={pb} />
 

@@ -111,7 +111,9 @@ export async function syncCameraWithMediaMtx(cameraId: string): Promise<{ ok: bo
     const mtxConfig: Record<string, any> = {
       source: sourceUrl,
       sourceOnDemand: !recordingActive,
+      rtspTransport: "tcp",
       record: recordingActive,
+      runOnRecordSegmentComplete: "",
       recordPath: recordPattern,
       recordFormat: "fmp4",
       recordPartDuration: "1s",

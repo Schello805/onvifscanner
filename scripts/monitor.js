@@ -1026,7 +1026,11 @@ async function syncMediaMtxPaths(cameras) {
           }
           const camRecordDir = path.join(targetDir, cam.id);
           if (!fs.existsSync(camRecordDir)) {
-            try { fs.mkdirSync(camRecordDir, { recursive: true }); } catch {}
+            try {
+              fs.mkdirSync(camRecordDir, { recursive: true });
+            } catch (err) {
+              console.error(`[MediaMTX Sync] Fehler beim Erstellen des Aufnahme-Verzeichnisses ${camRecordDir}:`, err?.message || err);
+            }
           }
           recordPath = path.join(targetDir, cam.id, '%Y-%m-%d_%H-%M-%S-%f');
           segmentDuration = `${Math.max(1, cam.recordSegmentMinutes || 15)}m`;
