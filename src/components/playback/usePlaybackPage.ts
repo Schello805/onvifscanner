@@ -990,23 +990,7 @@ export function usePlaybackPage() {
   };
 
   // Timeline Zoom & Pan Handlers
-  const zoomToWindow = (span: TimelineWindowMinutes, centerMin?: number) => {
-    setTimelineWindowMinutes(span);
-    if (span === 1440) {
-      setTimelineStartMin(0);
-      return;
-    }
-    const currentCenter = timelineStartMin + Math.floor(timelineWindowMinutes / 2);
-    const target = centerMin !== undefined ? centerMin : currentCenter;
-    let start = target - Math.floor(span / 2);
-    start = Math.max(0, Math.min(1440 - span, start));
-    const snapMinutes = span >= 120 ? 15 : span >= 30 ? 5 : 1;
-    start = Math.floor(start / snapMinutes) * snapMinutes;
-    setTimelineStartMin(start);
-  };
-
-  // Zeitleiste auf "Jetzt" setzen: 2h-Fenster, aktuelle Zeit liegt im rechten Drittel
-  const goToNow = () => {
+  const getNowMinutes = () => {
     const parts = new Intl.DateTimeFormat("de-DE", {
       timeZone: "Europe/Berlin",
       hour: "2-digit",
@@ -1015,10 +999,47 @@ export function usePlaybackPage() {
     }).formatToParts(new Date());
     const hh = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
     const mm = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
-    const nowMin = hh * 60 + mm;
-    const span = 2 * 60;
-    setTimelineWindowMinutes(120);
-    setTimelineStartMin(Math.max(0, Math.min(1440 - span, nowMin - 90)));
+    return hh * 60 + mm;
+  };
+
+  const zoomToWindow = (
+    span: TimelineWindowMinutes,
+    anchorMin?: number,
+    mode: "end" | "center" = "end"
+  ) => {
+    setTimelineWindowMinutes(span);
+    if (span === 1440) {
+      setTimelineStartMin(0);
+      return;
+    }
+    const snapMinutes = span >= 120 ? 15 : span >= 30 ? 5 : 1;
+    if (mode === "center") {
+      const currentCenter = timelineStartMin + Math.floor(timelineWindowMinutes / 2);
+      const target = anchorMin !== undefined ? anchorMin : currentCenter;
+      let start = target - Math.floor(span / 2);
+      start = Math.max(0, Math.min(1440 - span, start));
+      start = Math.floor(start / snapMinutes) * snapMinutes;
+      setTimelineStartMin(start);
+      return;
+    }
+    // mode === "end": show the full `span` minutes leading up to `anchorMin` (or current time)
+    const fallbackEnd =
+      selectedDate === getTodayStr()
+        ? getNowMinutes()
+        : timelineStartMin + timelineWindowMinutes;
+    const targetEnd = anchorMin !== undefined ? anchorMin : fallbackEnd;
+    const snappedEnd = Math.min(1440, Math.ceil((targetEnd + 0.01) / snapMinutes) * snapMinutes);
+    const start = Math.max(0, Math.min(1440 - span, snappedEnd - span));
+    setTimelineStartMin(start);
+  };
+
+  // Zeitleiste auf "Jetzt" setzen: 2h-Fenster, volle 2 Stunden bis zur aktuellen Uhrzeit
+  const goToNow = () => {
+    const nowMin = getNowMinutes();
+    const span: TimelineWindowMinutes = 120;
+    const snappedEnd = Math.min(1440, Math.ceil((nowMin + 0.01) / 5) * 5);
+    setTimelineWindowMinutes(span);
+    setTimelineStartMin(Math.max(0, Math.min(1440 - span, snappedEnd - span)));
   };
 
   // Beim ersten Laden immer mit "Jetzt" starten

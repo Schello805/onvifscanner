@@ -143,13 +143,19 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
         ? Math.min(TIMELINE_WINDOWS.length - 1, currentIndex + 1)
         : Math.max(0, currentIndex - 1);
     if (nextIndex !== currentIndex) {
-      zoomToWindow(TIMELINE_WINDOWS[nextIndex].minutes, Math.round(focusMin));
+      zoomToWindow(TIMELINE_WINDOWS[nextIndex].minutes, Math.round(focusMin), "center");
     }
   };
 
   const currentDaySec = activeClip
     ? recordingDayPosition(activeClip, selectedDate || activeClip.dateStr) + (videoCurrentTime || 0)
     : timelineStartMin * 60;
+
+  const latestRecordedMin = useMemo(() => {
+    if (streamSpans.length === 0) return undefined;
+    const maxEndSec = Math.max(...streamSpans.map((s) => s.endSec));
+    return maxEndSec / 60;
+  }, [streamSpans]);
 
   return (
     <div
@@ -215,15 +221,19 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                 key={option.minutes}
                 type="button"
                 onClick={() => {
-                  const centerMin = activeClip ? Math.floor(currentDaySec / 60) : undefined;
-                  zoomToWindow(option.minutes, centerMin);
+                  const playheadMin = activeClip ? currentDaySec / 60 : undefined;
+                  const anchorEndMin =
+                    playheadMin !== undefined && latestRecordedMin !== undefined && latestRecordedMin - playheadMin <= 20
+                      ? Math.max(playheadMin, latestRecordedMin)
+                      : playheadMin ?? latestRecordedMin;
+                  zoomToWindow(option.minutes, anchorEndMin, "end");
                 }}
                 className={`px-1.5 sm:px-2 py-0.5 rounded font-mono transition-all ${
                   timelineWindowMinutes === option.minutes
                     ? "bg-amber-500 text-slate-950 font-bold shadow-sm"
                     : "text-slate-400 hover:text-white"
                 }`}
-                title={`${option.label} Zeitfenster`}
+                title={`Letzte ${option.label} anzeigen`}
               >
                 {option.label}
               </button>
@@ -412,7 +422,7 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               const clickX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
               const pct = clickX / Math.max(1, rect.width);
               const clickMin = Math.floor(pct * 1440);
-              zoomToWindow(timelineWindowMinutes, clickMin);
+              zoomToWindow(timelineWindowMinutes, clickMin, "center");
             }}
             className="relative h-2.5 flex-1 rounded bg-slate-900 border border-slate-800 overflow-hidden cursor-pointer"
             title="Klicke auf die 24h-Übersicht, um den sichtbaren Ausschnitt zu verschieben"

@@ -764,11 +764,18 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   )}
                 </button>
 
-                <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 h-8 font-mono text-[11px] text-slate-300 tabular-nums">
-                  <span className="text-white font-bold">{formatSeconds(effectiveCurrentTime)}</span>
-                  <span className="text-slate-600">/</span>
-                  <span className="text-slate-400">{formatSeconds(effectiveDuration)}</span>
-                </div>
+                {recordingMoment && (
+                  <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 h-8 font-mono text-xs text-white tabular-nums">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="font-bold">
+                      {recordingClockFormatter.format(recordingMoment)} Uhr
+                    </span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-[11px] text-slate-400">
+                      {formatSeconds(effectiveCurrentTime)} / {formatSeconds(effectiveDuration)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Rapid Skip Buttons (-5m, -1m, -10s, +10s, +1m, +5m) */}
                 <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-950 p-0.5">
