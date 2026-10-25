@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Film, Play, Download, Trash2, RefreshCw, Clock, List, CheckSquare, Square, ChevronLeft, ChevronRight, Radio, Zap } from "lucide-react";
+import { Film, Play, Download, Trash2, RefreshCw, Clock, List, CheckSquare, Square, ChevronLeft, ChevronRight, Radio } from "lucide-react";
 import { formatSeconds, formatBytes } from "@/components/playback/playbackUtils";
 import { LazyVideoThumb } from "@/components/playback/LazyVideoThumb";
 import type { PlaybackState } from "./usePlaybackPage";
 
 export function ClipList({ pb }: { pb: PlaybackState }) {
-  const { cameras, loadingClips, searchQuery, viewMode, selectedClipIds, pageSize, setPageSize, currentPage, setCurrentPage, clipMotionMap, toggleTableSort, sortIndicator, filteredClips, totalPages, currentPageClips, openClip, openClipWithOffset, handleDeleteClip, toggleSelectClip, toggleSelectAllVisible } = pb;
+  const { cameras, loadingClips, searchQuery, viewMode, selectedClipIds, pageSize, setPageSize, currentPage, setCurrentPage, toggleTableSort, sortIndicator, filteredClips, totalPages, currentPageClips, openClip, handleDeleteClip, toggleSelectClip, toggleSelectAllVisible } = pb;
   return (
     <>
       {/* Main Content Area: List vs Grid */}
@@ -115,7 +115,6 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
               <tbody className="divide-y divide-slate-800/60">
                 {currentPageClips.map((clip) => {
                   const isSelected = selectedClipIds.has(clip.id);
-                  const clipMotions = clipMotionMap.get(clip.id) || [];
                   return (
                     <tr
                       key={clip.id}
@@ -145,17 +144,9 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
                             className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity"
                           />
                           <button
-                            onClick={() =>
-                              clipMotions.length > 0
-                                ? openClipWithOffset(clip, clipMotions[0].offsetSec)
-                                : openClip(clip)
-                            }
+                            onClick={() => openClip(clip)}
                             className="relative z-10 inline-flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold opacity-0 group-hover/thumb:opacity-100"
-                            title={
-                              clipMotions.length > 0
-                                ? `Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`
-                                : "Abspielen"
-                            }
+                            title="Abspielen"
                           >
                             <Play className="h-3 w-3 fill-current ml-0.5" />
                           </button>
@@ -226,11 +217,7 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
                       <td className="sticky right-0 z-10 bg-slate-900/95 py-2 px-2 text-right shadow-[-8px_0_12px_rgba(2,6,23,0.65)] backdrop-blur-sm sm:px-3">
                         <div className="inline-flex items-center gap-1.5">
                           <button
-                            onClick={() =>
-                              clipMotions.length > 0
-                                ? openClipWithOffset(clip, clipMotions[0].offsetSec)
-                                : openClip(clip)
-                            }
+                            onClick={() => openClip(clip)}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors sm:h-auto sm:w-auto sm:p-1.5"
                             title="Abspielen"
                           >
@@ -266,7 +253,6 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {currentPageClips.map((clip) => {
             const isSelected = selectedClipIds.has(clip.id);
-            const clipMotions = clipMotionMap.get(clip.id) || [];
             return (
               <div
                 key={clip.id}
@@ -281,11 +267,7 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
                       className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover/thumb:opacity-100 transition-opacity pointer-events-none"
                     />
                     <button
-                      onClick={() =>
-                        clipMotions.length > 0
-                          ? openClipWithOffset(clip, clipMotions[0].offsetSec)
-                          : openClip(clip)
-                      }
+                      onClick={() => openClip(clip)}
                       className="relative z-10 inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/90 text-slate-950 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-sm font-bold opacity-0 group-hover/thumb:opacity-100"
                       title="Abspielen"
                     >
@@ -330,34 +312,19 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
                     <span className="text-slate-500 text-[10px]">{clip.dateStr}</span>
                   </div>
 
-                  {/* Motion Info in Card */}
-                  {clipMotions.length > 0 ? (
-                    <button
-                      onClick={() => openClipWithOffset(clip, clipMotions[0].offsetSec)}
-                      className="w-full flex items-center justify-between text-[10px] text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 rounded px-2 py-1 mt-1.5 text-left transition-colors"
-                      title={`Klick zum Abspielen ab 1. Bewegung (${clipMotions[0].timeStr} Uhr)`}
-                    >
-                      <span className="flex items-center gap-1 font-semibold">
-                        <Zap className="h-2.5 w-2.5 fill-amber-400 text-amber-400 shrink-0" />
-                        {clipMotions.length} {clipMotions.length === 1 ? "Bewegung" : "Bewegungen"}:
-                      </span>
-                      <span className="font-mono text-slate-300 truncate max-w-[110px]">
-                        {clipMotions.map((m) => m.timeStr).join(", ")}
-                      </span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => openClip(clip)}
-                      className="w-full flex items-center justify-between text-[10px] text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 rounded px-2 py-1 mt-1.5 text-left transition-colors cursor-pointer group/d"
-                      title="Klick zum Abspielen dieser Daueraufnahme"
-                    >
-                      <span className="flex items-center gap-1 font-semibold">
-                        <Film className="h-2.5 w-2.5 text-sky-400 group-hover/d:scale-110 transition-transform shrink-0" />
-                        Daueraufnahme
-                      </span>
-                      <span className="text-slate-400 font-mono">15 Min.</span>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => openClip(clip)}
+                    className="w-full flex items-center justify-between text-[10px] text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 rounded px-2 py-1 mt-1.5 text-left transition-colors cursor-pointer group/d"
+                    title="Klick zum Abspielen dieser Daueraufnahme"
+                  >
+                    <span className="flex items-center gap-1 font-semibold">
+                      <Film className="h-2.5 w-2.5 text-sky-400 group-hover/d:scale-110 transition-transform shrink-0" />
+                      Daueraufnahme
+                    </span>
+                    <span className="text-slate-400 font-mono">
+                      {clip.durationSeconds ? `${Math.round(clip.durationSeconds / 60)} Min.` : "15 Min."}
+                    </span>
+                  </button>
 
                   <div className="text-[10px] text-slate-500 truncate mt-1">
                     Speicher: <span className="text-slate-400">{clip.storageTargetName}</span>
@@ -366,11 +333,7 @@ export function ClipList({ pb }: { pb: PlaybackState }) {
 
                 <div className="flex items-center justify-between gap-1.5 pt-2.5 border-t border-slate-800/80 mt-2">
                   <button
-                    onClick={() =>
-                      clipMotions.length > 0
-                        ? openClipWithOffset(clip, clipMotions[0].offsetSec)
-                        : openClip(clip)
-                    }
+                    onClick={() => openClip(clip)}
                     className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 px-2 py-1 text-xs font-bold shadow-sm active:scale-95 transition-all"
                   >
                     <Play className="h-3 w-3 fill-current" />

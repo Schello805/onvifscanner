@@ -14,18 +14,9 @@ import {
   SlidersHorizontal,
   Trash2,
   X,
-  Zap,
 } from "lucide-react";
 import type { ClipSizeFilter } from "./playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
-
-const OBJECT_PILLS = [
-  { id: "all", label: "Alle" },
-  { id: "person", label: "🚶 Person" },
-  { id: "vehicle", label: "🚗 Fahrzeug" },
-  { id: "animal", label: "🐾 Tier" },
-  { id: "plate", label: "🏷️ Kennzeichen" },
-] as const;
 
 const selectBox =
   "flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs";
@@ -39,11 +30,6 @@ export function ClipFilterBar({ pb }: { pb: PlaybackState }) {
     setCurrentPage,
     viewMode,
     setViewMode,
-    objectFilter,
-    setObjectFilter,
-    filterMotionOnly,
-    setFilterMotionOnly,
-    motionClipsCount,
     mobileFiltersOpen,
     setMobileFiltersOpen,
     activeAdvancedFilterCount,
@@ -81,7 +67,7 @@ export function ClipFilterBar({ pb }: { pb: PlaybackState }) {
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Clip, Person, Auto, Kennzeichen..."
+            placeholder="Clip oder Kamera suchen..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -137,30 +123,6 @@ export function ClipFilterBar({ pb }: { pb: PlaybackState }) {
           Filter{activeAdvancedFilterCount > 0 ? ` (${activeAdvancedFilterCount})` : ""}
           {mobileFiltersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
-      </div>
-
-      {/* Schnellfilter */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-          {OBJECT_PILLS.map((pill) => (
-            <button
-              key={pill.id}
-              type="button"
-              onClick={() => {
-                setObjectFilter(pill.id);
-                setCurrentPage(1);
-              }}
-              className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                objectFilter === pill.id
-                  ? "bg-amber-500 font-semibold text-black shadow-sm"
-                  : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              {pill.label}
-            </button>
-          ))}
-        </div>
-
       </div>
 
       {/* Erweiterte Filter */}

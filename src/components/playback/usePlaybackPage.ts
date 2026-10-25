@@ -205,13 +205,7 @@ export function usePlaybackPage() {
       if (camId) params.set("cameraId", camId);
       if (date) params.set("date", date);
 
-      const [resClips, resEvents, resSummary] = await Promise.all([
-        fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" }),
-        fetch(`/api/nvr/events?${params.toString()}`, { cache: "no-store" }),
-        date
-          ? fetch(`/api/nvr/daily-summary?${params.toString()}`, { cache: "no-store" })
-          : Promise.resolve(null),
-      ]);
+      const resClips = await fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" });
 
       if (!resClips.ok) throw new Error(`Aufnahmen: HTTP ${resClips.status}`);
       const dataClips = await resClips.json();
@@ -239,18 +233,8 @@ export function usePlaybackPage() {
         }
       }
 
-      if (resEvents.ok) {
-        const dataEvents = await resEvents.json().catch(() => null);
-        if (requestId === clipsRequestIdRef.current && Array.isArray(dataEvents?.events)) {
-          setMotionEvents(dataEvents.events);
-        }
-      }
-      if (resSummary) {
-        if (resSummary.ok) {
-          const summary = await resSummary.json().catch(() => null);
-          if (requestId === clipsRequestIdRef.current && summary?.ok) setDailySummary(summary);
-        }
-      } else if (requestId === clipsRequestIdRef.current) {
+      if (requestId === clipsRequestIdRef.current) {
+        setMotionEvents([]);
         setDailySummary(null);
       }
     } catch {
@@ -338,23 +322,11 @@ export function usePlaybackPage() {
     }
     fetchCameras();
     fetchClips(initialCamId, getTodayStr());
-    fetchActivityStats("today");
-  }, [fetchClips, fetchActivityStats]);
+  }, [fetchClips]);
 
   useEffect(() => {
     void fetchCalendar(calendarMonth, selectedCameraId);
   }, [calendarMonth, fetchCalendar, selectedCameraId]);
-
-  useEffect(() => {
-    const clipIsBeingCreated = motionEvents.some((event) =>
-      ["pending", "buffering", "merging"].includes(event.motionRecordingStatus || "")
-    );
-    if (!clipIsBeingCreated) return;
-    const timer = window.setInterval(() => {
-      void fetchClips(selectedCameraId, selectedDate, true);
-    }, 5_000);
-    return () => window.clearInterval(timer);
-  }, [fetchClips, motionEvents, selectedCameraId, selectedDate]);
 
   const calendarCells = useMemo(() => {
     const [year, monthNumber] = calendarMonth.split("-").map(Number);
