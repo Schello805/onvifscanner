@@ -8,10 +8,9 @@ import { useToast } from "@/components/ToastProvider";
 import { WebRtcPlayer } from "@/components/WebRtcPlayer";
 import { PtzControlPad } from "@/components/camera/PtzControlPad";
 import { CameraEditModal, type CameraEditDraft } from "@/components/camera/CameraEditModal";
-import { KioskMode } from "@/components/camera/KioskMode";
 import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
 import { SnapshotLightboxModal } from "@/components/SnapshotLightboxModal";
-import { Tv, Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon, Play } from "lucide-react";
+import { Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon, Play } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -134,7 +133,6 @@ export default function CameraWallPage() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityType, setActivityType] = useState<"all" | "motion" | "online" | "offline">("all");
   const [activityCameraId, setActivityCameraId] = useState("");
-  const [isKioskOpen, setIsKioskOpen] = useState(false);
   const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
   const [targetPlate, setTargetPlate] = useState<string>("");
   const [selectedSnapshot, setSelectedSnapshot] = useState<{ url: string; title: string } | null>(null);
@@ -144,7 +142,7 @@ export default function CameraWallPage() {
     groupName: string;
   } | null>(null);
   const [groupNewName, setGroupNewName] = useState("");
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKioskOpen || isKnownEntitiesOpen || cameraMenuId || groupModal || selectedSnapshot));
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKnownEntitiesOpen || cameraMenuId || groupModal || selectedSnapshot));
 
   const existingGroups = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -488,17 +486,66 @@ export default function CameraWallPage() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  const leaveFullscreen = useCallback(async () => {
+    if (mobileFocusMode) {
+      setMobileFocusMode(false);
+      setControlsVisible(true);
+      return;
+    }
+    if (document.fullscreenElement) await document.exitFullscreen();
+  }, [mobileFocusMode]);
+
   useEffect(() => {
-    if (!editingCameraId && !expandedCameraId) return;
+    if (!editingCameraId && !expandedCameraId && !mobileFocusMode) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (editingCameraId) closeEditor();
         if (expandedCameraId) closeExpanded();
+        if (mobileFocusMode) void leaveFullscreen();
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [editingCameraId, expandedCameraId, closeExpanded]);
+  }, [editingCameraId, expandedCameraId, mobileFocusMode, closeExpanded, leaveFullscreen]);
+
+  // Keep screen awake (Wake Lock) when Vollbild / Monitormodus is active
+  useEffect(() => {
+    const isVollbildActive = isFullscreen || mobileFocusMode;
+    if (!isVollbildActive || typeof window === "undefined" || !("wakeLock" in navigator)) return;
+
+    let wakeLockSentinel: any = null;
+    let released = false;
+
+    const requestWakeLock = async () => {
+      try {
+        if (!released && !wakeLockSentinel && "wakeLock" in navigator) {
+          wakeLockSentinel = await (navigator as any).wakeLock.request("screen");
+          wakeLockSentinel.addEventListener("release", () => {
+            wakeLockSentinel = null;
+          });
+        }
+      } catch {
+        // quiet fallback
+      }
+    };
+
+    void requestWakeLock();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      released = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (wakeLockSentinel) {
+        try {
+          wakeLockSentinel.release();
+        } catch {}
+        wakeLockSentinel = null;
+      }
+    };
+  }, [isFullscreen, mobileFocusMode]);
 
   const loadCamera = useCallback(async (camera: WallCamera, fresh = false, forceHighRes = false) => {
     if (!camera.snapshotUris.length && !camera.streamUris.length) return;
@@ -868,15 +915,6 @@ export default function CameraWallPage() {
     }
     setControlsVisible(false);
     await wallRef.current?.requestFullscreen();
-  }
-
-  async function leaveFullscreen() {
-    if (mobileFocusMode) {
-      setMobileFocusMode(false);
-      setControlsVisible(true);
-      return;
-    }
-    if (document.fullscreenElement) await document.exitFullscreen();
   }
 
   const prepareLiveStream = useCallback(async (cameraId: string, quality: "main" | "sub") => {
@@ -1342,16 +1380,6 @@ export default function CameraWallPage() {
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsKioskOpen(true)}
-              className="touch-manipulation inline-flex items-center gap-1.5 rounded-lg border border-purple-500/40 bg-purple-600/20 px-2.5 py-1 text-xs font-semibold text-purple-200 hover:bg-purple-600/30 transition shadow-sm whitespace-nowrap shrink-0"
-              title="Kiosk- & Wand-Tablet Modus mit Auto-Popup bei Bewegung"
-            >
-              <Tv className="w-3.5 h-3.5 text-purple-400" />
-              <span className="whitespace-nowrap">Kiosk</span>
-            </button>
-
             {isFullscreen ? (
               <button
                 type="button"
@@ -1365,10 +1393,9 @@ export default function CameraWallPage() {
                 type="button"
                 onClick={enterMonitorMode}
                 className="touch-manipulation inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 sm:px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-500 transition whitespace-nowrap shrink-0 shadow-sm"
-                title="Vollbild-Überwachungsmodus"
+                title="Vollbild-Überwachungsmodus (Display bleibt dauerhaft aktiv)"
               >
-                <span className="sm:hidden whitespace-nowrap">▣ Fokus</span>
-                <span className="hidden sm:inline whitespace-nowrap">▣ Vollbild</span>
+                <span className="whitespace-nowrap">▣ Vollbild</span>
               </button>
             )}
           </div>
@@ -1390,8 +1417,8 @@ export default function CameraWallPage() {
             type="button"
             onClick={() => void leaveFullscreen()}
             className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg text-white shadow-lg backdrop-blur-md"
-            aria-label="Fokusmodus schließen"
-            title="Fokusmodus schließen"
+            aria-label="Vollbild schließen"
+            title="Vollbild schließen"
           >
             ×
           </button>
@@ -2205,19 +2232,6 @@ export default function CameraWallPage() {
 
       {mounted && (
         <>
-          <KioskMode
-            isOpen={isKioskOpen}
-            onClose={() => setIsKioskOpen(false)}
-            cameras={cameras}
-            images={images}
-            liveCameras={liveCameras}
-            liveWhepUrls={liveWhepUrls}
-            livePlaybackUrls={livePlaybackUrls}
-            liveLoading={liveLoading}
-            onToggleLive={toggleLive}
-            onOpenExpanded={openExpanded}
-          />
-
           <KnownEntitiesModal
             isOpen={isKnownEntitiesOpen}
             onClose={() => {
