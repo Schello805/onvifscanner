@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BufferedRecordingVideo } from "./BufferedRecordingVideo";
-import { PlaybackTimeline } from "./PlaybackTimeline";
+import { PlaybackScrubber } from "./PlaybackScrubber";
 import {
   Calendar,
   Film,
@@ -24,7 +24,7 @@ import {
   Radio,
   X,
 } from "lucide-react";
-import { formatGermanDateLong } from "@/components/playback/playbackUtils";
+import { formatSeconds, formatGermanDateLong } from "@/components/playback/playbackUtils";
 import type { CameraSimple, RecordingClip } from "@/components/playback/playbackTypes";
 import type { PlaybackState } from "./usePlaybackPage";
 import { recordingPlaybackMoment, recordingDayPosition } from "./playbackTiming";
@@ -194,7 +194,17 @@ function SecondaryCameraTile({
 export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const startupAttemptedRef = useRef(false);
   const startupClipRef = useRef<string | undefined>(undefined);
+  const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
   const [hasVideoFrame, setHasVideoFrame] = useState(false);
+
+  const updateBufferedRanges = (video: HTMLVideoElement) => {
+    setBufferedRanges(
+      Array.from({ length: video.buffered.length }, (_, index) => ({
+        start: video.buffered.start(index),
+        end: video.buffered.end(index),
+      }))
+    );
+  };
 
   if (startupClipRef.current !== pb.activeClip?.id) {
     startupClipRef.current = pb.activeClip?.id;
@@ -253,15 +263,19 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   } = pb;
 
   useEffect(() => {
+    setBufferedRanges([]);
     setHasVideoFrame(false);
-  }, [pb.activeClip?.cameraId]);
+  }, [pb.activeClip?.id]);
 
-  const activeIds =
-    selectedCameraIds.length > 0
-      ? selectedCameraIds
-      : selectedCameraId
-      ? [selectedCameraId]
-      : [];
+  const activeIds = useMemo(
+    () =>
+      selectedCameraIds.length > 0
+        ? selectedCameraIds
+        : selectedCameraId
+        ? [selectedCameraId]
+        : [],
+    [selectedCameraIds, selectedCameraId]
+  );
   const isMultiView = activeIds.length > 1;
   const secondaryCameras = useMemo(
     () =>
@@ -282,14 +296,15 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
       : 0;
   const isBogusMetaDur =
     rawMetaDur > 0 && rawMetaDur < 10 && (activeClip?.sizeBytes || 0) > 2_000_000;
-  const reliableMetaDur = isBogusMetaDur ? camSegmentSec : rawMetaDur;
+  const reliableMetaDur = isBogusMetaDur ? 0 : rawMetaDur;
+  const clipDur =
+    reliableMetaDur > 0
+      ? reliableMetaDur
+      : measuredVideoDuration > 0
+      ? measuredVideoDuration
+      : camSegmentSec;
 
-  const effectiveDuration = Math.max(
-    1,
-    reliableMetaDur > 0 ? reliableMetaDur : camSegmentSec,
-    measuredVideoDuration,
-    currentPlaybackSec
-  );
+  const effectiveDuration = Math.max(1, clipDur, currentPlaybackSec);
   const effectiveCurrentTime = Math.min(effectiveDuration, currentPlaybackSec);
   const recordingMoment = activeClip
     ? recordingPlaybackMoment(activeClip, effectiveCurrentTime)
@@ -390,10 +405,12 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   onSeeked={() => {
                     setPlayerPreparing(false);
                   }}
+                  onProgress={(event) => updateBufferedRanges(event.currentTarget)}
                   onCanPlay={(event) => {
                     if (pendingSeekRef.current !== null) return;
                     setPlayerPreparing(false);
                     setPlayerError("");
+                    updateBufferedRanges(event.currentTarget);
                     const dur = event.currentTarget.duration || 0;
                     if (Number.isFinite(dur) && dur > 0) {
                       setVideoDuration(dur);
@@ -442,6 +459,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       }
                     }
                     setPlayerError("");
+                    updateBufferedRanges(e.currentTarget);
                     const dur = e.currentTarget.duration || 0;
                     if (Number.isFinite(dur) && dur > 0) {
                       setVideoDuration(dur);
@@ -457,6 +475,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                     if (!pb.scrubbingRef.current && pendingSeekRef.current === null) {
                       setVideoCurrentTime(e.currentTarget.currentTime || 0);
                     }
+                    updateBufferedRanges(e.currentTarget);
                     const dur = e.currentTarget.duration || 0;
                     if (Number.isFinite(dur) && dur > 0 && dur !== videoDuration) {
                       setVideoDuration(dur);
@@ -654,19 +673,62 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
             ))}
         </div>
 
-        {/* Unified Bottom Dock: Continuous Day Timeline + YouTube-Style Control Bar */}
-        <div
-          className={`flex flex-col shrink-0 transition-opacity duration-300 ${
-            playerFullscreen
-              ? "absolute bottom-0 inset-x-0 z-20 opacity-0 group-hover:opacity-100 bg-slate-950/90 backdrop-blur-md"
-              : "relative"
-          }`}
-        >
-          {/* Integrated Continuous Day Timeline */}
-          <PlaybackTimeline pb={pb} embedded />
+        {/* Bottom Dock: YouTube-Style Progress Scrubber + Transport Bar */}
+        {activeClip && (
+          <div
+            className={`flex flex-col shrink-0 transition-opacity duration-300 ${
+              playerFullscreen
+                ? "absolute bottom-0 inset-x-0 z-20 opacity-0 group-hover:opacity-100 bg-slate-950/90 backdrop-blur-md"
+                : "relative"
+            }`}
+          >
+            {/* In-Clip Interactive Scrubber Track */}
+            {effectiveDuration > 0 && (
+              <div className="border-t border-slate-800/80 px-3 pt-2 pb-1.5 bg-slate-950">
+                <PlaybackScrubber
+                  label="Position im Clip"
+                  max={effectiveDuration}
+                  value={effectiveCurrentTime}
+                  formatValue={(position) => {
+                    const moment = recordingPlaybackMoment(activeClip, position);
+                    return moment
+                      ? `${recordingClockFormatter.format(moment)} Uhr · ${formatSeconds(position)} im Clip`
+                      : formatSeconds(position);
+                  }}
+                  onSeek={seekToOffset}
+                  onScrubStart={pb.beginScrubbing}
+                  onScrubEnd={pb.endScrubbing}
+                  className="relative h-6 sm:h-5 w-full rounded-md bg-slate-900 border border-slate-800/80 cursor-pointer overflow-hidden group select-none shadow-inner"
+                >
+                  {(position) => (
+                    <>
+                      {bufferedRanges.map((range, index) => (
+                        <div
+                          key={index}
+                          className="absolute inset-y-0 bg-slate-600/55 pointer-events-none"
+                          style={{
+                            left: `${(100 * range.start) / effectiveDuration}%`,
+                            width: `${(100 * (range.end - range.start)) / effectiveDuration}%`,
+                          }}
+                        />
+                      ))}
+                      <div
+                        className="absolute top-0 bottom-0 left-0 bg-amber-500/45 border-r-2 border-amber-400 pointer-events-none"
+                        style={{ width: `${Math.min(100, (position / effectiveDuration) * 100)}%` }}
+                      />
+                      <div
+                        className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-300 pointer-events-none z-20"
+                        style={{
+                          left: `${Math.max(0.6, Math.min(99.4, (position / effectiveDuration) * 100))}%`,
+                        }}
+                      />
+                    </>
+                  )}
+                </PlaybackScrubber>
+              </div>
+            )}
 
-          {/* YouTube-Style Transport & Speed Toolbar */}
-          {activeClip && (
+            {/* YouTube-Style Transport & Speed Toolbar */}
             <div className="px-3 py-2 border-t border-slate-800/80 bg-slate-900/80 flex flex-wrap items-center justify-between gap-2 text-xs">
               {/* Left: Play/Pause, Mute, Live Clock & Quick Skips */}
               <div className="flex flex-wrap items-center gap-1.5">
@@ -702,14 +764,11 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   )}
                 </button>
 
-                {recordingMoment && (
-                  <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 h-8 font-mono text-xs text-white tabular-nums">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                    <span className="font-bold">
-                      {recordingClockFormatter.format(recordingMoment)} Uhr
-                    </span>
-                  </div>
-                )}
+                <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2.5 h-8 font-mono text-[11px] text-slate-300 tabular-nums">
+                  <span className="text-white font-bold">{formatSeconds(effectiveCurrentTime)}</span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-slate-400">{formatSeconds(effectiveDuration)}</span>
+                </div>
 
                 {/* Rapid Skip Buttons (-5m, -1m, -10s, +10s, +1m, +5m) */}
                 <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-950 p-0.5">
@@ -780,10 +839,10 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
 
               {/* Right: Speed Selector & Utility Actions */}
               <div className="flex items-center gap-1.5">
-                {/* Speed Selector (0.5x to 8x) */}
+                {/* Speed Selector (0.5x to 2x) */}
                 <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950 p-0.5">
                   <Gauge className="h-3.5 w-3.5 text-slate-400 ml-1.5 mr-1 hidden sm:inline" />
-                  {[0.5, 1, 2, 4, 8].map((rate) => (
+                  {[0.5, 1, 1.5, 2].map((rate) => (
                     <button
                       key={rate}
                       type="button"
@@ -841,8 +900,8 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

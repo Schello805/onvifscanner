@@ -26,7 +26,9 @@ async function main() {
     loaded._compile(ts.transpileModule(await fs.readFile(modulePath, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText, modulePath);
     const hls = loaded.exports;
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    const makeClip = (id, cameraId, seconds) => ({ id, cameraId, cameraName: cameraId, filename: `${id}.mp4`, dateStr: date, timeStr: `12:00:${String(seconds).padStart(2, '0')}`, timestamp: `${date}T10:00:${String(seconds).padStart(2, '0')}.245Z`, durationSeconds: 24, sizeBytes: sourceBytes.length, storageTargetName: 'test', streamUrl: `/direct?clipId=${id}`, downloadUrl: `/direct?clipId=${id}` });
+    const berlinHourAt10Utc = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', hour: '2-digit', hourCycle: 'h23' }).format(new Date(`${date}T10:00:00Z`)));
+    const utcHour = String(10 + (12 - berlinHourAt10Utc)).padStart(2, '0');
+    const makeClip = (id, cameraId, seconds) => ({ id, cameraId, cameraName: cameraId, filename: `${id}.mp4`, dateStr: date, timeStr: `12:00:${String(seconds).padStart(2, '0')}`, timestamp: `${date}T${utcHour}:00:${String(seconds).padStart(2, '0')}.245Z`, durationSeconds: 24, sizeBytes: sourceBytes.length, storageTargetName: 'test', streamUrl: `/direct?clipId=${id}`, downloadUrl: `/direct?clipId=${id}` });
     const clips = [makeClip('next', 'camera', 24), makeClip('other', 'other-camera', 12), makeClip('first', 'camera', 0)];
     const cameras = [{ id: 'camera', name: 'camera', ip: '127.0.0.1', recordSegmentMinutes: 1 }, { id: 'other-camera', name: 'other-camera', ip: '127.0.0.2' }];
     const stylesFile = path.join(directory, 'styles.css');
@@ -159,7 +161,7 @@ async function main() {
     await page.waitForFunction(() => !window.pb.isScrubbing && !window.pb.videoRef.current.seeking);
     assert.ok(Math.abs(await page.evaluate(() => window.pb.videoRef.current.currentTime) - 8.4) < 0.05);
     await page.getByLabel('Aktuelle Aufnahmezeit').getByText('12:00:08 Uhr', { exact: true }).waitFor();
-    assert.ok(Math.abs(Date.parse(await page.getByLabel('Aktuelle Aufnahmezeit').getAttribute('datetime')) - Date.parse(`${date}T10:00:08.645Z`)) < 2);
+    assert.ok(Math.abs(Date.parse(await page.getByLabel('Aktuelle Aufnahmezeit').getAttribute('datetime')) - Date.parse(`${date}T${utcHour}:00:08.645Z`)) < 2);
     const afterScrub = await page.evaluate(() => ({ loads: window.loadStarts, seeks: window.seekTimes.length, attempt: window.pb.playbackAttempt, source: window.pb.videoRef.current.currentSrc, paused: window.pb.videoRef.current.paused }));
     assert.equal(afterScrub.loads, beforeScrub.loads); assert.equal(afterScrub.source, beforeScrub.source); assert.equal(afterScrub.attempt, beforeScrub.attempt);
     assert.ok(afterScrub.seeks - beforeScrub.seeks < 15); assert.equal(afterScrub.paused, true);

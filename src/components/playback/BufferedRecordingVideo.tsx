@@ -54,9 +54,8 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
     let usedCompatibility = false;
     let mediaRecoveries = 0;
     let standbyMediaFailure = false;
-    const isDirectStream = !source.includes("/recordings/hls");
-    let mode: "direct" | "hls" | "compatible" | "original" = isDirectStream ? "direct" : "hls";
-    let positionToRestore: number | null = initialPosition.current > 0 ? initialPosition.current : null;
+    let mode: "hls" | "compatible" | "original" = "hls";
+    let positionToRestore: number | null = null;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
     const clearRecoveryTimer = () => { clearTimeout(recoveryTimer); recoveryTimer = undefined; };
     const position = () => positionToRestore ?? (video.currentTime > 0 || (video.readyState >= 1 && !video.error) ? video.currentTime : lastPosition.current);
@@ -102,17 +101,9 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
       hls?.destroy();
       hls = undefined;
       controllerRef.current = null;
-      const parsed = new URL(source, window.location.href);
-      const clipId = parsed.searchParams.get("clipId");
-      if (clipId) {
-        const hlsCompat = new URL("/api/nvr/recordings/hls", window.location.href);
-        hlsCompat.searchParams.set("clipId", clipId);
-        hlsCompat.searchParams.set("compatibility", "1");
-        loadHls(hlsCompat.href);
-        return true;
-      }
-      parsed.searchParams.set("compatibility", "1");
-      loadHls(parsed.href);
+      const compatible = new URL(source, window.location.href);
+      compatible.searchParams.set("compatibility", "1");
+      load(compatible.href);
       return true;
     };
     const recoverMedia = () => {
@@ -125,14 +116,14 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
       }
       return startCompatibility() || playOriginal();
     };
-    const loadHls = (url: string) => {
+    const load = (url: string) => {
       if (!Hls.isSupported()) {
         if (!video.canPlayType("application/vnd.apple.mpegurl")) {
           fail("Dieser Browser unterstützt die segmentierte Wiedergabe nicht.");
           return;
         }
         video.src = url;
-        video.preload = isActive.current ? "auto" : "metadata";
+        video.preload = "auto";
         video.load();
         return;
       }
@@ -159,12 +150,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
       hls.loadSource(url);
       hls.attachMedia(video);
     };
-    const loadDirect = (url: string) => {
-      video.src = url;
-      video.preload = isActive.current ? "auto" : "metadata";
-      video.load();
-    };
-    fallbackActionRef.current = () => standbyMediaFailure ? recoverMedia() : (startCompatibility() || playOriginal());
+    fallbackActionRef.current = () => standbyMediaFailure ? recoverMedia() : playOriginal();
     nativeErrorAction.current = () => {
       const error = video.error;
       if (!error || error.code === 1 || (recovering.current && mode === "hls")) return;
@@ -184,17 +170,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
     restorePositionAction.current = () => {
       if (positionToRestore === null) return;
       video.playbackRate = rateRef.current;
-      const targetPos = positionToRestore;
-      if (!recovering.current) {
-        positionToRestore = null;
-      }
-      if (targetPos > 0) {
-        try {
-          video.currentTime = Number.isFinite(video.duration) && video.duration > 0
-            ? Math.min(targetPos, Math.max(0, video.duration - 0.05))
-            : targetPos;
-        } catch {}
-      }
+      video.currentTime = positionToRestore;
     };
     readyAction.current = () => {
       if (!recovering.current || video.readyState < 2 || video.seeking || video.error) return;
@@ -204,11 +180,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
       if (isActive.current && playRequestedRef.current) void video.play().catch(() => undefined);
       else video.pause();
     };
-    if (isDirectStream) {
-      loadDirect(source);
-    } else {
-      loadHls(source);
-    }
+    load(source);
     return () => {
       clearRecoveryTimer();
       recovering.current = false;
@@ -261,7 +233,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
   }, [active, rate, playRequested, scrubbing]);
 
   return <video {...(active ? props : {})} ref={elementRef} playsInline disableRemotePlayback muted={active ? props.muted : true}
-    preload={active ? "auto" : "metadata"} style={active ? props.style : { display: "none" }} aria-hidden={!active}
+    preload="auto" style={active ? props.style : { display: "none" }} aria-hidden={!active}
     onError={() => nativeErrorAction.current?.()}
     onDurationChange={(event) => { if (active) props.onDurationChange?.(event); }}
     onLoadedMetadata={(event) => { restorePositionAction.current?.(); if (active) props.onLoadedMetadata?.(event); }}

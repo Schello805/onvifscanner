@@ -982,7 +982,7 @@ export function usePlaybackPage() {
   }, [activeClipMotionEvents, playbackOffset, videoCurrentTime, seekToOffset]);
 
   const setSpeed = (rate: number) => {
-    const speed = Number.isFinite(rate) ? Math.min(8, Math.max(0.5, rate)) : 1;
+    const speed = Number.isFinite(rate) ? Math.min(2, Math.max(0.5, rate)) : 1;
     setPlaybackRate(speed);
     if (videoRef.current) {
       videoRef.current.playbackRate = speed;
@@ -1220,100 +1220,16 @@ export function usePlaybackPage() {
 
   const activePlaybackUrl = useMemo(() => {
     if (!activeClip) return "";
-    return activeClip.streamUrl || `/api/nvr/recordings/stream?clipId=${encodeURIComponent(activeClip.id)}`;
+    return `/api/nvr/recordings/hls?clipId=${encodeURIComponent(activeClip.id)}`;
   }, [activeClip]);
 
   const nextPlaybackUrl = useMemo(() => {
     if (!activeClip || !autoPlayNext || isScrubbing) return "";
+    if (videoDuration <= 0 || videoDuration - videoCurrentTime > 30 * Math.max(1, playbackRate)) return "";
     const next = chronologicalCameraClips(clips, activeClip.cameraId)
       .find((clip) => recordingStart(clip) > recordingStart(activeClip));
-    return next ? (next.streamUrl || `/api/nvr/recordings/stream?clipId=${encodeURIComponent(next.id)}`) : "";
-  }, [activeClip, autoPlayNext, clips, isScrubbing]);
-
-  // Auto-select first camera when cameras & clips load
-  useEffect(() => {
-    if (selectedCameraId || cameras.length === 0) return;
-    const camWithClips = cameras.find((cam) => clips.some((c) => c.cameraId === cam.id));
-    const preferredCam = camWithClips || cameras.find((cam) => cam.recordEnabled) || cameras[0];
-    if (preferredCam) {
-      setSelectedCameraId(preferredCam.id);
-      setSelectedCameraIds((prev) => (prev.length > 0 ? prev : [preferredCam.id]));
-    }
-  }, [selectedCameraId, cameras, clips]);
-
-  // Keep track of last watched time-of-day so switching cameras stays at the same time if available
-  const lastWatchedDaySecRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (activeClip) {
-      lastWatchedDaySecRef.current = recordingDayPosition(activeClip, selectedDate || activeClip.dateStr) + (videoCurrentTime || 0);
-    }
-  }, [activeClip, selectedDate, videoCurrentTime]);
-
-  // Auto-cue clip when camera or date has clips ready
-  useEffect(() => {
-    if (loadingClips) return;
-    const camId = selectedCameraId || (cameras[0]?.id ?? "");
-    if (!camId) return;
-    const camClips = chronologicalCameraClips(
-      selectedDate ? clips.filter((c) => c.dateStr === selectedDate) : clips,
-      camId
-    );
-    if (camClips.length === 0) {
-      if (activeClip && (activeClip.cameraId !== camId || (selectedDate && activeClip.dateStr !== selectedDate))) {
-        setActiveClip(null);
-      }
-      return;
-    }
-    const needsAutoCue =
-      !activeClip ||
-      activeClip.cameraId !== camId ||
-      (selectedDate && activeClip.dateStr !== selectedDate && !camClips.some((c) => c.id === activeClip.id));
-
-    if (!needsAutoCue) return;
-
-    const cam = cameras.find((c) => c.id === camId);
-    const configuredSegSec = (cam?.recordSegmentMinutes || 15) * 60;
-
-    // Try matching previous watched time of day if switching cameras
-    if (lastWatchedDaySecRef.current !== null && activeClip && activeClip.cameraId !== camId) {
-      const targetSec = lastWatchedDaySecRef.current;
-      const dateStr = selectedDate || getTodayStr();
-      const matched = camClips.find((c) => {
-        const start = recordingDayPosition(c, dateStr);
-        const isBogus = typeof c.durationSeconds === "number" && c.durationSeconds > 0 && c.durationSeconds < 10 && (c.sizeBytes || 0) > 2_000_000;
-        const dur = typeof c.durationSeconds === "number" && c.durationSeconds > 0 && !isBogus ? c.durationSeconds : configuredSegSec;
-        return targetSec >= start && targetSec < start + dur;
-      });
-      if (matched) {
-        const start = recordingDayPosition(matched, dateStr);
-        openClipWithOffset(matched, Math.max(0, targetSec - start));
-        return;
-      }
-    }
-
-    // Otherwise cue the latest recording of that camera/day
-    const latestClip = camClips[camClips.length - 1];
-    openClipWithOffset(latestClip, 0);
-    const startSec = recordingDayPosition(latestClip, selectedDate || latestClip.dateStr);
-    const startMin = Math.floor(startSec / 60);
-    if (timelineWindowMinutes < 1440) {
-      const newStart = Math.max(0, Math.min(1440 - timelineWindowMinutes, startMin - Math.floor(timelineWindowMinutes * 0.65)));
-      setTimelineStartMin(newStart);
-    }
-  }, [loadingClips, selectedCameraId, selectedDate, clips, cameras, activeClip, openClipWithOffset, timelineWindowMinutes]);
-
-  // Auto-follow playhead in timeline when playing
-  useEffect(() => {
-    if (!activeClip || isScrubbing || timelineWindowMinutes >= 1440) return;
-    const currentSec = recordingDayPosition(activeClip, selectedDate || activeClip.dateStr) + (videoCurrentTime || 0);
-    const currentMin = currentSec / 60;
-    const vStart = timelineStartMin;
-    const vEnd = timelineStartMin + timelineWindowMinutes;
-    if (currentMin > vEnd - timelineWindowMinutes * 0.05 || currentMin < vStart) {
-      const nextStart = Math.max(0, Math.min(1440 - timelineWindowMinutes, Math.floor(currentMin - timelineWindowMinutes * 0.25)));
-      setTimelineStartMin(nextStart);
-    }
-  }, [activeClip, videoCurrentTime, isScrubbing, timelineWindowMinutes, timelineStartMin, selectedDate]);
+    return next ? `/api/nvr/recordings/hls?clipId=${encodeURIComponent(next.id)}` : "";
+  }, [activeClip, autoPlayNext, clips, videoDuration, videoCurrentTime, playbackRate, isScrubbing]);
 
   const jumpToLatest = useCallback(() => {
     const today = getTodayStr();
