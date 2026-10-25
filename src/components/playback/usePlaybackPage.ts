@@ -22,6 +22,7 @@ export function usePlaybackPage() {
 
   // Filters & Search
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
+  const [selectedCameraIds, setSelectedCameraIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(getTodayStr());
   const [calendarMonth, setCalendarMonth] = useState<string>(getTodayStr().slice(0, 7));
   const [calendarDays, setCalendarDays] = useState<Record<string, RecordingCalendarDay>>({});
@@ -197,12 +198,14 @@ export function usePlaybackPage() {
   const fetchClips = useCallback(async (camId: string, date: string, silent = false) => {
     if (silent && clipRequestsInFlightRef.current > 0) return;
     const requestId = ++clipsRequestIdRef.current;
-    const queryKey = `${camId}\u0000${date}`;
+    // Fetch all cameras for the selected day so 1-to-4 multi-camera switching is instant
+    const effectiveCamFilter = date ? "" : camId;
+    const queryKey = `${effectiveCamFilter}\u0000${date}`;
     clipRequestsInFlightRef.current += 1;
     try {
       if (!silent) setRefreshing(true);
       const params = new URLSearchParams();
-      if (camId) params.set("cameraId", camId);
+      if (effectiveCamFilter) params.set("cameraId", effectiveCamFilter);
       if (date) params.set("date", date);
 
       const resClips = await fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" });
@@ -273,6 +276,7 @@ export function usePlaybackPage() {
 
   const selectCameraFilter = useCallback((cameraId: string) => {
     setSelectedCameraId(cameraId);
+    setSelectedCameraIds(cameraId ? [cameraId] : []);
     setCurrentPage(1);
     setTimeFrom("");
     setTimeTo("");
@@ -280,6 +284,35 @@ export function usePlaybackPage() {
     setCameraPickerOpen(false);
     void fetchClips(cameraId, selectedDate);
   }, [fetchClips, selectedDate]);
+
+  const selectSingleCamera = useCallback((cameraId: string) => {
+    setSelectedCameraId(cameraId);
+    setSelectedCameraIds(cameraId ? [cameraId] : []);
+    setCameraPickerOpen(false);
+  }, []);
+
+  const toggleCameraSelection = useCallback((cameraId: string) => {
+    setSelectedCameraIds((prev) => {
+      const current = prev.length > 0 ? prev : (selectedCameraId ? [selectedCameraId] : []);
+      if (current.includes(cameraId)) {
+        if (current.length <= 1) return current;
+        const next = current.filter((id) => id !== cameraId);
+        if (selectedCameraId === cameraId && next[0]) {
+          setSelectedCameraId(next[0]);
+        }
+        return next;
+      }
+      if (current.length >= 4) {
+        toast.info("Maximal 4 Kameras gleichzeitig – 4. Kachel ersetzt.");
+        const next = [...current.slice(0, 3), cameraId];
+        if (!selectedCameraId) setSelectedCameraId(next[0]);
+        return next;
+      }
+      const next = [...current, cameraId];
+      if (!selectedCameraId) setSelectedCameraId(cameraId);
+      return next;
+    });
+  }, [selectedCameraId, toast]);
 
   useEffect(() => {
     if (!cameraPickerOpen) return;
@@ -513,17 +546,20 @@ export function usePlaybackPage() {
     return result;
   }, [clips, searchQuery, timeFrom, timeTo, sortBy, filterMotionOnly, objectFilter, clipMotionMap, rawClipEventsMap, storageFilter, sizeFilter]);
 
-  // Clips for 24h Timeline (clips matching selected date and selected camera)
+  // Clips for 24h Timeline (clips matching selected date and selected camera(s))
   const timelineClips = useMemo(() => {
     let list = clips;
     if (selectedDate) {
       list = list.filter((c) => c.dateStr === selectedDate);
     }
-    if (selectedCameraId) {
+    if (selectedCameraIds.length > 0) {
+      const activeSet = new Set(selectedCameraIds);
+      list = list.filter((c) => activeSet.has(c.cameraId));
+    } else if (selectedCameraId) {
       list = list.filter((c) => c.cameraId === selectedCameraId);
     }
     return list;
-  }, [clips, selectedDate, selectedCameraId]);
+  }, [clips, selectedDate, selectedCameraId, selectedCameraIds]);
 
   // Pagination
   const totalPages = pageSize === "all" ? 1 : Math.ceil(filteredClips.length / Number(pageSize)) || 1;
@@ -1201,6 +1237,7 @@ export function usePlaybackPage() {
     const preferredCam = camWithClips || cameras.find((cam) => cam.recordEnabled) || cameras[0];
     if (preferredCam) {
       setSelectedCameraId(preferredCam.id);
+      setSelectedCameraIds((prev) => (prev.length > 0 ? prev : [preferredCam.id]));
     }
   }, [selectedCameraId, cameras, clips]);
 
@@ -1395,6 +1432,10 @@ export function usePlaybackPage() {
     calendarRequestIdRef,
     selectedCameraId,
     setSelectedCameraId,
+    selectedCameraIds,
+    setSelectedCameraIds,
+    toggleCameraSelection,
+    selectSingleCamera,
     selectedDate,
     setSelectedDate,
     calendarMonth,

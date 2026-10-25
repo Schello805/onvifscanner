@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, ChevronLeft, ChevronRight, Clock, Play, RefreshCw, Radio, Video, Pencil } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Clock, Play, RefreshCw, Radio, Pencil, Grid2x2, Square } from "lucide-react";
 import { formatGermanDateLong, getTodayStr } from "./playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 
@@ -13,15 +13,16 @@ function shiftDay(date: string, offset: number): string {
 
 /**
  * Kompakte Cockpit-Steuerleiste:
- * 1-Klick Kamera-Wechsel (Pills) + Datumsnavigation + Uhrzeit-Direktsprung auf minimalem Raum.
+ * Anklickbare Kamera-Buttons für 1 bis 4 Kameras gleichzeitig (Multi-View) + Datumsnavigation + Uhrzeit-Direktsprung.
  */
 export function SourceBar({ pb }: { pb: PlaybackState }) {
   const {
     cameras,
     selectedCamera,
     selectedCameraId,
-    selectCameraFilter,
-    setCameraPickerOpen,
+    selectedCameraIds,
+    toggleCameraSelection,
+    selectSingleCamera,
     selectedDate,
     selectRecordingDate,
     mobileCalendarOpen,
@@ -34,53 +35,90 @@ export function SourceBar({ pb }: { pb: PlaybackState }) {
   } = pb;
 
   const today = getTodayStr();
+  const activeIds =
+    selectedCameraIds.length > 0
+      ? selectedCameraIds
+      : selectedCameraId
+      ? [selectedCameraId]
+      : [];
 
   return (
     <section
-      aria-label="Kamera, Tag und Uhrzeit wählen"
+      aria-label="Kameras, Tag und Uhrzeit wählen"
       className="rounded-2xl border border-slate-800/90 bg-slate-900/85 px-3 py-2.5 shadow-lg backdrop-blur-md"
     >
       <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
-        {/* Left: 1-Click Camera Switcher Pills */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={() => setCameraPickerOpen(true)}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-950 px-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white md:hidden"
-            title="Kamera-Auswahl öffnen"
+        {/* Left: Clickable Camera Multi-Select Buttons (1 to 4 simultaneous cameras, no scrollbar) */}
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0 flex-1">
+          <span
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/90 px-2 text-[11px] font-semibold text-slate-400 shrink-0"
+            title="Bis zu 4 Kameras gleichzeitig anklicken (0% Server-CPU durch Direkt-Streaming)"
           >
-            <Video className="h-3.5 w-3.5 text-sky-400" />
-            <span className="truncate max-w-[130px]">{selectedCamera ? selectedCamera.name : "Kamera"}</span>
-          </button>
+            <Grid2x2 className="h-3.5 w-3.5 text-sky-400" />
+            <span className="font-mono text-white">{activeIds.length}/4</span>
+          </span>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar min-w-0 flex-1">
-            {cameras.map((cam) => {
-              const isSelected = cam.id === selectedCameraId;
-              return (
-                <button
-                  key={cam.id}
-                  type="button"
-                  onClick={() => selectCameraFilter(cam.id)}
-                  className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all touch-manipulation ${
-                    isSelected
+          {cameras.map((cam) => {
+            const slotIdx = activeIds.indexOf(cam.id);
+            const isSelected = slotIdx !== -1;
+            const isPrimary = cam.id === activeIds[0];
+            return (
+              <button
+                key={cam.id}
+                type="button"
+                onClick={() => toggleCameraSelection(cam.id)}
+                onDoubleClick={() => selectSingleCamera(cam.id)}
+                title={
+                  isSelected
+                    ? activeIds.length > 1
+                      ? `${cam.name} aus Multi-Ansicht abwählen (Doppelklick: nur diese Kamera)`
+                      : `${cam.name} aktiv (weitere Kameras anklicken für bis zu 4er-Splitscreen)`
+                    : `${cam.name} zur Ansicht hinzufügen (bis zu 4 gleichzeitig)`
+                }
+                className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-all touch-manipulation ${
+                  isSelected
+                    ? isPrimary
                       ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20 font-bold"
-                      : "border border-slate-800 bg-slate-950/80 text-slate-300 hover:border-slate-700 hover:bg-slate-800 hover:text-white"
+                      : "bg-sky-500/25 text-sky-200 border border-sky-400/60 shadow-sm font-bold"
+                    : "border border-slate-800 bg-slate-950/80 text-slate-300 hover:border-slate-700 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    cam.recordEnabled
+                      ? isSelected && isPrimary
+                        ? "bg-slate-950"
+                        : "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                      : "bg-slate-600"
                   }`}
-                >
+                />
+                <span className="truncate max-w-[150px]">{cam.name}</span>
+                {isSelected && activeIds.length > 1 && (
                   <span
-                    className={`h-2 w-2 rounded-full shrink-0 ${
-                      cam.recordEnabled
-                        ? isSelected
-                          ? "bg-slate-950"
-                          : "bg-emerald-400 shadow-[0_0_6px_#34d399]"
-                        : "bg-slate-600"
+                    className={`ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-mono font-bold ${
+                      isPrimary
+                        ? "bg-slate-950/20 text-slate-950"
+                        : "bg-sky-400/25 text-sky-200"
                     }`}
-                  />
-                  <span className="truncate max-w-[160px]">{cam.name}</span>
-                </button>
-              );
-            })}
-          </div>
+                  >
+                    {slotIdx + 1}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {activeIds.length > 1 && (
+            <button
+              type="button"
+              onClick={() => selectSingleCamera(activeIds[0])}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-slate-700 bg-slate-950 px-2 text-[11px] font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition"
+              title="Zurück zur Einzelansicht (1 Kamera)"
+            >
+              <Square className="h-3 w-3 text-amber-400" />
+              <span>1x1</span>
+            </button>
+          )}
 
           {selectedCamera && (
             <Link
@@ -156,7 +194,7 @@ export function SourceBar({ pb }: { pb: PlaybackState }) {
                 step="60"
                 value={jumpTimeInput}
                 onChange={(e) => setJumpTimeInput(e.target.value)}
-                className="bg-transparent text-xs font-mono text-white focus:outline-none w-[62px]"
+                className="bg-transparent text-xs font-mono text-white focus:outline-none w-[82px]"
                 aria-label="Uhrzeit für Direktsprung"
               />
             </div>

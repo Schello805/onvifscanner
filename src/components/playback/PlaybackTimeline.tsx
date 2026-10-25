@@ -287,7 +287,7 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                 ))}
               </div>
 
-              {/* Recorded Stream Spans */}
+              {/* Recorded Stream Spans (Single lane or Multi-Camera lanes) */}
               {streamSpans.map((span) => {
                 const spanMin = timelineWindowMinutes;
                 const vStart = timelineStartMin;
@@ -309,13 +309,26 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                 const playedWidthPct =
                   rEndMin > rStartMin ? ((playedEndMin - rStartMin) / (rEndMin - rStartMin)) * 100 : 0;
 
+                const activeCamIds =
+                  pb.selectedCameraIds.length > 0
+                    ? pb.selectedCameraIds
+                    : pb.selectedCameraId
+                    ? [pb.selectedCameraId]
+                    : [];
+                const laneCount = Math.max(1, activeCamIds.length);
+                const laneIdx = Math.max(0, activeCamIds.indexOf(span.cameraId));
+                const topPct = laneCount > 1 ? 8 + laneIdx * (84 / laneCount) : 12;
+                const heightPct = laneCount > 1 ? Math.max(14, 84 / laneCount - 4) : 76;
+
                 return (
                   <div
                     key={span.id}
-                    className="absolute top-1.5 bottom-1.5 bg-sky-500/30 hover:bg-sky-500/40 border-y border-sky-400/60 rounded-sm overflow-hidden z-10 transition-colors"
+                    className="absolute bg-sky-500/30 hover:bg-sky-500/40 border-y border-sky-400/60 rounded-sm overflow-hidden z-10 transition-colors"
                     style={{
                       left: `${leftPct}%`,
                       width: `${widthPct}%`,
+                      top: `${topPct}%`,
+                      height: `${heightPct}%`,
                     }}
                   >
                     <div
