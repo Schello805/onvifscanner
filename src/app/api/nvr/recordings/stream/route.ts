@@ -8,6 +8,26 @@ import { compatiblePlaybackVideo } from "@/lib/playbackVideo";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+let cachedAllowedDirs: string[] | null = null;
+let cachedAllowedDirsAt = 0;
+
+async function getAllowedDirs(): Promise<string[]> {
+  const now = Date.now();
+  if (cachedAllowedDirs && now - cachedAllowedDirsAt < 30_000) {
+    return cachedAllowedDirs;
+  }
+  const targets = await prisma.storageTarget.findMany();
+  cachedAllowedDirs = [
+    ...targets.map((target) => path.resolve(target.path)),
+    path.resolve(process.cwd(), "data", "recordings"),
+    path.resolve(process.cwd(), "data", "motion-buffer"),
+    path.resolve(process.cwd(), "data", "motion-staging"),
+    path.resolve(process.env.PLAYBACK_CACHE_DIR || path.join(process.cwd(), "data", "playback-cache")),
+  ];
+  cachedAllowedDirsAt = now;
+  return cachedAllowedDirs;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -29,14 +49,7 @@ export async function GET(req: Request) {
     let resolved = path.resolve(decodedPath);
 
     // Verify file is within an approved storage target or system recording directories
-    const targets = await prisma.storageTarget.findMany();
-    const allowedDirs = [
-      ...targets.map((target) => path.resolve(target.path)),
-      path.resolve(process.cwd(), "data", "recordings"),
-      path.resolve(process.cwd(), "data", "motion-buffer"),
-      path.resolve(process.cwd(), "data", "motion-staging"),
-      path.resolve(process.env.PLAYBACK_CACHE_DIR || path.join(process.cwd(), "data", "playback-cache")),
-    ];
+    const allowedDirs = await getAllowedDirs();
 
     let isAllowed = allowedDirs.some((dir) => {
       const relative = path.relative(dir, resolved);
@@ -96,7 +109,8 @@ export async function GET(req: Request) {
       }
 
       const chunkSize = end - start + 1;
-      const nodeStream = fs.createReadStream(resolved, { start, end, highWaterMark: 64 * 1024 });
+      const nodeStream = fs.createReadStream(resolved, { start, end, highWaterMark: 512 * 1024 });
+      nodeStream.on("error", () => {});
       req.signal.addEventListener("abort", () => {
         try { nodeStream.destroy(); } catch {}
       });
