@@ -578,12 +578,12 @@ export function SettingsModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-3 sm:p-5">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center px-3 pt-[max(3.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] sm:p-5">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in" onClick={onClose} />
 
       {/* Modal Container */}
-      <div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-slate-900 border border-slate-700/70 shadow-2xl animate-in zoom-in-95 fade-in slide-in-from-bottom-4">
+      <div className="relative flex max-h-[82dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-slate-900 border border-slate-700/70 shadow-2xl animate-in zoom-in-95 fade-in slide-in-from-bottom-4 sm:max-h-[calc(100dvh-3rem)]">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4 bg-slate-900/90">
           <div className="flex items-center gap-3">

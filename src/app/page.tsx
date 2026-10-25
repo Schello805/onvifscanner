@@ -196,7 +196,14 @@ export default function CameraWallPage() {
     if (!activityLogOpen) return;
     void loadActivityLog();
     const timer = window.setInterval(() => void loadActivityLog(), 30_000);
-    return () => window.clearInterval(timer);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActivityLogOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [activityLogOpen, loadActivityLog]);
   const wallRef = useRef<HTMLDivElement>(null);
   const objectUrlsRef = useRef<Record<string, string>>({});
@@ -1991,19 +1998,22 @@ export default function CameraWallPage() {
       {activityLogOpen && mounted ? createPortal(
         <div
           data-pull-to-refresh-ignore="true"
-          className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-6"
+          className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/80 px-3 pt-[max(3.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] backdrop-blur-md sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="activity-log-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setActivityLogOpen(false);
+          }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setActivityLogOpen(false);
           }}
         >
-          <section className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl">
-            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-900/80 px-4 py-3.5 sm:px-5">
+          <section className="flex max-h-[82dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-slate-900/90 px-4 py-3.5 sm:px-5">
               <div>
                 <h2 id="activity-log-title" className="text-base font-bold text-white sm:text-lg">Kamera-Protokoll</h2>
-                <p className="text-[11px] text-slate-400">Bewegungen sowie Online- und Offline-Wechsel</p>
+                <p className="text-[11px] text-slate-400">Online- und Offline-Wechsel der Kameras</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2018,7 +2028,15 @@ export default function CameraWallPage() {
                   <Car className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Bekannte Kennzeichen</span>
                 </button>
-                <button type="button" onClick={() => setActivityLogOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Protokoll schließen">✕</button>
+                <button
+                  type="button"
+                  onClick={() => setActivityLogOpen(false)}
+                  className="inline-flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 active:scale-95"
+                  aria-label="Protokoll schließen"
+                >
+                  <span>✕</span>
+                  <span>Schließen</span>
+                </button>
               </div>
             </header>
 
@@ -2038,10 +2056,9 @@ export default function CameraWallPage() {
                 value={activityType}
                 onChange={(event) => setActivityType(event.target.value as typeof activityType)}
                 className="glass-input rounded-lg bg-slate-900 px-3 py-2 text-xs text-white"
-                aria-label="Ereignistyp im Protokoll filtern"
+                aria-label="Status im Protokoll filtern"
               >
-                <option value="all">Alle Ereignisse</option>
-                <option value="motion">Nur Bewegungen</option>
+                <option value="all">Alle Status-Wechsel</option>
                 <option value="offline">Nur Offline</option>
                 <option value="online">Nur Online</option>
               </select>
@@ -2053,16 +2070,14 @@ export default function CameraWallPage() {
             <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-3 sm:p-5">
               {activityEvents.length === 0 && !activityLoading ? (
                 <div className="rounded-xl border border-dashed border-white/15 px-5 py-10 text-center text-sm text-slate-400">
-                  Für diesen Filter sind noch keine Ereignisse gespeichert.
+                  Für diesen Filter sind noch keine Einträge gespeichert.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {activityEvents.map((event) => {
-                    const appearance = event.type === "motion"
-                      ? { icon: "⚡", label: "Bewegung", color: "border-amber-500/25 bg-amber-500/10 text-amber-300" }
-                      : event.type === "offline"
-                        ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
-                        : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+                    const appearance = event.type === "offline"
+                      ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
+                      : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
                     return (
                       <article key={event.id} className="grid gap-2.5 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[auto_1fr_auto_auto] sm:items-center">
                         <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold ${appearance.color}`}>
@@ -2113,11 +2128,11 @@ export default function CameraWallPage() {
                             type="button"
                             onClick={() => setSelectedSnapshot({ url: event.imageUrl!, title: `${event.cameraName} · ${event.message}` })}
                             className="group relative h-11 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700/80 bg-black/60 shadow transition hover:border-red-500"
-                            title="Alarm-Schnappschuss mit rotem Erkennungsrahmen vergrößern"
+                            title="Schnappschuss vergrößern"
                           >
                             <img
                               src={event.imageUrl}
-                              alt="Erkennung"
+                              alt="Schnappschuss"
                               className="h-full w-full object-cover transition duration-150 group-hover:scale-105"
                             />
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition">
@@ -2136,6 +2151,16 @@ export default function CameraWallPage() {
                 </div>
               )}
             </div>
+
+            <footer className="shrink-0 border-t border-white/10 bg-slate-900/90 p-3 sm:hidden">
+              <button
+                type="button"
+                onClick={() => setActivityLogOpen(false)}
+                className="w-full rounded-xl border border-white/15 bg-white/10 py-2.5 text-xs font-bold text-white transition hover:bg-white/20 active:scale-[0.99]"
+              >
+                Protokoll schließen
+              </button>
+            </footer>
           </section>
         </div>,
         document.body

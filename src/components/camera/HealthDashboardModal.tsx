@@ -66,14 +66,17 @@ export function HealthDashboardModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100020] flex items-center justify-center bg-black/80 p-3 backdrop-blur-md sm:p-6"
+      className="fixed inset-0 z-[100020] flex items-center justify-center bg-black/80 px-3 pt-[max(3.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] backdrop-blur-md sm:p-6"
       role="dialog"
       aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl">
+      <div className="flex max-h-[82dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
         <header className="flex shrink-0 items-center justify-between border-b border-white/10 bg-slate-900/80 px-4 py-3.5 sm:px-5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">

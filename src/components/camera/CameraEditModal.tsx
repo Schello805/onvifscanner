@@ -156,10 +156,13 @@ export function CameraEditModal({
       {createPortal(
         <div
           data-pull-to-refresh-ignore="true"
-          className="fixed inset-0 z-[100010] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[100010] flex items-center justify-center bg-black/80 px-3 pt-[max(3.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] backdrop-blur-md sm:p-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="camera-edit-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) onClose();
+          }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) onClose();
           }}
@@ -169,7 +172,7 @@ export function CameraEditModal({
               event.preventDefault();
               onSave();
             }}
-            className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl animate-in fade-in zoom-in-95 duration-150 lg:max-w-4xl"
+            className="relative flex max-h-[82dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl animate-in fade-in zoom-in-95 duration-150 sm:max-h-[calc(100dvh-3rem)] lg:max-w-4xl"
           >
             {/* Sticky Header */}
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-slate-900/80">
