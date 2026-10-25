@@ -2209,6 +2209,13 @@ export default function CameraWallPage() {
             isOpen={isKioskOpen}
             onClose={() => setIsKioskOpen(false)}
             cameras={cameras}
+            images={images}
+            liveCameras={liveCameras}
+            liveWhepUrls={liveWhepUrls}
+            livePlaybackUrls={livePlaybackUrls}
+            liveLoading={liveLoading}
+            onToggleLive={toggleLive}
+            onOpenExpanded={openExpanded}
           />
 
           <KnownEntitiesModal

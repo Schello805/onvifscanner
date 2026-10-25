@@ -94,6 +94,67 @@ const CACHE_MAX_ENTRIES = clampInt(process.env.THUMBNAIL_CACHE_MAX_ENTRIES ?? 25
 const latestCameraSnapshots = new Map<string, { ts: number; bytes: Buffer }>();
 const failedRtspCooldown = new Map<string, number>();
 
+export async function GET(req: Request) {
+  const urlObj = new URL(req.url);
+  const cameraId = urlObj.searchParams.get("cameraId") || undefined;
+  const ip = urlObj.searchParams.get("ip") || undefined;
+  const directUrl = urlObj.searchParams.get("url") || undefined;
+  const size = urlObj.searchParams.has("size") ? Number(urlObj.searchParams.get("size")) : undefined;
+  const quality = urlObj.searchParams.has("quality") ? Number(urlObj.searchParams.get("quality")) : undefined;
+
+  const urls: string[] = [];
+  let credentials: { username: string; password: string } | undefined = undefined;
+
+  if (cameraId || ip) {
+    try {
+      const cam = await prisma.camera.findFirst({
+        where: cameraId ? { id: cameraId } : { ip: ip! },
+        select: { id: true, snapshotUris: true, streamUris: true, username: true, password: true },
+      });
+      if (cam) {
+        if (cam.snapshotUris) {
+          try {
+            const parsed = JSON.parse(cam.snapshotUris);
+            if (Array.isArray(parsed)) urls.push(...parsed);
+            else if (typeof parsed === "string") urls.push(parsed);
+          } catch {
+            urls.push(cam.snapshotUris);
+          }
+        }
+        if (cam.streamUris && urls.length === 0) {
+          try {
+            const parsed = JSON.parse(cam.streamUris);
+            if (Array.isArray(parsed)) urls.push(...parsed);
+            else if (typeof parsed === "string") urls.push(parsed);
+          } catch {
+            urls.push(cam.streamUris);
+          }
+        }
+        if (cam.username || cam.password) {
+          credentials = { username: cam.username || "", password: cam.password || "" };
+        }
+      }
+    } catch {
+      // ignore DB lookup failure
+    }
+  }
+
+  if (directUrl) urls.unshift(directUrl);
+
+  const fakeReq = new Request(req.url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      cameraId,
+      urls,
+      size,
+      quality,
+      credentials,
+    }),
+  });
+  return POST(fakeReq);
+}
+
 export async function POST(req: Request) {
   let body: Body;
   try {
