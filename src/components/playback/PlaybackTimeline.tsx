@@ -35,7 +35,8 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
       const startSec = recordingDayPosition(clip, selectedDate || clip.dateStr);
       const cam = cameras.find((c) => c.id === clip.cameraId);
       const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-      const clipDuration = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0
+      const isBogusDur = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0 && clip.durationSeconds < 10 && (clip.sizeBytes || 0) > 2_000_000;
+      const clipDuration = typeof clip.durationSeconds === "number" && clip.durationSeconds > 0 && !isBogusDur
         ? clip.durationSeconds
         : segSec;
       const endSec = startSec + clipDuration;
@@ -108,7 +109,8 @@ export function PlaybackTimeline({ pb }: { pb: PlaybackState }) {
     const startSec = recordingDayPosition(activeClip, selectedDate || activeClip.dateStr);
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
     const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-    const clipDuration = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
+    const isBogusDur = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0 && activeClip.durationSeconds < 10 && (activeClip.sizeBytes || 0) > 2_000_000;
+    const clipDuration = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0 && !isBogusDur
       ? activeClip.durationSeconds
       : segSec;
     const endSec = startSec + clipDuration;

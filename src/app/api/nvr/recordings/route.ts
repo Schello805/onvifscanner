@@ -325,6 +325,7 @@ export async function GET(req: Request) {
         if (typeof c.durationSeconds === "number" && c.durationSeconds > 0) continue;
 
         let dur = configuredSegmentSec;
+        let gapDetermined = false;
 
         // 1. Distance to next clip on the same camera and day
         if (i < camClips.length - 1) {
@@ -333,16 +334,19 @@ export async function GET(req: Request) {
             const nextSec = parseTimeToSec(next.timeStr);
             const currSec = parseTimeToSec(c.timeStr);
             const gapSec = nextSec - currSec;
-            if (gapSec > 0 && gapSec < configuredSegmentSec) {
-              dur = Math.min(dur, gapSec);
+            if (gapSec > 0 && gapSec <= configuredSegmentSec * 1.5) {
+              dur = Math.min(configuredSegmentSec, gapSec);
+              gapDetermined = true;
             }
           }
         }
 
-        // 2. Check mtime write duration
-        if (c.mtimeMs && c.baseStartMs && c.mtimeMs > c.baseStartMs) {
+        // 2. Check mtime write duration only if reasonable and not conflicting with large file size
+        if (!gapDetermined && c.mtimeMs && c.baseStartMs && c.mtimeMs > c.baseStartMs) {
           const mtimeDiffSec = Math.floor((c.mtimeMs - c.baseStartMs) / 1000);
-          if (mtimeDiffSec > 0 && mtimeDiffSec < configuredSegmentSec) {
+          // Files > 1MB cannot realistically be less than 15 seconds. Protect against touch/mtime artifacts.
+          const isSuspiciousTinyDiff = mtimeDiffSec < 15 && (c.sizeBytes || 0) > 1_000_000;
+          if (mtimeDiffSec > 0 && mtimeDiffSec < configuredSegmentSec && !isSuspiciousTinyDiff) {
             dur = Math.min(dur, Math.max(1, mtimeDiffSec));
           }
         }

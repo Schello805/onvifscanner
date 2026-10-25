@@ -235,6 +235,7 @@ function Slot({ source, active, mediaRef, startPosition, rate, playRequested, sc
   return <video {...(active ? props : {})} ref={elementRef} playsInline disableRemotePlayback muted={active ? props.muted : true}
     preload="auto" style={active ? props.style : { display: "none" }} aria-hidden={!active}
     onError={() => nativeErrorAction.current?.()}
+    onDurationChange={(event) => { if (active) props.onDurationChange?.(event); }}
     onLoadedMetadata={(event) => { restorePositionAction.current?.(); if (active) props.onLoadedMetadata?.(event); }}
     onLoadedData={(event) => { readyAction.current?.(); if (active) props.onLoadedData?.(event); }}
     onCanPlay={(event) => { readyAction.current?.(); if (active) props.onCanPlay?.(event); }}

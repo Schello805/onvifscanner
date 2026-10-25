@@ -743,11 +743,13 @@ export function usePlaybackPage() {
     if (!activeClip) return;
     const cam = cameras.find((c) => c.id === activeClip.cameraId);
     const configuredSegSec = (cam?.recordSegmentMinutes || 15) * 60;
-    const segSec = videoRef.current && Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
-      ? videoRef.current.duration
-      : typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0
+    const isBogusDur = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0 && activeClip.durationSeconds < 10 && (activeClip.sizeBytes || 0) > 2_000_000;
+    const clipDur = typeof activeClip.durationSeconds === "number" && activeClip.durationSeconds > 0 && !isBogusDur
       ? activeClip.durationSeconds
       : configuredSegSec;
+    const segSec = videoRef.current && Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
+      ? videoRef.current.duration
+      : clipDur;
     const currentPos = pendingSeekRef.current ?? videoRef.current?.currentTime ?? videoCurrentTime;
     const newTarget = currentPos + seconds;
 
@@ -847,7 +849,8 @@ export function usePlaybackPage() {
     // 1. Exact clip that contains targetSec
     const matchingClip = camClips.find((c) => {
       const clipStart = recordingDayPosition(c, dateStr);
-      const clipDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0
+      const isBogusDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0 && c.durationSeconds < 10 && (c.sizeBytes || 0) > 2_000_000;
+      const clipDur = typeof c.durationSeconds === "number" && c.durationSeconds > 0 && !isBogusDur
         ? c.durationSeconds
         : configuredSegSec;
       const offset = targetSec - clipStart;

@@ -28,11 +28,25 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
   const { sharingClip, handleShareClip, activeClip, setActiveClip, isPlaying, setIsPlaying, isMuted, setIsMuted, playbackRate, playerFullscreen, autoPlayNext, setAutoPlayNext, videoDuration, setVideoDuration, videoCurrentTime, setVideoCurrentTime, liveTranscode, setLiveTranscode, playerPreparing, setPlayerPreparing, playerError, setPlayerError, playerNeedsStart, setPlayerNeedsStart, playbackAttempt, setPlaybackAttempt, seekFeedback, playerOptionsOpen, setPlayerOptionsOpen, pendingSeekRef, videoRef, playerContainerRef, playerGestureRef, filteredClips, activeClipMotionEvents, handleDeleteClip, clearPlayerGesture, handlePlayerPointerDown, handlePlayerPointerEnd, seekToOffset, jumpToNextMotion, jumpToPrevMotion, setSpeed, activeClipIndex, activePlaybackUrl, playbackOffset, playPreviousClip, playNextClip, toggleFullscreen, selectedCamera, selectedDate, loadingClips, setMobileCalendarOpen, seekRelative, togglePlay, jumpToTime, jumpTimeInput, setJumpTimeInput } = pb;
 
   const camSegmentSec = (selectedCamera?.recordSegmentMinutes || 15) * 60;
-  const clipDur = typeof activeClip?.durationSeconds === "number" && activeClip.durationSeconds > 0
+  const currentPlaybackSec = (playbackOffset || 0) + (videoCurrentTime || 0);
+  const measuredVideoDuration = videoDuration > 0 && Number.isFinite(videoDuration)
+    ? (playbackOffset || 0) + videoDuration
+    : 0;
+  const rawMetaDur = typeof activeClip?.durationSeconds === "number" && activeClip.durationSeconds > 0
     ? activeClip.durationSeconds
-    : (videoDuration > 0 ? (playbackOffset || 0) + videoDuration : camSegmentSec);
-  const effectiveDuration = Math.max(1, clipDur);
-  const effectiveCurrentTime = Math.min(effectiveDuration, (playbackOffset || 0) + (videoCurrentTime || 0));
+    : 0;
+  // If metadata duration is tiny (< 10s) but the clip file is large (> 2MB), metadata is an mtime artifact
+  const isBogusMetaDur = rawMetaDur > 0 && rawMetaDur < 10 && (activeClip?.sizeBytes || 0) > 2_000_000;
+  const reliableMetaDur = isBogusMetaDur ? camSegmentSec : rawMetaDur;
+
+  // The effective duration never locks playback; it accommodates measured media duration or playback progress
+  const effectiveDuration = Math.max(
+    1,
+    reliableMetaDur > 0 ? reliableMetaDur : camSegmentSec,
+    measuredVideoDuration,
+    currentPlaybackSec
+  );
+  const effectiveCurrentTime = Math.min(effectiveDuration, currentPlaybackSec);
   const recordingMoment = activeClip ? recordingPlaybackMoment(activeClip, effectiveCurrentTime) : null;
   return (
     <>
@@ -214,9 +228,21 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                       setVideoDuration(dur);
                     }
                   }}
-                onTimeUpdate={(e) => {
-                  if (!pb.scrubbingRef.current && pendingSeekRef.current === null) setVideoCurrentTime(e.currentTarget.currentTime || 0);
-                }}
+                  onDurationChange={(e) => {
+                    const dur = e.currentTarget.duration || 0;
+                    if (Number.isFinite(dur) && dur > 0) {
+                      setVideoDuration(dur);
+                    }
+                  }}
+                  onTimeUpdate={(e) => {
+                    if (!pb.scrubbingRef.current && pendingSeekRef.current === null) {
+                      setVideoCurrentTime(e.currentTarget.currentTime || 0);
+                    }
+                    const dur = e.currentTarget.duration || 0;
+                    if (Number.isFinite(dur) && dur > 0 && dur !== videoDuration) {
+                      setVideoDuration(dur);
+                    }
+                  }}
                 onEnded={() => {
                   if (autoPlayNext && !pb.scrubbingRef.current) playNextClip();
                 }}
