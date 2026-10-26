@@ -26,7 +26,6 @@ import {
   Globe,
   Clock,
   Sparkles,
-  Sliders,
   Cloud,
 } from "lucide-react";
 import { useToast } from "./ToastProvider";
@@ -835,120 +834,6 @@ export function SettingsModal({
                         "All timestamps in playback, MP4 video filenames, and push notifications follow this timezone."
                       )}
                     </p>
-                  </div>
-
-                  {/* MOTION DETECTION THRESHOLD CARD */}
-                  <div className="rounded-2xl border border-slate-800/90 bg-slate-950/50 p-5 space-y-4 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/20">
-                          <Sliders className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <span className="font-semibold text-slate-100 text-sm">
-                            {t("Bewegungserkennung (Server-Bildanalyse)", "Motion Detection (Server Analysis)")}
-                          </span>
-                          <p className="text-[11px] text-slate-400">
-                            {t(
-                              "Schwellenwert für Bildveränderungen (Prozent & Pixel), ab wann Bewegung ausgelöst wird",
-                              "Threshold for frame changes (percentage & pixels) before motion is triggered"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Minimum Motion Area (% of frame) */}
-                    <div className="space-y-2 pt-1">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-200">
-                          {t("Mindest-Bewegungsfläche (% vom Bildschirm)", "Minimum Motion Area (% of screen)")}
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-purple-400 font-mono">
-                            {data.motionMinAreaPercent}%
-                          </span>
-                          <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800 font-mono">
-                            ≈ {Math.round(207.36 * (data.motionMinAreaPercent || 1.5))} Pixel (bei 192×108)
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Slider */}
-                      <input
-                        type="range"
-                        min={0.2}
-                        max={10.0}
-                        step={0.1}
-                        value={data.motionMinAreaPercent}
-                        onChange={(e) => setData({ ...data, motionMinAreaPercent: Number(e.target.value) })}
-                        className="range range-primary range-sm w-full"
-                        aria-label="Mindest-Bewegungsfläche"
-                      />
-
-                      {/* Quick Presets Buttons */}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {[
-                          { val: 0.5, label: "0.5% (Sehr fein)" },
-                          { val: 1.0, label: "1.0% (Fein)" },
-                          { val: 1.5, label: "1.5% (Standard)" },
-                          { val: 2.5, label: "2.5% (Mittel)" },
-                          { val: 3.5, label: "3.5% (Empfohlen)" },
-                          { val: 5.0, label: "5.0% (Person nah)" },
-                          { val: 8.0, label: "8.0% (Groß)" },
-                        ].map((preset) => (
-                          <button
-                            key={preset.val}
-                            type="button"
-                            onClick={() => setData({ ...data, motionMinAreaPercent: preset.val })}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                              Math.abs((data.motionMinAreaPercent || 1.5) - preset.val) < 0.05
-                                ? "bg-purple-600 text-white shadow-sm shadow-purple-600/30"
-                                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
-                            }`}
-                          >
-                            {preset.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <p className="text-[11px] text-slate-400 leading-relaxed pt-1">
-                        {t(
-                          "Bewegungen, die kleiner als dieser Schwellenwert sind (wie z. B. wackelnde Kissen, Zweige, flatternde Blätter oder fliegende Insekten), werden ignoriert. Bei z. B. 3–4% lösen Personen und Autos zuverlässig aus.",
-                          "Movements smaller than this threshold (e.g. swaying cushions, twigs, fluttering leaves, or insects) are ignored. At 3-4%, humans and vehicles still trigger reliably."
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Pixel Difference Threshold */}
-                    <div className="border-t border-slate-800/80 pt-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="text-xs font-semibold text-slate-200 block">
-                            {t("Pixel-Änderungsschwelle (Helligkeit/Farbe)", "Pixel Change Threshold (Brightness/Color)")}
-                          </label>
-                          <span className="text-[10px] text-slate-400 block">
-                            {t("Wie deutlich sich ein einzelner Pixel verändern muss (10 = empfindlich, 35 = robust)", "How much a single pixel must change (10 = sensitive, 35 = robust)")}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-200 font-mono">
-                            {data.motionPixelThreshold} / 255
-                          </span>
-                        </div>
-                      </div>
-
-                      <input
-                        type="range"
-                        min={10}
-                        max={40}
-                        step={1}
-                        value={data.motionPixelThreshold}
-                        onChange={(e) => setData({ ...data, motionPixelThreshold: Number(e.target.value) })}
-                        className="range range-xs range-secondary w-full"
-                        aria-label="Pixel-Änderungsschwelle"
-                      />
-                    </div>
                   </div>
 
                   {/* AUTO CLEANUP CARD */}
