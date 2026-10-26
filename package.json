@@ -1,6 +1,6 @@
 {
   "name": "onvifscanner",
-  "version": "0.21.5",
+  "version": "0.21.6",
   "private": true,
   "description": "Local-first camera discovery, monitoring and NVR for ONVIF/RTSP cameras.",
   "license": "PolyForm-Noncommercial-1.0.0",

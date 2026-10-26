@@ -677,9 +677,22 @@ async function detectCameraMotion(cam) {
     });
 
     const motionBbox = extractMotionBoundingBox(changedPixelMap, info.width, info.height);
-    if (eventImage) {
+    let finalNotificationImage = eventImage;
+    if (eventImage && motionBbox) {
       try {
-        snapshotUrl = await saveSnapshotFile(eventImage, alarmId);
+        finalNotificationImage = await annotateDetectedObjects(
+          eventImage,
+          [{ className: 'Bewegung', score: null, bbox: motionBbox }],
+          { sourceWidth: info.width, sourceHeight: info.height }
+        );
+      } catch (err) {
+        console.warn(`[Image Annotator] ${cam.name}: ${err?.message || err}`);
+      }
+    }
+
+    if (finalNotificationImage) {
+      try {
+        snapshotUrl = await saveSnapshotFile(finalNotificationImage, alarmId);
       } catch {
         // quiet
       }
@@ -702,7 +715,7 @@ async function detectCameraMotion(cam) {
         prisma,
         cam,
         eventMessage,
-        eventImage ? { imageBuffer: eventImage, contentType: 'image/jpeg' } : {},
+        finalNotificationImage ? { imageBuffer: finalNotificationImage, contentType: 'image/jpeg' } : {},
       );
     }
     console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}% / Min ${(requiredArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
