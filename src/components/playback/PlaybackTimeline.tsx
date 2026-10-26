@@ -372,12 +372,12 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               toast.info(`Keine Aufnahme für ${formatTimelineTime(missingRecording.current)} Uhr vorhanden.`);
             }
           }}
-          className="relative h-11 sm:h-12 w-full rounded-xl bg-slate-900/95 border border-slate-800 shadow-inner overflow-hidden cursor-pointer select-none group"
+          className="relative h-11 sm:h-12 w-full rounded-xl bg-slate-900/95 border border-slate-800 shadow-inner overflow-visible cursor-pointer select-none group"
         >
           {(position) => (
             <>
               {/* Subtle vertical grid lines */}
-              <div className="absolute inset-0 flex pointer-events-none opacity-20">
+              <div className="absolute inset-0 flex pointer-events-none opacity-20 rounded-xl overflow-hidden">
                 {timelineTicks.map((_, i) => (
                   <div
                     key={i}
@@ -389,56 +389,58 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               </div>
 
               {/* Recorded Stream Spans (Single lane or Multi-Camera lanes) */}
-              {streamSpans.map((span) => {
-                const spanMin = timelineWindowMinutes;
-                const vStart = timelineStartMin;
-                const vEnd = timelineStartMin + spanMin;
+              <div className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden">
+                {streamSpans.map((span) => {
+                  const spanMin = timelineWindowMinutes;
+                  const vStart = timelineStartMin;
+                  const vEnd = timelineStartMin + spanMin;
 
-                const spanStartMin = span.startSec / 60;
-                const spanEndMin = span.endSec / 60;
+                  const spanStartMin = span.startSec / 60;
+                  const spanEndMin = span.endSec / 60;
 
-                if (spanEndMin < vStart || spanStartMin > vEnd) return null;
+                  if (spanEndMin < vStart || spanStartMin > vEnd) return null;
 
-                const rStartMin = Math.max(vStart, spanStartMin);
-                const rEndMin = Math.min(vEnd, spanEndMin);
-                const leftPct = ((rStartMin - vStart) / spanMin) * 100;
-                const widthPct = Math.max(0.25, ((rEndMin - rStartMin) / spanMin) * 100);
+                  const rStartMin = Math.max(vStart, spanStartMin);
+                  const rEndMin = Math.min(vEnd, spanEndMin);
+                  const leftPct = ((rStartMin - vStart) / spanMin) * 100;
+                  const widthPct = Math.max(0.25, ((rEndMin - rStartMin) / spanMin) * 100);
 
-                // Progress fill up to current playhead within this span
-                const playheadMin = position / 60;
-                const playedEndMin = Math.max(rStartMin, Math.min(rEndMin, playheadMin));
-                const playedWidthPct =
-                  rEndMin > rStartMin ? ((playedEndMin - rStartMin) / (rEndMin - rStartMin)) * 100 : 0;
+                  // Progress fill up to current playhead within this span
+                  const playheadMin = position / 60;
+                  const playedEndMin = Math.max(rStartMin, Math.min(rEndMin, playheadMin));
+                  const playedWidthPct =
+                    rEndMin > rStartMin ? ((playedEndMin - rStartMin) / (rEndMin - rStartMin)) * 100 : 0;
 
-                const activeCamIds =
-                  pb.selectedCameraIds.length > 0
-                    ? pb.selectedCameraIds
-                    : pb.selectedCameraId
-                    ? [pb.selectedCameraId]
-                    : [];
-                const laneCount = Math.max(1, activeCamIds.length);
-                const laneIdx = Math.max(0, activeCamIds.indexOf(span.cameraId));
-                const topPct = laneCount > 1 ? 8 + laneIdx * (84 / laneCount) : 12;
-                const heightPct = laneCount > 1 ? Math.max(14, 84 / laneCount - 4) : 76;
+                  const activeCamIds =
+                    pb.selectedCameraIds.length > 0
+                      ? pb.selectedCameraIds
+                      : pb.selectedCameraId
+                      ? [pb.selectedCameraId]
+                      : [];
+                  const laneCount = Math.max(1, activeCamIds.length);
+                  const laneIdx = Math.max(0, activeCamIds.indexOf(span.cameraId));
+                  const topPct = laneCount > 1 ? 8 + laneIdx * (84 / laneCount) : 12;
+                  const heightPct = laneCount > 1 ? Math.max(14, 84 / laneCount - 4) : 76;
 
-                return (
-                  <div
-                    key={span.id}
-                    className="absolute bg-sky-500/30 hover:bg-sky-500/40 border-y border-sky-400/60 rounded-sm overflow-hidden z-10 transition-colors"
-                    style={{
-                      left: `${leftPct}%`,
-                      width: `${widthPct}%`,
-                      top: `${topPct}%`,
-                      height: `${heightPct}%`,
-                    }}
-                  >
+                  return (
                     <div
-                      className="absolute inset-y-0 left-0 bg-sky-400/45 pointer-events-none"
-                      style={{ width: `${Math.min(100, Math.max(0, playedWidthPct))}%` }}
-                    />
-                  </div>
-                );
-              })}
+                      key={span.id}
+                      className="absolute bg-sky-500/30 hover:bg-sky-500/40 border-y border-sky-400/60 rounded-sm overflow-hidden z-10 transition-colors pointer-events-auto"
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                        top: `${topPct}%`,
+                        height: `${heightPct}%`,
+                      }}
+                    >
+                      <div
+                        className="absolute inset-y-0 left-0 bg-sky-400/45 pointer-events-none"
+                        style={{ width: `${Math.min(100, Math.max(0, playedWidthPct))}%` }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
 
               {/* Motion Event Markers Layer */}
               {timelineMotionEvents.map((ev) => {
@@ -449,7 +451,6 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
 
                 if (evMin < vStart || evMin > vEnd) return null;
                 const leftPct = ((evMin - vStart) / spanMin) * 100;
-                const isHighZoom = timelineWindowMinutes <= 120;
 
                 return (
                   <div
@@ -465,32 +466,18 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                       }
                       void playEvent(ev);
                     }}
-                    className={`group/ev absolute top-0.5 bottom-0.5 z-25 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform ${
-                      isHighZoom ? "w-3.5 -ml-[7px] hover:scale-125" : "w-2 -ml-[4px] hover:scale-110"
-                    }`}
+                    className="group/ev absolute -top-1.5 -bottom-1.5 z-40 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform w-5 -ml-2.5 hover:scale-125"
                     style={{ left: `${leftPct}%` }}
                     title={`⚡ ${ev.cameraName} (${ev.timeStr} Uhr) – Klick: Kamera laden & 10s vorher starten`}
                   >
-                    <div
-                      className={`rounded-full bg-rose-500 border border-white/90 shadow-[0_0_8px_#f43f5e] group-hover/ev:scale-125 transition-transform flex items-center justify-center ${
-                        isHighZoom ? "h-3 w-3" : "h-1.5 w-1.5"
-                      }`}
-                    >
-                      {isHighZoom && <Zap className="h-2 w-2 text-white fill-white" />}
+                    <div className="h-4 w-4 rounded-full bg-rose-500 border-2 border-white shadow-[0_0_10px_#f43f5e] group-hover/ev:scale-110 transition-transform flex items-center justify-center shrink-0">
+                      <Zap className="h-2.5 w-2.5 text-white fill-white" />
                     </div>
-                    <div
-                      className={`flex-1 bg-rose-500/85 shadow-[0_0_5px_#f43f5e] ${
-                        isHighZoom ? "w-[2px]" : "w-[1.5px]"
-                      }`}
-                    />
-                    <div
-                      className={`rounded-full bg-rose-500 ${
-                        isHighZoom ? "h-1.5 w-1.5" : "h-1 w-1"
-                      }`}
-                    />
+                    <div className="flex-1 w-[2px] bg-rose-500/90 shadow-[0_0_6px_#f43f5e]" />
+                    <div className="h-2 w-2 rounded-full bg-rose-500 border border-white shrink-0" />
 
                     {/* Floating Hover Label showing Camera Name */}
-                    <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950/95 border border-rose-500/50 px-2 py-0.5 text-[10px] font-semibold text-rose-200 shadow-xl opacity-0 group-hover/ev:opacity-100 transition-opacity z-50">
+                    <div className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950/95 border border-rose-500/60 px-2 py-0.5 text-[10px] font-semibold text-rose-200 shadow-xl opacity-0 group-hover/ev:opacity-100 transition-opacity z-50">
                       ⚡ {ev.cameraName} · {ev.timeStr} Uhr
                     </div>
                   </div>
@@ -593,7 +580,7 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
             {timelineMotionEvents.map((ev) => (
               <div
                 key={`mini-${ev.id}`}
-                className="absolute inset-y-0 w-[2px] bg-rose-500/90 pointer-events-none z-10"
+                className="absolute inset-y-0 w-1 -ml-0.5 bg-rose-500 pointer-events-none z-30 shadow-[0_0_4px_#f43f5e]"
                 style={{ left: `${(ev.totalMinutes / 1440) * 100}%` }}
               />
             ))}
