@@ -132,7 +132,7 @@ export function CameraEditModal({
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     general: true,
     recording: true,
-    motion: Boolean((editDraft.motionIgnoreRegions?.length || 0) > 0),
+    motion: true,
   });
 
   const toggleSection = (key: SectionKey) => {
@@ -786,10 +786,16 @@ export function CameraEditModal({
                           : camera.motionEventSource === "onvif" && camera.motionEventState === "active"
                             ? "ONVIF Kamera-Events (0 % Server-CPU)"
                             : "Timeline-Marker für Bewegungen"}
+                        {editDraft.notificationsEnabled ? " • Push aktiv" : " • Push aus"}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {editDraft.notificationsEnabled && (
+                      <span className="hidden sm:inline-block rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold">
+                        Push
+                      </span>
+                    )}
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
                         (editDraft.motionIgnoreRegions?.length || 0) > 0
@@ -813,6 +819,54 @@ export function CameraEditModal({
 
                 {openSections.motion && (
                   <div className="border-t border-white/10 p-4 space-y-4 animate-in fade-in-50 duration-150">
+                    {/* Push Notification Toggle */}
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3">
+                      <div className="min-w-0">
+                        <span className="block text-xs font-semibold text-white">
+                          Benachrichtigungen bei Bewegung bekommen
+                        </span>
+                        <span className="block text-[10px] leading-relaxed text-slate-400">
+                          Sendet bei erkannter Bewegung eine Push-Meldung (Web-Push, Telegram oder ntfy). Wenn deaktiviert, werden Bewegungen nur lautlos in der Wiedergabe-Zeitleiste markiert.
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editDraft.notificationsEnabled)}
+                        onChange={(event) =>
+                          onUpdateDraft({ ...editDraft, notificationsEnabled: event.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0 shrink-0 accent-emerald-500"
+                        aria-label="Benachrichtigungen bei Bewegung bekommen"
+                      />
+                    </label>
+
+                    {editDraft.notificationsEnabled && (
+                      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 flex items-center justify-between gap-3">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-200">
+                            Wiederholungssperre (Cooldown)
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            Mindestpause zwischen zwei Benachrichtigungen dieser Kamera.
+                          </span>
+                        </div>
+                        <select
+                          value={editDraft.alarmCooldownSeconds ?? 30}
+                          onChange={(e) =>
+                            onUpdateDraft({ ...editDraft, alarmCooldownSeconds: Number(e.target.value) })
+                          }
+                          className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white shrink-0 border border-white/10"
+                          aria-label="Wiederholungssperre Cooldown"
+                        >
+                          {[15, 20, 30, 45, 60, 120, 300].map((sec) => (
+                            <option key={sec} value={sec}>
+                              {sec >= 60 ? `${sec / 60} Minute${sec > 60 ? "n" : ""}` : `${sec} Sekunden`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-3.5 space-y-3">
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-1">
