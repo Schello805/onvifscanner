@@ -208,10 +208,16 @@ export function usePlaybackPage() {
       if (effectiveCamFilter) params.set("cameraId", effectiveCamFilter);
       if (date) params.set("date", date);
 
-      const resClips = await fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" });
+      const [resClips, resEvents] = await Promise.all([
+        fetch(`/api/nvr/recordings?${params.toString()}`, { cache: "no-store" }),
+        date
+          ? fetch(`/api/nvr/events?${params.toString()}`, { cache: "no-store" }).catch(() => null)
+          : Promise.resolve(null),
+      ]);
 
       if (!resClips.ok) throw new Error(`Aufnahmen: HTTP ${resClips.status}`);
       const dataClips = await resClips.json();
+      const dataEvents = resEvents && resEvents.ok ? await resEvents.json().catch(() => null) : null;
       if (requestId !== clipsRequestIdRef.current) return;
       if (Array.isArray(dataClips.clips)) {
         const unavailableTargets = Array.isArray(dataClips.unavailableStorageTargets)
@@ -237,8 +243,8 @@ export function usePlaybackPage() {
       }
 
       if (requestId === clipsRequestIdRef.current) {
-        setMotionEvents([]);
-        setDailySummary(null);
+        setMotionEvents(Array.isArray(dataEvents?.events) ? dataEvents.events : []);
+        setDailySummary(dataEvents?.summary || null);
       }
     } catch {
       if (!silent && requestId === clipsRequestIdRef.current) {

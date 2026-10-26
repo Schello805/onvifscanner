@@ -419,13 +419,15 @@ class OnvifEventManager {
       let snapshotUrl = null;
       let fetchedImage = null;
 
-      try {
-        fetchedImage = await fetchCameraImage(currentCamera);
-        if (fetchedImage?.data) {
-          snapshotUrl = await saveSnapshotFile(Buffer.from(fetchedImage.data), alarmId);
+      if (currentCamera.notificationsEnabled) {
+        try {
+          fetchedImage = await fetchCameraImage(currentCamera);
+          if (fetchedImage?.data) {
+            snapshotUrl = await saveSnapshotFile(Buffer.from(fetchedImage.data), alarmId);
+          }
+        } catch (imgErr) {
+          console.warn(`[ONVIF Events] ${cam.name}: Schnappschuss konnte nicht geladen werden:`, imgErr?.message || imgErr);
         }
-      } catch (imgErr) {
-        console.warn(`[ONVIF Events] ${cam.name}: Schnappschuss konnte nicht geladen werden:`, imgErr?.message || imgErr);
       }
 
       await this.prisma.alarmLog.create({
@@ -442,12 +444,14 @@ class OnvifEventManager {
         lastNotifiedAt: now,
         lastMotionSeenAt: now,
       });
-      await sendCameraNotification(
-        this.prisma,
-        currentCamera,
-        'Bewegung erkannt (ONVIF)',
-        fetchedImage?.data ? { imageBuffer: Buffer.from(fetchedImage.data), contentType: fetchedImage.contentType || 'image/jpeg' } : {}
-      );
+      if (currentCamera.notificationsEnabled) {
+        await sendCameraNotification(
+          this.prisma,
+          currentCamera,
+          'Bewegung erkannt (ONVIF)',
+          fetchedImage?.data ? { imageBuffer: Buffer.from(fetchedImage.data), contentType: fetchedImage.contentType || 'image/jpeg' } : {}
+        );
+      }
       await this.updateEventHealth(cam.id, 'active', 'onvif', null, true, effectiveTimestamp);
       const lastClean = this.lastCleanupTimes.get(cam.id) || 0;
       if (now - lastClean >= 10 * 60_000) {

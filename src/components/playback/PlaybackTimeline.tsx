@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, type WheelEvent } from "react";
+import { Zap } from "lucide-react";
 import { TIMELINE_WINDOWS, type RecordingClip } from "@/components/playback/playbackTypes";
 import { formatMinutesToTime, getTodayStr } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
@@ -27,14 +28,28 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
     videoCurrentTime,
     selectRecordingDate,
     timelineClips,
+    motionEvents,
     openClipWithOffset,
     zoomToWindow,
     goToNow,
     panTimeline,
+    playEvent,
     timelineTicks,
     timelinePanStepMinutes,
     timelinePanLabel,
   } = pb;
+
+  // Motion events matching the currently selected camera(s)
+  const timelineMotionEvents = useMemo(() => {
+    let list = motionEvents;
+    if (pb.selectedCameraIds.length > 0) {
+      const activeSet = new Set(pb.selectedCameraIds);
+      list = list.filter((ev) => activeSet.has(ev.cameraId));
+    } else if (pb.selectedCameraId) {
+      list = list.filter((ev) => ev.cameraId === pb.selectedCameraId);
+    }
+    return [...list].sort((a, b) => a.totalMinutes - b.totalMinutes);
+  }, [motionEvents, pb.selectedCameraId, pb.selectedCameraIds]);
 
   // Merge contiguous / adjacent recording segments into unbroken continuous stream spans
   const streamSpans = useMemo(() => {
@@ -157,6 +172,32 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
     return maxEndSec / 60;
   }, [streamSpans]);
 
+  const jumpToAdjacentDayMotion = (direction: -1 | 1) => {
+    if (timelineMotionEvents.length === 0) {
+      toast.info("Keine Bewegungsereignisse für diese Kamera an diesem Tag.");
+      return;
+    }
+    const currentMin = currentDaySec / 60;
+    const target =
+      direction > 0
+        ? timelineMotionEvents.find((ev) => ev.totalMinutes > currentMin + 0.1) || timelineMotionEvents[0]
+        : [...timelineMotionEvents].reverse().find((ev) => ev.totalMinutes < currentMin - 0.1) ||
+          timelineMotionEvents[timelineMotionEvents.length - 1];
+    if (target) {
+      if (timelineWindowMinutes > 120) {
+        zoomToWindow(120, Math.round(target.totalMinutes), "center");
+      } else if (
+        target.totalMinutes < timelineStartMin ||
+        target.totalMinutes > timelineStartMin + timelineWindowMinutes
+      ) {
+        zoomToWindow(timelineWindowMinutes, Math.round(target.totalMinutes), "center");
+      }
+      void playEvent(target);
+    }
+  };
+
+  const isNightWindowActive = timelineWindowMinutes === 360 && timelineStartMin === 0;
+
   return (
     <div
       className={
@@ -167,12 +208,43 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
     >
       {/* Compact Zoom & Pan Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300">
             <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_6px_#38bdf8]" />
             <span>Zeitleiste ({formatMinutesToTime(timelineStartMin)} – {formatMinutesToTime(timelineStartMin + timelineWindowMinutes)})</span>
           </span>
-          <span className="hidden md:inline text-[11px] text-slate-500">
+          {timelineMotionEvents.length > 0 && (
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-amber-500/35 bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-300">
+              <button
+                type="button"
+                onClick={() => jumpToAdjacentDayMotion(-1)}
+                className="px-1 hover:text-white transition"
+                title="Vorherige Bewegung anspringen"
+              >
+                ⏮
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToAdjacentDayMotion(1)}
+                className="inline-flex items-center gap-1 px-1 font-semibold hover:text-white transition"
+                title="Nächste Bewegung in der Aufnahme abspielen"
+              >
+                <Zap className="h-3 w-3 fill-amber-400 text-amber-400" />
+                <span>
+                  {timelineMotionEvents.length} {timelineMotionEvents.length === 1 ? "Bewegung" : "Bewegungen"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToAdjacentDayMotion(1)}
+                className="px-1 hover:text-white transition"
+                title="Nächste Bewegung anspringen"
+              >
+                ⏭
+              </button>
+            </div>
+          )}
+          <span className="hidden lg:inline text-[11px] text-slate-500">
             · Mausrad zum Zoomen · Ziehen zum Spulen
           </span>
         </div>
@@ -200,6 +272,21 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               </button>
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              zoomToWindow(360, 180, "center");
+            }}
+            className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg border transition ${
+              isNightWindowActive
+                ? "border-indigo-400 bg-indigo-500/30 text-indigo-200 shadow-sm"
+                : "border-indigo-500/35 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25"
+            }`}
+            title="Nacht-Zeitfenster (00:00 – 06:00 Uhr) anzeigen"
+          >
+            🌙 Nacht
+          </button>
 
           <button
             type="button"
@@ -256,11 +343,15 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               return;
             }
             const recording = recordingAtPosition(seconds);
+            const proximityMin = timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4;
+            const hasMotion = timelineMotionEvents.some(
+              (ev) => Math.abs(ev.totalMinutes - seconds / 60) <= proximityMin
+            );
             setHoverScrubber({
               pct,
               timeStr: formatTimelineTime(seconds),
               hasRecording: Boolean(recording),
-              hasMotion: false,
+              hasMotion,
               clipName: recording?.clip.cameraName,
             });
           }}
@@ -349,6 +440,52 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                 );
               })}
 
+              {/* Motion Event Markers Layer */}
+              {timelineMotionEvents.map((ev) => {
+                const spanMin = timelineWindowMinutes;
+                const vStart = timelineStartMin;
+                const vEnd = timelineStartMin + spanMin;
+                const evMin = ev.totalMinutes;
+
+                if (evMin < vStart || evMin > vEnd) return null;
+                const leftPct = ((evMin - vStart) / spanMin) * 100;
+                const isHighZoom = timelineWindowMinutes <= 120;
+
+                return (
+                  <div
+                    key={ev.id}
+                    data-scrub-marker
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void playEvent(ev);
+                    }}
+                    className={`group/ev absolute top-0.5 bottom-0.5 z-25 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform ${
+                      isHighZoom ? "w-3.5 -ml-[7px] hover:scale-125" : "w-2 -ml-[4px] hover:scale-110"
+                    }`}
+                    style={{ left: `${leftPct}%` }}
+                    title={`⚡ ${ev.timeStr} Uhr: ${ev.message} (${ev.cameraName}) – Klicken zum Abspielen`}
+                  >
+                    <div
+                      className={`rounded-full bg-rose-500 border border-white/90 shadow-[0_0_8px_#f43f5e] group-hover/ev:scale-125 transition-transform flex items-center justify-center ${
+                        isHighZoom ? "h-3 w-3" : "h-1.5 w-1.5"
+                      }`}
+                    >
+                      {isHighZoom && <Zap className="h-2 w-2 text-white fill-white" />}
+                    </div>
+                    <div
+                      className={`flex-1 bg-rose-500/85 shadow-[0_0_5px_#f43f5e] ${
+                        isHighZoom ? "w-[2px]" : "w-[1.5px]"
+                      }`}
+                    />
+                    <div
+                      className={`rounded-full bg-rose-500 ${
+                        isHighZoom ? "h-1.5 w-1.5" : "h-1 w-1"
+                      }`}
+                    />
+                  </div>
+                );
+              })}
+
               {/* Playhead Line & Handle */}
               {activeClip &&
                 (() => {
@@ -388,6 +525,11 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                       <span className="text-sky-300 text-[10px]">● Aufnahme</span>
                     ) : (
                       <span className="text-slate-500 text-[10px]">Keine Aufnahme</span>
+                    )}
+                    {hoverScrubber.hasMotion && (
+                      <span className="text-rose-400 font-semibold text-[10px] inline-flex items-center gap-0.5">
+                        · <Zap className="h-2.5 w-2.5 fill-rose-400" /> Bewegung
+                      </span>
                     )}
                   </div>
                 </>
@@ -437,8 +579,15 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                 }}
               />
             ))}
+            {timelineMotionEvents.map((ev) => (
+              <div
+                key={`mini-${ev.id}`}
+                className="absolute inset-y-0 w-[2px] bg-rose-500/90 pointer-events-none z-10"
+                style={{ left: `${(ev.totalMinutes / 1440) * 100}%` }}
+              />
+            ))}
             <div
-              className="absolute inset-y-0 bg-amber-400/35 border border-amber-400 rounded-sm pointer-events-none"
+              className="absolute inset-y-0 bg-amber-400/35 border border-amber-400 rounded-sm pointer-events-none z-20"
               style={{
                 left: `${(timelineStartMin / 1440) * 100}%`,
                 width: `${(timelineWindowMinutes / 1440) * 100}%`,

@@ -9,11 +9,12 @@ import {
   recordingModeUsesSchedule,
   RECORDING_MODE_OPTIONS,
 } from "@/lib/recordingPolicy";
-import type { MotionRegion } from "./MotionMaskEditor";
+import { MotionMaskEditor, type MotionRegion } from "./MotionMaskEditor";
 import {
   Check,
   ChevronDown,
   Folder,
+  Paintbrush,
   Pencil,
   Plus,
   Sliders,
@@ -78,7 +79,7 @@ type CameraEditModalProps = {
   onTriggerDeleteGroup?: (groupName: string) => void;
 };
 
-type SectionKey = "general" | "recording";
+type SectionKey = "general" | "recording" | "motion";
 
 export function CameraEditModal({
   camera,
@@ -131,6 +132,7 @@ export function CameraEditModal({
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     general: true,
     recording: true,
+    motion: Boolean((editDraft.motionIgnoreRegions?.length || 0) > 0),
   });
 
   const toggleSection = (key: SectionKey) => {
@@ -144,6 +146,7 @@ export function CameraEditModal({
     setOpenSections({
       general: expand,
       recording: expand,
+      motion: expand,
     });
   };
 
@@ -758,6 +761,135 @@ export function CameraEditModal({
                           )}
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. BEWEGUNG & PFLANZEN-MASKE */}
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-sm transition-all duration-200">
+                <button
+                  type="button"
+                  onClick={() => toggleSection("motion")}
+                  className="flex w-full items-center justify-between gap-3 p-3.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500"
+                  aria-expanded={openSections.motion}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      <Paintbrush className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-200 text-sm">Bewegung & Pflanzen-Maske</div>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {(editDraft.motionIgnoreRegions?.length || 0) > 0
+                          ? `Server-Analyse mit Maske (${editDraft.motionIgnoreRegions?.length} Bereiche)`
+                          : camera.motionEventSource === "onvif" && camera.motionEventState === "active"
+                            ? "ONVIF Kamera-Events (0 % Server-CPU)"
+                            : "Timeline-Marker für Bewegungen"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                        (editDraft.motionIgnoreRegions?.length || 0) > 0
+                          ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                          : "bg-slate-800 text-slate-300 border-slate-700"
+                      }`}
+                    >
+                      {(editDraft.motionIgnoreRegions?.length || 0) > 0
+                        ? "Maske aktiv"
+                        : camera.motionEventSource === "onvif"
+                          ? "ONVIF"
+                          : "Aktiv"}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+                        openSections.motion ? "rotate-180 text-white" : ""
+                      }`}
+                    />
+                  </div>
+                </button>
+
+                {openSections.motion && (
+                  <div className="border-t border-white/10 p-4 space-y-4 animate-in fade-in-50 duration-150">
+                    <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-3.5 space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1">
+                          <span className="flex justify-between text-[11px] text-slate-300 font-medium">
+                            <span>Empfindlichkeit</span>
+                            <strong className="text-amber-300">{editDraft.motionSensitivity ?? 80} %</strong>
+                          </span>
+                          <input
+                            type="range"
+                            min={10}
+                            max={100}
+                            step={5}
+                            value={editDraft.motionSensitivity ?? 80}
+                            onChange={(event) =>
+                              onUpdateDraft({
+                                ...editDraft,
+                                motionSensitivity: Number(event.target.value) || 80,
+                              })
+                            }
+                            className="w-full accent-amber-400"
+                          />
+                          <span className="text-[10px] text-slate-400">
+                            Höher = feinere Bewegungen werden in der Timeline markiert.
+                          </span>
+                        </label>
+
+                        <label className="grid gap-1">
+                          <span className="text-[11px] text-slate-300 font-medium">
+                            Mindest-Bewegungsfläche (gegen Blätter/Wind)
+                          </span>
+                          <select
+                            value={
+                              editDraft.motionMinAreaPercent == null
+                                ? "default"
+                                : String(editDraft.motionMinAreaPercent)
+                            }
+                            onChange={(event) =>
+                              onUpdateDraft({
+                                ...editDraft,
+                                motionMinAreaPercent:
+                                  event.target.value === "default"
+                                    ? null
+                                    : Number(event.target.value),
+                              })
+                            }
+                            className="glass-input rounded-lg px-2.5 py-1.5 text-xs bg-slate-900 text-white border border-white/10"
+                          >
+                            <option value="default">Standard (1.5 %)</option>
+                            <option value="0.5">0.5 % (Sehr empfindlich)</option>
+                            <option value="1.0">1.0 % (Fein)</option>
+                            <option value="1.5">1.5 % (Standard)</option>
+                            <option value="2.0">2.0 % (Mittel)</option>
+                            <option value="3.0">3.0 % (Empfohlen bei Pflanzen/Wind)</option>
+                            <option value="5.0">5.0 % (Große Objekte / Personen)</option>
+                            <option value="8.0">8.0 % (Nur starke Bewegung)</option>
+                          </select>
+                          <span className="text-[10px] text-slate-400">
+                            Ignoriert kleine schwankende Zweige außerhalb der Maske.
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="block font-semibold text-slate-200 mb-1">
+                        Pflanzen- & Bereichs-Maskierung
+                      </span>
+                      <span className="block text-[11px] text-slate-400 mb-2">
+                        Male im Vorschaubild über Bäume, Sträucher oder bewegte Schatten. Rot markierte Felder werden bei der Bewegungserkennung komplett ignoriert.
+                      </span>
+                      <MotionMaskEditor
+                        imageSrc={previewImageSrc}
+                        regions={editDraft.motionIgnoreRegions || []}
+                        onChange={(motionIgnoreRegions) =>
+                          onUpdateDraft({ ...editDraft, motionIgnoreRegions })
+                        }
+                      />
                     </div>
                   </div>
                 )}

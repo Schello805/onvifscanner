@@ -37,6 +37,9 @@ export type WallCamera = {
   motionScheduleDays?: number[];
   motionScheduleSensitivity?: number;
   notificationsEnabled?: boolean;
+  motionEventState?: string | null;
+  motionEventSource?: string | null;
+  motionEventLastSeen?: string | null;
   storageTargetId?: string | null;
   snapshotUris: string[];
   streamUris: string[];

@@ -35,10 +35,10 @@ const motionRecorder = new MotionRecorder(prisma);
 const objectDetector = new ObjectDetector();
 const appPort = process.env.PORT || '3000';
 const appBaseUrl = `http://127.0.0.1:${appPort}`;
-const motionDetectionEnabled = false;
-const objectDetectionEnabled = process.env.ENABLE_OBJECT_DETECTION !== 'false';
-const motionDetectionIntervalMs = Math.max(2_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 4_000);
-const motionDetectionConcurrency = Math.max(1, Math.min(8, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 2));
+const motionDetectionEnabled = process.env.ENABLE_MOTION_DETECTION !== 'false';
+const objectDetectionEnabled = false;
+const motionDetectionIntervalMs = Math.max(3_000, Number(process.env.MOTION_DETECTION_INTERVAL_MS) || 5_000);
+const motionDetectionConcurrency = Math.max(1, Math.min(4, Number(process.env.MOTION_DETECTION_CONCURRENCY) || 2));
 const motionPixelThreshold = Math.max(8, Math.min(80, Number(process.env.MOTION_PIXEL_THRESHOLD) || 18));
 const motionAreaThreshold = Math.max(0.002, Math.min(0.5, Number(process.env.MOTION_AREA_THRESHOLD) || 0.01));
 const motionMeanThreshold = Math.max(0.5, Math.min(30, Number(process.env.MOTION_MEAN_THRESHOLD) || 1));
@@ -657,116 +657,11 @@ async function detectCameraMotion(cam) {
       return;
     }
 
-    let eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
-    let detectedObjects = [];
-    let recognizedPlates = [];
+    const eventMessage = ignoreRegions.length > 0
+      ? 'Bewegung erkannt (mit Maske)'
+      : 'Bewegung erkannt';
     let eventImage = null;
-    let detectionResult = null;
-    if (cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) {
-      if (!objectDetectionEnabled) {
-        const warningKey = `object-disabled:${cam.id}`;
-        const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
-        if (Date.now() - lastLogged > 60_000) {
-          console.warn(`[Object Detection] ${cam.name}: lokale Objekterkennung ist global deaktiviert.`);
-          motionFailureLogTimes.set(warningKey, Date.now());
-        }
-        if (cam.objectDetectionEnabled) return;
-      }
-    }
-    if ((cam.objectDetectionEnabled || cam.licensePlateRecognitionEnabled) && objectDetectionEnabled) {
-      try {
-        eventImage = await fetchMotionEventImage(cam, uris, { highRes: Boolean(cam.licensePlateRecognitionEnabled) });
-        if (!eventImage) throw new Error('Kein Detailbild für die Objekterkennung verfügbar');
-        detectionResult = await objectDetector.detect(eventImage, Math.min(0.95, Math.max(0.2, (Number(cam.objectMinConfidence || 50) - 10) / 100)));
-        const result = detectionResult;
-        const motionEvidence = {
-          width: info.width,
-          height: info.height,
-          changedPixels: changedPixelMap,
-        };
-        const selectedObjects = cam.objectDetectionEnabled
-          ? relevantDetections(result, cam, ignoreRegions, motionEvidence)
-          : [];
-        const vehicles = cam.licensePlateRecognitionEnabled
-          ? relevantDetections(result, cam, ignoreRegions, motionEvidence, { vehicleOnly: true })
-          : [];
-        if (cam.objectDetectionEnabled && !selectedObjects.length) return;
-        detectedObjects = [...selectedObjects];
-        for (const vehicle of vehicles) {
-          const duplicate = detectedObjects.some((detection) =>
-            detection.className === vehicle.className
-            && JSON.stringify(detection.bbox) === JSON.stringify(vehicle.bbox)
-          );
-          if (!duplicate) detectedObjects.push(vehicle);
-        }
-        if (detectedObjects.length) eventMessage = objectDetectionMessage(detectedObjects);
-        const persons = detectedObjects.filter((d) => d.className === 'person');
-        if (persons.length) {
-          try {
-            const matchedPersons = matchKnownPersons(persons, cam.name);
-            if (matchedPersons.length) {
-              const personLabels = matchedPersons.map((p) => p.name).join(', ');
-              eventMessage = `🚶 Bekannte Person: ${personLabels}`;
-            }
-          } catch {}
-        }
-        if (vehicles.length) {
-          try {
-            const plates = await readLicensePlates(eventImage, result, vehicles, ignoreRegions);
-            const plateDetails = [];
-            for (const entry of plates) {
-              const known = findKnownEntity(entry.plate, 'plate')
-                || findKnownEntity(entry.plate.replace(/[^A-Z0-9ÄÖÜ]/g, ''), 'plate');
-              if (known) {
-                touchKnownEntity(known.id, cam.name);
-                plateDetails.push({
-                  plate: entry.plate,
-                  knownName: known.name,
-                  category: known.category,
-                  confidence: entry.confidence,
-                  vehicleBbox: entry.vehicleBbox || null,
-                });
-              } else {
-                plateDetails.push({
-                  plate: entry.plate,
-                  knownName: null,
-                  category: 'unknown',
-                  confidence: entry.confidence,
-                  vehicleBbox: entry.vehicleBbox || null,
-                });
-              }
-            }
-            recognizedPlates = plateDetails;
-            if (recognizedPlates.length) {
-              const knownFound = recognizedPlates.filter((p) => p.knownName);
-              if (knownFound.length) {
-                const knownLabels = knownFound.map((p) => `${p.knownName} (${p.plate})`).join(', ');
-                eventMessage = `🚗 Bekanntes Fahrzeug: ${knownLabels}`;
-              } else {
-                eventMessage += ` · Kennzeichen ${recognizedPlates.map((p) => p.plate).join(', ')}`;
-              }
-            }
-          } catch (error) {
-            const warningKey = `plate:${cam.id}`;
-            const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
-            if (Date.now() - lastLogged > 60_000) {
-              console.warn(`[Kennzeichen-OCR] ${cam.name}: ${error?.message || error}`);
-              motionFailureLogTimes.set(warningKey, Date.now());
-            }
-          }
-        }
-      } catch (error) {
-        const warningKey = `object:${cam.id}`;
-        const lastLogged = motionFailureLogTimes.get(warningKey) || 0;
-        if (Date.now() - lastLogged > 60_000) {
-          console.warn(`[Object Detection] ${cam.name}: ${error?.message || error}; Ereignis wird wegen aktivem Objektfilter verworfen.`);
-          motionFailureLogTimes.set(warningKey, Date.now());
-        }
-        if (cam.objectDetectionEnabled) return;
-        eventMessage = 'Bewegung erkannt (Server-Bildanalyse)';
-      }
-    }
-    if (!eventImage) {
+    if (cam.notificationsEnabled) {
       try {
         eventImage = await fetchMotionEventImage(cam, uris, { highRes: false });
       } catch {
@@ -774,7 +669,6 @@ async function detectCameraMotion(cam) {
       }
     }
 
-    let finalNotificationImage = eventImage;
     let snapshotUrl = null;
     const alarmId = `alm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     cameraMotionSessions.set(cam.id, {
@@ -782,69 +676,37 @@ async function detectCameraMotion(cam) {
       lastMotionSeenAt: checkedAt.getTime(),
     });
 
-      let motionBbox = null;
-      if (eventImage) {
-        if (detectedObjects.length) {
-          try {
-            finalNotificationImage = await annotateDetectedObjects(eventImage, detectedObjects, {
-              sourceWidth: detectionResult?.width,
-              sourceHeight: detectionResult?.height,
-              plates: recognizedPlates,
-            });
-          } catch (error) {
-            console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
-          }
-        } else {
-          motionBbox = extractMotionBoundingBox(changedPixelMap, info.width, info.height);
-          if (motionBbox) {
-            try {
-              finalNotificationImage = await annotateDetectedObjects(eventImage, [{
-                className: 'Bewegung',
-                score: null,
-                bbox: motionBbox,
-              }], {
-                sourceWidth: info.width,
-                sourceHeight: info.height,
-              });
-            } catch (error) {
-              console.warn(`[Image Annotator] ${cam.name}: ${error?.message || error}`);
-            }
-          }
-        }
+    const motionBbox = extractMotionBoundingBox(changedPixelMap, info.width, info.height);
+    if (eventImage) {
+      try {
+        snapshotUrl = await saveSnapshotFile(eventImage, alarmId);
+      } catch {
+        // quiet
       }
+    }
 
-      if (finalNotificationImage) {
-        try {
-          snapshotUrl = await saveSnapshotFile(finalNotificationImage, alarmId);
-        } catch {
-          // quiet
-        }
-      }
-
-      await prisma.alarmLog.create({
-        data: {
-          id: alarmId,
-          cameraId: cam.id,
-          message: eventMessage,
-          timestamp: checkedAt,
-          imageUrl: snapshotUrl,
-          objectClasses: detectedObjects.length
-            ? JSON.stringify(Array.from(new Set(detectedObjects.map((detection) => detection.group))))
-            : null,
-          objectDetections: detectedObjects.length
-            ? JSON.stringify(detectedObjects)
-            : (motionBbox ? JSON.stringify([{ className: 'Bewegung', bbox: motionBbox }]) : null),
-          licensePlates: recognizedPlates.length ? JSON.stringify(recognizedPlates) : null,
-        },
-      });
+    await prisma.alarmLog.create({
+      data: {
+        id: alarmId,
+        cameraId: cam.id,
+        message: eventMessage,
+        timestamp: checkedAt,
+        imageUrl: snapshotUrl,
+        objectClasses: null,
+        objectDetections: motionBbox ? JSON.stringify([{ className: 'Bewegung', bbox: motionBbox }]) : null,
+        licensePlates: null,
+      },
+    });
+    if (cam.notificationsEnabled) {
       await sendCameraNotification(
         prisma,
         cam,
         eventMessage,
-        finalNotificationImage ? { imageBuffer: finalNotificationImage, contentType: 'image/jpeg' } : {},
+        eventImage ? { imageBuffer: eventImage, contentType: 'image/jpeg' } : {},
       );
-      console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}% / Min ${(requiredArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
-      void pruneOldCameraEvents(prisma, cam.id);
+    }
+    console.log(`[Motion Detection] ${cam.name}: ${eventMessage} (Fläche ${(changedArea * 100).toFixed(1)}% / Min ${(requiredArea * 100).toFixed(1)}%, Differenz ${meanDifference.toFixed(1)}).`);
+    void pruneOldCameraEvents(prisma, cam.id);
     await prisma.camera.update({
       where: { id: cam.id },
       data: {
@@ -1266,11 +1128,19 @@ function startMonitor() {
   isMonitoring = true;
   
   console.log(`🚀 Starting background liveness monitor (${monitorIntervalMs}ms interval)...`);
-  console.log('Motion detection disabled (focus on 24/7 clean continuous recording).');
+  onvifEvents.start();
 
   // Run immediately, then every 60 seconds
   void runMonitorCycle();
   monitorTimers.push(setInterval(() => void runMonitorCycle(), monitorIntervalMs));
+
+  if (motionDetectionEnabled) {
+    console.log(`⚡ Lightweight motion detection enabled (${motionDetectionIntervalMs}ms interval, concurrency=${motionDetectionConcurrency}).`);
+    monitorTimers.push(setInterval(() => void runMotionDetection(), motionDetectionIntervalMs));
+    monitorTimers.push(setTimeout(() => void runMotionDetection(), 10_000));
+  } else {
+    console.log('Motion detection disabled.');
+  }
 
   // Run storage retention cleanup every 15 minutes
   monitorTimers.push(setInterval(() => void runRetentionJob(), 15 * 60 * 1000));
