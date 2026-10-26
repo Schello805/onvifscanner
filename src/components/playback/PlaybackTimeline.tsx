@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useRef, type WheelEvent } from "react";
-import { Zap } from "lucide-react";
+import { Play, Search, Zap, Image as ImageIcon } from "lucide-react";
 import { TIMELINE_WINDOWS, type RecordingClip } from "@/components/playback/playbackTypes";
-import { formatMinutesToTime, getTodayStr } from "@/components/playback/playbackUtils";
+import { formatGermanDate, formatMinutesToTime, getTodayStr } from "@/components/playback/playbackUtils";
 import type { PlaybackState } from "./usePlaybackPage";
 import { recordingDayPosition } from "./playbackTiming";
 import { PlaybackScrubber } from "./PlaybackScrubber";
@@ -29,6 +29,15 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
     selectRecordingDate,
     timelineClips,
     motionEvents,
+    filteredMotionEvents,
+    showEventLog,
+    setShowEventLog,
+    eventLogSearch,
+    setEventLogSearch,
+    eventLogTimeOfDay,
+    setEventLogTimeOfDay,
+    setSelectedSnapshot,
+    focusEventOnTimeline,
     openClipWithOffset,
     zoomToWindow,
     goToNow,
@@ -595,6 +604,124 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
               }}
             />
           </div>
+        </div>
+      )}
+
+      {/* Ereignis-Chronik (Übersicht aller Bewegungen aller Kameras für diesen Tag) */}
+      {!embedded && (
+        <div className="mt-3 pt-2.5 border-t border-slate-800/80">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setShowEventLog(!showEventLog)}
+              className="flex items-center gap-2 text-xs font-bold text-white hover:text-amber-400 transition"
+            >
+              <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+              <span>Bewegungs-Übersicht (alle Kameras) für {formatGermanDate(selectedDate)}</span>
+              <span className="rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-[10px] font-mono">
+                {motionEvents.length} {motionEvents.length === 1 ? "Bewegung" : "Bewegungen"}
+              </span>
+              <span className="text-slate-400 text-xs">{showEventLog ? "▲" : "▼"}</span>
+            </button>
+
+            {showEventLog && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <input
+                  type="text"
+                  placeholder="Kamera oder Uhrzeit filtern…"
+                  value={eventLogSearch}
+                  onChange={(e) => setEventLogSearch(e.target.value)}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                />
+                <select
+                  value={eventLogTimeOfDay}
+                  onChange={(e) => setEventLogTimeOfDay(e.target.value as typeof eventLogTimeOfDay)}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-xs text-white focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Alle Tageszeiten</option>
+                  <option value="night">🌌 Nacht (00–06 Uhr)</option>
+                  <option value="morning">🌅 Vormittag (06–12 Uhr)</option>
+                  <option value="afternoon">☀️ Nachmittag (12–18 Uhr)</option>
+                  <option value="evening">🌙 Abend (18–24 Uhr)</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {showEventLog && (
+            <div className="mt-2.5">
+              {filteredMotionEvents.length === 0 ? (
+                <div className="p-4 rounded-xl border border-slate-800/80 bg-slate-950/40 text-center text-xs text-slate-400">
+                  {motionEvents.length === 0
+                    ? `Noch keine Bewegungsereignisse für ${formatGermanDate(selectedDate)} erfasst.`
+                    : "Keine Ereignisse für den gewählten Filter gefunden."}
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {filteredMotionEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:border-rose-500/50 hover:bg-slate-900 transition-all shadow-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className="h-3 w-3 text-rose-400 fill-rose-400 shrink-0" />
+                            <span className="text-xs font-mono font-bold text-white">{ev.timeStr} Uhr</span>
+                          </div>
+                          <p className="text-[11px] font-medium text-slate-300 truncate mt-0.5">{ev.cameraName}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{ev.message}</p>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {ev.imageUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedSnapshot({
+                                  url: ev.imageUrl!,
+                                  title: `${ev.cameraName} (${ev.timeStr} Uhr) · ${ev.message}`,
+                                })
+                              }
+                              className="rounded p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                              title="Schnappschuss ansehen"
+                            >
+                              <ImageIcon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => focusEventOnTimeline(ev)}
+                            className="rounded p-1 text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                            title="Zeitleiste auf diesen Zeitpunkt zoomen"
+                          >
+                            <Search className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (pb.selectedCameraId !== ev.cameraId) {
+                                pb.setSelectedCameraId(ev.cameraId);
+                                if (!pb.selectedCameraIds.includes(ev.cameraId)) {
+                                  pb.setSelectedCameraIds([ev.cameraId]);
+                                }
+                              }
+                              void playEvent(ev);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold px-2 py-1 text-[11px] shadow-sm transition active:scale-95"
+                            title={`Video von ${ev.cameraName} ab ${ev.timeStr} Uhr abspielen`}
+                          >
+                            <Play className="h-3 w-3 fill-current" />
+                            Play
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

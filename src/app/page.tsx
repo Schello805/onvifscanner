@@ -2041,7 +2041,8 @@ export default function CameraWallPage() {
                 className="glass-input rounded-lg bg-slate-900 px-3 py-2 text-xs text-white"
                 aria-label="Status im Protokoll filtern"
               >
-                <option value="all">Alle Status-Wechsel</option>
+                <option value="all">Alle Ereignisse (Bewegung & Status)</option>
+                <option value="motion">⚡ Nur Bewegungen</option>
                 <option value="offline">Nur Offline</option>
                 <option value="online">Nur Online</option>
               </select>
@@ -2058,9 +2059,11 @@ export default function CameraWallPage() {
               ) : (
                 <div className="space-y-2">
                   {activityEvents.map((event) => {
-                    const appearance = event.type === "offline"
-                      ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
-                      : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
+                    const appearance = event.type === "motion"
+                      ? { icon: "⚡", label: "Bewegung", color: "border-amber-500/35 bg-amber-500/15 text-amber-300" }
+                      : event.type === "offline"
+                        ? { icon: "●", label: "Offline", color: "border-rose-500/25 bg-rose-500/10 text-rose-300" }
+                        : { icon: "●", label: "Online", color: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" };
                     return (
                       <article key={event.id} className="grid gap-2.5 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[auto_1fr_auto_auto] sm:items-center">
                         <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold ${appearance.color}`}>
@@ -2069,62 +2072,36 @@ export default function CameraWallPage() {
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-white">{event.cameraName}</div>
                           <div className="truncate text-[11px] text-slate-400">{event.cameraIp} · {event.message}</div>
-                          {event.licensePlates?.length ? (
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              {event.licensePlates.map((item, idx) => {
-                                const plateStr = typeof item === "string" ? item : item.plate;
-                                const knownName = typeof item === "string" ? null : item.knownName;
-                                const isKnown = Boolean(knownName);
-
-                                return (
-                                  <span
-                                    key={`${plateStr}-${idx}`}
-                                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-[10px] font-bold ${
-                                      isKnown
-                                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                                        : "border-amber-400/35 bg-amber-400/10 text-amber-200"
-                                    }`}
-                                  >
-                                    <span>🚗 {isKnown ? `${knownName} (${plateStr})` : `Kennzeichen ${plateStr}`}</span>
-                                    {!isKnown && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setTargetPlate(plateStr);
-                                          setIsKnownEntitiesOpen(true);
-                                        }}
-                                        className="ml-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-100 px-1 py-0.2 text-[9px] font-sans font-medium transition"
-                                        title="Als bekanntes Fahrzeug speichern"
-                                      >
-                                        + Zuordnung
-                                      </button>
-                                    )}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : null}
                         </div>
-                        {event.imageUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSnapshot({ url: event.imageUrl!, title: `${event.cameraName} · ${event.message}` })}
-                            className="group relative h-11 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700/80 bg-black/60 shadow transition hover:border-red-500"
-                            title="Schnappschuss vergrößern"
-                          >
-                            <img
-                              src={event.imageUrl}
-                              alt="Schnappschuss"
-                              className="h-full w-full object-cover transition duration-150 group-hover:scale-105"
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition">
-                              <Maximize2 className="h-3.5 w-3.5 text-white drop-shadow" />
-                            </div>
-                          </button>
-                        ) : (
-                          <div className="hidden sm:block w-0" />
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {event.imageUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSnapshot({ url: event.imageUrl!, title: `${event.cameraName} · ${event.message}` })}
+                              className="group relative h-11 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-700/80 bg-black/60 shadow transition hover:border-red-500"
+                              title="Schnappschuss vergrößern"
+                            >
+                              <img
+                                src={event.imageUrl}
+                                alt="Schnappschuss"
+                                className="h-full w-full object-cover transition duration-150 group-hover:scale-105"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition">
+                                <Maximize2 className="h-3.5 w-3.5 text-white drop-shadow" />
+                              </div>
+                            </button>
+                          ) : null}
+                          {event.type === "motion" && (
+                            <Link
+                              href={`/wiedergabe?cameraId=${encodeURIComponent(event.cameraId)}`}
+                              onClick={() => setActivityLogOpen(false)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-amber-500/35 bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/25 transition"
+                              title="Zur Wiedergabe dieser Kamera springen"
+                            >
+                              ▶ Video
+                            </Link>
+                          )}
+                        </div>
                         <time className="whitespace-nowrap font-mono text-[11px] text-slate-400" dateTime={event.timestamp}>
                           {new Date(event.timestamp).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "medium" })}
                         </time>

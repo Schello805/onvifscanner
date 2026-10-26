@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
     const requestedLimit = Number(searchParams.get("limit"));
     const limit = Math.min(500, Math.max(20, Number.isFinite(requestedLimit) ? requestedLimit : 200));
-    const includeMotion = type === "motion";
+    const includeMotion = type === "all" || type === "motion";
     const includeStatus = type === "all" || type === "online" || type === "offline";
 
     const timestampFilter: { gte?: Date; lte?: Date } = {};
