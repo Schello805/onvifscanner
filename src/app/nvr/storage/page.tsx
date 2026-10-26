@@ -21,9 +21,18 @@ import {
   Network,
   Wrench,
   Clock,
+  X,
 } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
+
+type TargetCameraInfo = {
+  id: string;
+  name: string;
+  ip: string;
+  recordMode?: string;
+  isRecording: boolean;
+};
 
 type StorageTargetItem = {
   id: string;
@@ -34,6 +43,10 @@ type StorageTargetItem = {
   maxDays: number;
   minFreeSpaceGb: number;
   assignedCamerasCount: number;
+  assignedCameras?: TargetCameraInfo[];
+  defaultCamerasCount?: number;
+  defaultCameras?: TargetCameraInfo[];
+  totalEffectiveCamerasCount?: number;
   createdAt: string;
   stats: {
     path: string;
@@ -136,7 +149,8 @@ export default function StorageManagementPage() {
 
   // Edit Modal State
   const [editingTarget, setEditingTarget] = useState<StorageTargetItem | null>(null);
-  useBodyScrollLock(Boolean(isModalOpen || editingTarget));
+  const [cameraListModalTarget, setCameraListModalTarget] = useState<StorageTargetItem | null>(null);
+  useBodyScrollLock(Boolean(isModalOpen || editingTarget || cameraListModalTarget));
 
   const fetchTargets = useCallback(async () => {
     try {
@@ -740,7 +754,23 @@ export default function StorageManagementPage() {
                     </div>
                     <div>
                       <span className="text-slate-500 block text-[11px]">Kameras zugewiesen:</span>
-                      <span className="font-medium text-slate-200">{target.assignedCamerasCount} Kamera(s)</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-medium text-slate-200">
+                          {target.assignedCamerasCount} explizit
+                          {target.isDefault && (target.defaultCamerasCount ?? 0) > 0 ? (
+                            <span className="text-slate-400 text-[11px] font-normal">
+                              {" "}(+ {target.defaultCamerasCount} Standard)
+                            </span>
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCameraListModalTarget(target)}
+                          className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-300 hover:bg-indigo-500/30 transition"
+                        >
+                          Anzeigen
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <span className="text-slate-500 block text-[11px]">Schreibrechte:</span>
@@ -1528,6 +1558,153 @@ export default function StorageManagementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {cameraListModalTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 pt-[max(3.5rem,calc(env(safe-area-inset-top,0px)+1rem))] pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] backdrop-blur-md sm:p-5"
+          onClick={() => setCameraListModalTarget(null)}
+        >
+          <div
+            className="flex max-h-[82dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 shadow-2xl animate-in zoom-in-95 sm:max-h-[calc(100dvh-3rem)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900/90 px-5 py-3.5">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-white truncate flex items-center gap-2">
+                  <span>Kameras auf „{cameraListModalTarget.name}“</span>
+                  {cameraListModalTarget.isDefault && (
+                    <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[10px] text-cyan-300 font-semibold">
+                      Standard-Speicher
+                    </span>
+                  )}
+                </h3>
+                <p className="text-[11px] font-mono text-slate-400 truncate">
+                  {cameraListModalTarget.path}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCameraListModalTarget(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              {/* Section 1: Explicitly assigned */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-200">
+                    Explizit zugewiesen ({cameraListModalTarget.assignedCameras?.length || 0})
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Speicherziel fest auf diese Festplatte eingestellt
+                  </span>
+                </div>
+                {cameraListModalTarget.assignedCameras && cameraListModalTarget.assignedCameras.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {cameraListModalTarget.assignedCameras.map((cam) => (
+                      <div
+                        key={cam.id}
+                        className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-2.5 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-semibold text-white block truncate">{cam.name}</span>
+                          <span className="text-[11px] font-mono text-slate-400">{cam.ip}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {cam.isRecording ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                              REC aktiv
+                            </span>
+                          ) : (
+                            <span className="rounded bg-slate-800 text-slate-400 px-2 py-0.5 text-[10px]">
+                              Aus
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-800 p-3 text-center text-xs text-slate-500">
+                    Keine Kamera explizit auf dieses Medium festgelegt.
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Default assigned */}
+              {cameraListModalTarget.isDefault && (
+                <div className="border-t border-slate-800/80 pt-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-slate-200">
+                      Über Standard-Speicher zugeordnet ({cameraListModalTarget.defaultCameras?.length || 0})
+                    </span>
+                    <span className="text-[11px] text-cyan-400">
+                      Automatisches Fallback
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+                    Diese Kameras haben in den Einstellungen kein bestimmtes Speichermedium gewählt. Weil „{cameraListModalTarget.name}“ der Standard-Speicher ist, schreiben sie automatisch ebenfalls hierher!
+                  </p>
+                  {cameraListModalTarget.defaultCameras && cameraListModalTarget.defaultCameras.length > 0 ? (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {cameraListModalTarget.defaultCameras.map((cam) => (
+                        <div
+                          key={cam.id}
+                          className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/40 p-2.5 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-semibold text-slate-200 block truncate">{cam.name}</span>
+                            <span className="text-[11px] font-mono text-slate-500">{cam.ip}</span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {cam.isRecording ? (
+                              <span className="inline-flex items-center gap-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                REC aktiv
+                              </span>
+                            ) : (
+                              <span className="rounded bg-slate-800 text-slate-400 px-2 py-0.5 text-[10px]">
+                                Aus
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-800 p-3 text-center text-xs text-slate-500">
+                      Keine Kameras ohne festes Speicherziel.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-slate-800 bg-slate-900/90 px-5 py-3">
+              <Link
+                href="/recordings"
+                className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+              >
+                Kameras im Aufnahmemenü zuweisen →
+              </Link>
+              <button
+                type="button"
+                onClick={() => setCameraListModalTarget(null)}
+                className="rounded-lg bg-slate-800 px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+              >
+                Schließen
+              </button>
+            </div>
           </div>
         </div>
       )}

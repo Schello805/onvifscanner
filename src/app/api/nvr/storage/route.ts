@@ -5,6 +5,7 @@ import {
   getStorageStats,
   testStoragePath,
 } from "@/lib/nvr/storage";
+import { effectiveRecordingMode } from "@/lib/recordingPolicy";
 import path from "path";
 
 export const runtime = "nodejs";
@@ -16,16 +17,52 @@ export async function GET() {
 
     const targets = await prisma.storageTarget.findMany({
       include: {
-        _count: {
-          select: { cameras: true },
+        cameras: {
+          select: {
+            id: true,
+            name: true,
+            ip: true,
+            recordMode: true,
+            recordEnabled: true,
+          },
+          orderBy: { name: "asc" },
         },
       },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
 
+    const defaultCameras = await prisma.camera.findMany({
+      where: { storageTargetId: null },
+      select: {
+        id: true,
+        name: true,
+        ip: true,
+        recordMode: true,
+        recordEnabled: true,
+      },
+      orderBy: { name: "asc" },
+    });
+
     const targetsWithStats = await Promise.all(
       targets.map(async (t) => {
         const stats = await getStorageStats(t.path);
+        const assignedCameras = t.cameras.map((c) => ({
+          id: c.id,
+          name: c.name,
+          ip: c.ip,
+          recordMode: c.recordMode,
+          isRecording: effectiveRecordingMode(c) !== "off",
+        }));
+        const unassignedDefaultCameras = t.isDefault
+          ? defaultCameras.map((c) => ({
+              id: c.id,
+              name: c.name,
+              ip: c.ip,
+              recordMode: c.recordMode,
+              isRecording: effectiveRecordingMode(c) !== "off",
+            }))
+          : [];
+
         return {
           id: t.id,
           name: t.name,
@@ -34,7 +71,11 @@ export async function GET() {
           enabled: t.enabled,
           maxDays: t.maxDays,
           minFreeSpaceGb: t.minFreeSpaceGb,
-          assignedCamerasCount: t._count.cameras,
+          assignedCamerasCount: assignedCameras.length,
+          assignedCameras,
+          defaultCamerasCount: unassignedDefaultCameras.length,
+          defaultCameras: unassignedDefaultCameras,
+          totalEffectiveCamerasCount: assignedCameras.length + unassignedDefaultCameras.length,
           createdAt: t.createdAt.toISOString(),
           stats,
         };
