@@ -35,17 +35,6 @@ export default function PlaybackPage() {
 
   const lastCameraRef = useRef<string>("");
 
-  // Automatische Kamera-Vorauswahl beim Öffnen der Wiedergabe-Seite
-  useEffect(() => {
-    if (selectedCameraId || cameras.length === 0 || loadingClips) return;
-    const camWithClips = cameras.find((cam) => clips.some((c) => c.cameraId === cam.id));
-    const preferredCam = camWithClips || cameras.find((cam) => cam.recordEnabled) || cameras[0];
-    if (preferredCam) {
-      setSelectedCameraId(preferredCam.id);
-      setSelectedCameraIds((prev) => (prev.length > 0 ? prev : [preferredCam.id]));
-    }
-  }, [selectedCameraId, cameras, clips, loadingClips, setSelectedCameraId, setSelectedCameraIds]);
-
   // Automatisch aktuellsten (oder zeitgleichen) Clip öffnen, wenn Kamera gewechselt wird
   useEffect(() => {
     if (loadingClips || !selectedCameraId) return;

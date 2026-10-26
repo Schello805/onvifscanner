@@ -6,7 +6,7 @@ import { Search, Video } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { type ActivityStatsResponse, type CameraSimple, type RecordingClip, type RecordingCalendarDay, type ClipSortBy, type ClipSizeFilter, type TimelineWindowMinutes, cameraNameCollator, type MotionEvent, type DailySummary, type ClipMotionEvent } from "@/components/playback/playbackTypes";
-import { parseTimeToSeconds, getMotionEventsForClip, getTodayStr } from "@/components/playback/playbackUtils";
+import { parseTimeToSeconds, formatMinutesToTime, getMotionEventsForClip, getTodayStr } from "@/components/playback/playbackUtils";
 import { chronologicalCameraClips, recordingAt, recordingStart, recordingDayPosition } from "./playbackTiming";
 
 export function usePlaybackPage() {
@@ -1093,7 +1093,8 @@ export function usePlaybackPage() {
     }
 
     // 2. Continuous recording: find the clip that covers this camera at this time
-    const evSec = parseTimeToSeconds(ev.timeStr);
+    // Start 10 seconds before the event so the context leading up to the motion is visible
+    const evSec = Math.max(0, parseTimeToSeconds(ev.timeStr) - 10);
     const cameraClips = clips.filter((c) => c.cameraId === ev.cameraId);
     let matchingClip = cameraClips.find((c) => {
       const [h, m, s] = c.timeStr.split(":").map(Number);
@@ -1170,7 +1171,7 @@ export function usePlaybackPage() {
       if (offset > 43200) offset -= 86400;
       const clampedOffset = Math.max(0, offset);
       openClipWithOffset(matchingClip, clampedOffset);
-      toast.info(`Springe zu ${matchingClip.cameraName} (${ev.timeStr} Uhr)`);
+      toast.info(`Spiele ${matchingClip.cameraName} ab ${formatMinutesToTime(evSec / 60)} Uhr (-10s vor Bewegung)`);
     } else {
       if (["pending", "buffering", "merging"].includes(ev.motionRecordingStatus || "")) {
         toast.info(`Der Clip für ${ev.timeStr} Uhr wird noch erstellt.`);
