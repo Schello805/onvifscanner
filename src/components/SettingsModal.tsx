@@ -21,7 +21,6 @@ import {
   BellRing,
   Database,
   FileJson,
-  Car,
   AlertTriangle,
   Globe,
   Clock,
@@ -31,7 +30,6 @@ import {
 import { useToast } from "./ToastProvider";
 import { useLanguage } from "./LanguageProvider";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
-import { KnownEntitiesModal } from "./camera/KnownEntitiesModal";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -65,7 +63,7 @@ type SettingsData = {
   offsiteBackupPassword?: string;
 };
 
-type TabType = "general" | "notifications" | "security" | "entities" | "backup";
+type TabType = "general" | "notifications" | "security" | "backup";
 
 const COMMON_TIMEZONES = [
   { value: "Europe/Berlin", label: "Europe/Berlin (Deutschland, Österreich, Schweiz - MEZ/MESZ)" },
@@ -142,7 +140,6 @@ export function SettingsModal({
   const [restoreMode, setRestoreMode] = useState<"merge" | "replace">("merge");
   const [isRestoring, setIsRestoring] = useState(false);
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
-  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
 
   useBodyScrollLock(isOpen);
 
@@ -659,19 +656,6 @@ export function SettingsModal({
             {data.authEnabled && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("entities")}
-            className={`group flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-              activeTab === "entities"
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
-            }`}
-          >
-            <Car className="w-4 h-4" />
-            <span>{t("Fahrzeuge & KI", "Vehicles & AI")}</span>
           </button>
 
           <button
@@ -1311,48 +1295,6 @@ export function SettingsModal({
                 </div>
               )}
 
-              {/* ───────────────── TAB: ENTITIES (Fahrzeuge & Kennzeichen) ───────────────── */}
-              {activeTab === "entities" && (
-                <div className="space-y-6 animate-in fade-in duration-200">
-                  <div className="rounded-2xl border border-slate-800/90 bg-slate-950/50 p-6 space-y-4 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                          <Car className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <span className="font-bold text-slate-100 text-base">
-                            {t("Kennzeichen & Fahrzeuge", "License Plates & Vehicles")}
-                          </span>
-                          <p className="text-xs text-slate-400">
-                            {t(
-                              "Automatische Kennzeichenerkennung (OCR) & personalisierte Benachrichtigungen",
-                              "Automatic license plate recognition (OCR) & personalized alerts"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setIsKnownEntitiesOpen(true)}
-                        className="btn btn-sm border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 rounded-xl gap-2 font-semibold"
-                      >
-                        <Car className="w-4 h-4" />
-                        <span>{t("Fahrzeuge verwalten...", "Manage vehicles...")}</span>
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-slate-300 leading-relaxed pt-2">
-                      {t(
-                        "Hinterlege eigene Fahrzeuge, Familie oder Lieferdienste für automatische Erkennung und gezielte Alarmierung bei Ankunft. Erkennt die Kamera ein hinterlegtes Kennzeichen, wird der Name (z. B. 'Familie Mustermann') direkt im Push-Alarm und in der Wiedergabe-Zeitleiste angezeigt.",
-                        "Register family, personal, or delivery vehicles for automatic recognition and personalized arrival alerts. When a registered plate is seen, the name is displayed directly in push notifications and the playback timeline."
-                      )}
-                    </p>
-                  </div>
-                </div>
-              )}
-
               {/* ───────────────── TAB: BACKUP (Export & Import) ───────────────── */}
               {activeTab === "backup" && (
                 <div className="space-y-6 animate-in fade-in duration-200">
@@ -1598,8 +1540,6 @@ export function SettingsModal({
           </div>
         </div>
       </div>
-
-      <KnownEntitiesModal isOpen={isKnownEntitiesOpen} onClose={() => setIsKnownEntitiesOpen(false)} />
     </div>
   );
 }

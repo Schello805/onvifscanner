@@ -8,9 +8,8 @@ import { useToast } from "@/components/ToastProvider";
 import { WebRtcPlayer } from "@/components/WebRtcPlayer";
 import { PtzControlPad } from "@/components/camera/PtzControlPad";
 import { CameraEditModal, type CameraEditDraft } from "@/components/camera/CameraEditModal";
-import { KnownEntitiesModal } from "@/components/camera/KnownEntitiesModal";
 import { SnapshotLightboxModal } from "@/components/SnapshotLightboxModal";
-import { Car, Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon, Play } from "lucide-react";
+import { Pencil, Film, Trash2, Square, CircleDot, X, Maximize2, Image as ImageIcon, Play } from "lucide-react";
 import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import {
   RECORDING_MODE_OPTIONS,
@@ -133,8 +132,6 @@ export default function CameraWallPage() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityType, setActivityType] = useState<"all" | "motion" | "online" | "offline">("all");
   const [activityCameraId, setActivityCameraId] = useState("");
-  const [isKnownEntitiesOpen, setIsKnownEntitiesOpen] = useState(false);
-  const [targetPlate, setTargetPlate] = useState<string>("");
   const [selectedSnapshot, setSelectedSnapshot] = useState<{ url: string; title: string } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [groupModal, setGroupModal] = useState<{
@@ -142,7 +139,7 @@ export default function CameraWallPage() {
     groupName: string;
   } | null>(null);
   const [groupNewName, setGroupNewName] = useState("");
-  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || isKnownEntitiesOpen || cameraMenuId || groupModal || selectedSnapshot));
+  useBodyScrollLock(Boolean(editingCameraId || expandedCameraId || mobileFocusMode || activityLogOpen || cameraMenuId || groupModal || selectedSnapshot));
 
   const existingGroups = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -2001,18 +1998,6 @@ export default function CameraWallPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setTargetPlate("");
-                    setIsKnownEntitiesOpen(true);
-                  }}
-                  className="btn btn-xs border border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 rounded-lg gap-1.5"
-                  title="Bekannte Kennzeichen verwalten"
-                >
-                  <Car className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Bekannte Kennzeichen</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setActivityLogOpen(false)}
                   className="inline-flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 active:scale-95"
                   aria-label="Protokoll schließen"
@@ -2165,16 +2150,6 @@ export default function CameraWallPage() {
 
       {mounted && (
         <>
-          <KnownEntitiesModal
-            isOpen={isKnownEntitiesOpen}
-            onClose={() => {
-              setIsKnownEntitiesOpen(false);
-              setTargetPlate("");
-              void loadActivityLog();
-            }}
-            initialPlate={targetPlate}
-          />
-
           {groupModal && typeof document !== "undefined" && createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
