@@ -358,7 +358,7 @@ export function ClipPlayer({ pb }: { pb: PlaybackState }) {
                   fallbackSource={activeClip.streamUrl}
                   nextSource={pb.nextPlaybackUrl}
                   attempt={playbackAttempt}
-                  startPosition={pendingSeekRef.current ?? 0}
+                  startPosition={pendingSeekRef.current ?? videoCurrentTime ?? 0}
                   rate={playbackRate}
                   playRequested={pb.playbackIntentRef.current}
                   scrubbing={pb.isScrubbing}

@@ -597,7 +597,7 @@ export function usePlaybackPage() {
   const seekToOffset = useCallback((seconds: number) => {
     let target = Math.max(0, seconds);
     const video = videoRef.current;
-    if (video && Number.isFinite(video.duration)) {
+    if (video && video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 0) {
       target = Math.min(target, Math.max(0, video.duration - 0.001));
     }
     pendingSeekRef.current = target;
@@ -607,6 +607,8 @@ export function usePlaybackPage() {
       pendingSeekRef.current = null;
       if (playbackIntentRef.current) playRequestedVideo();
       else video.pause();
+    } else {
+      setPlaybackAttempt((attempt) => attempt + 1);
     }
     setVideoCurrentTime(target);
     setPlayerError("");
@@ -660,7 +662,7 @@ export function usePlaybackPage() {
     playbackIntentRef.current = !scrubbingRef.current;
     setPlaybackOffset(0);
     setVideoDuration(0);
-    setVideoCurrentTime(0);
+    setVideoCurrentTime(target);
     pendingSeekRef.current = target;
     setLiveTranscode(false);
     setPlayerPreparing(false);
@@ -1070,8 +1072,22 @@ export function usePlaybackPage() {
   };
 
   const playEvent = async (ev: MotionEvent) => {
-    // 1. Direct clip associated with this event (motion recording)
-    if (ev.clipId) {
+    const activateEventCamera = () => {
+      if (selectedCameraId !== ev.cameraId) {
+        setSelectedCameraId(ev.cameraId);
+      }
+      setSelectedCameraIds((prev) => {
+        if (prev.length === 0) return [ev.cameraId];
+        if (prev[0] === ev.cameraId) return prev;
+        if (prev.includes(ev.cameraId)) {
+          return [ev.cameraId, ...prev.filter((id) => id !== ev.cameraId)];
+        }
+        return [ev.cameraId];
+      });
+    };
+
+    // 1. Dedicated standalone motion recording clip (motionRecordingId present & ready)
+    if (ev.motionRecordingId && ev.motionRecordingStatus === "ready" && ev.clipId) {
       const linkedClip = clips.find((clip) => clip.id === ev.clipId);
       const clipToPlay: RecordingClip = linkedClip || {
         id: ev.clipId,
@@ -1086,41 +1102,92 @@ export function usePlaybackPage() {
         streamUrl: ev.streamUrl || `/api/nvr/recordings/stream?clipId=${ev.clipId}`,
         downloadUrl: `/api/nvr/recordings/stream?clipId=${ev.clipId}&download=1`,
       };
-      const offset = typeof (ev as any).clipOffsetSec === "number" ? (ev as any).clipOffsetSec : 0;
-      openClipWithOffset(clipToPlay, offset);
-      toast.info(`Spiele Aufnahme für ${ev.cameraName} (${ev.timeStr} Uhr)`);
+      activateEventCamera();
+      openClipWithOffset(clipToPlay, 0);
+      toast.info(`Spiele Ereignis-Aufnahme für ${ev.cameraName} (${ev.timeStr} Uhr)`);
       return;
     }
 
-    // 2. Continuous recording: find the clip that covers this camera at this time
-    // Start 10 seconds before the event so the context leading up to the motion is visible
-    const evSec = Math.max(0, parseTimeToSeconds(ev.timeStr) - 10);
-    const cameraClips = clips.filter((c) => c.cameraId === ev.cameraId);
-    let matchingClip = cameraClips.find((c) => {
-      const [h, m, s] = c.timeStr.split(":").map(Number);
-      const clipStartSec = (isNaN(h) ? 0 : h) * 3600 + (isNaN(m) ? 0 : m) * 60 + (isNaN(s) ? 0 : s);
-      const cam = cameras.find((cm) => cm.id === c.cameraId);
-      const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-      const offset = evSec - clipStartSec;
-      return offset >= -5 && offset <= segSec + 15;
-    });
+    // 2. Continuous recording: find the exact clip that covers the event timestamp
+    const targetDate = ev.dateStr || selectedDate || getTodayStr();
+    const actualEvSec = parseTimeToSeconds(ev.timeStr);
+    const cam = cameras.find((cm) => cm.id === ev.cameraId);
+    const segSec = (cam?.recordSegmentMinutes || 15) * 60;
 
-    // 3. Fallback to nearest clip of this camera on the same day if in memory
-    if (!matchingClip) {
-      const sameDayCamClips = cameraClips.filter((c) => c.dateStr === ev.dateStr);
-      if (sameDayCamClips.length > 0) {
-        matchingClip = sameDayCamClips.reduce((best, curr) => {
-          const bestDiff = Math.abs(parseTimeToSeconds(best.timeStr) - evSec);
-          const currDiff = Math.abs(parseTimeToSeconds(curr.timeStr) - evSec);
-          return currDiff < bestDiff ? curr : best;
-        });
+    const findMatchingClipInPool = (pool: RecordingClip[]): RecordingClip | undefined => {
+      const sorted = chronologicalCameraClips(pool, ev.cameraId).filter(
+        (c) => Math.abs(recordingDayPosition(c, targetDate) - actualEvSec) < 86400
+      );
+      if (sorted.length === 0) return undefined;
+
+      // Exact coverage pass (respecting next clip start time so an earlier segment is never chosen when the next one started)
+      for (let i = 0; i < sorted.length; i++) {
+        const clip = sorted[i];
+        const startSec = recordingDayPosition(clip, targetDate);
+        const isBogusDur =
+          typeof clip.durationSeconds === "number" &&
+          clip.durationSeconds > 0 &&
+          clip.durationSeconds < 10 &&
+          (clip.sizeBytes || 0) > 2_000_000;
+        const rawDur =
+          typeof clip.durationSeconds === "number" && clip.durationSeconds > 0 && !isBogusDur
+            ? clip.durationSeconds
+            : segSec;
+        const nextStartSec =
+          i + 1 < sorted.length ? recordingDayPosition(sorted[i + 1], targetDate) : Infinity;
+        const endSec = Math.min(
+          startSec + rawDur + 5,
+          nextStartSec > startSec ? nextStartSec : Infinity
+        );
+        if (actualEvSec >= startSec && actualEvSec < endSec) {
+          return clip;
+        }
       }
-    }
 
-    // 4. If still not found, dynamically query server for clips of this camera on this date
+      // Boundary tolerance pass (-5s to +15s)
+      for (let i = 0; i < sorted.length; i++) {
+        const clip = sorted[i];
+        const startSec = recordingDayPosition(clip, targetDate);
+        const isBogusDur =
+          typeof clip.durationSeconds === "number" &&
+          clip.durationSeconds > 0 &&
+          clip.durationSeconds < 10 &&
+          (clip.sizeBytes || 0) > 2_000_000;
+        const rawDur =
+          typeof clip.durationSeconds === "number" && clip.durationSeconds > 0 && !isBogusDur
+            ? clip.durationSeconds
+            : segSec;
+        const nextStartSec =
+          i + 1 < sorted.length ? recordingDayPosition(sorted[i + 1], targetDate) : Infinity;
+        const endSec = Math.min(
+          startSec + rawDur + 15,
+          nextStartSec > startSec ? nextStartSec : Infinity
+        );
+        if (actualEvSec >= startSec - 5 && actualEvSec < endSec) {
+          return clip;
+        }
+      }
+
+      // Direct clipId match if within valid segment window of the event
+      if (ev.clipId) {
+        const byId = sorted.find((c) => c.id === ev.clipId);
+        if (byId) {
+          const startSec = recordingDayPosition(byId, targetDate);
+          if (actualEvSec >= startSec - 10 && actualEvSec <= startSec + segSec + 30) {
+            return byId;
+          }
+        }
+      }
+
+      return undefined;
+    };
+
+    let matchingClip = findMatchingClipInPool(clips);
+
+    // 3. Dynamically query server for clips of this camera on this date if not in memory
     if (!matchingClip) {
       try {
-        const queryParams = new URLSearchParams({ cameraId: ev.cameraId, date: ev.dateStr || "" });
+        const queryParams = new URLSearchParams({ cameraId: ev.cameraId, date: targetDate });
         const res = await fetch(`/api/nvr/recordings?${queryParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
@@ -1131,24 +1198,16 @@ export function usePlaybackPage() {
               const newClips = serverClips.filter((c) => !prevIds.has(c.id));
               return newClips.length > 0 ? [...newClips, ...prev] : prev;
             });
-
-            matchingClip = serverClips.find((c) => {
-              const [h, m, s] = c.timeStr.split(":").map(Number);
-              const clipStartSec = (isNaN(h) ? 0 : h) * 3600 + (isNaN(m) ? 0 : m) * 60 + (isNaN(s) ? 0 : s);
-              const cam = cameras.find((cm) => cm.id === c.cameraId);
-              const segSec = (cam?.recordSegmentMinutes || 15) * 60;
-              const offset = evSec - clipStartSec;
-              return offset >= -5 && offset <= segSec + 15;
-            }) || serverClips[0];
+            matchingClip = findMatchingClipInPool(serverClips);
           }
         }
       } catch {}
     }
 
-    // 5. Check late clips from previous day if event is in the first 30 minutes of the day
-    if (!matchingClip && evSec < 1800) {
+    // 4. Check late clips from previous day if event is in the first 30 minutes of the day
+    if (!matchingClip && actualEvSec < 1800) {
       try {
-        const prevDate = new Date(`${ev.dateStr}T00:00:00Z`);
+        const prevDate = new Date(`${targetDate}T00:00:00Z`);
         prevDate.setUTCDate(prevDate.getUTCDate() - 1);
         const prevDateStr = prevDate.toISOString().slice(0, 10);
         const queryParams = new URLSearchParams({ cameraId: ev.cameraId, date: prevDateStr });
@@ -1156,22 +1215,22 @@ export function usePlaybackPage() {
         if (res.ok) {
           const data = await res.json();
           const prevClips: RecordingClip[] = Array.isArray(data.clips) ? data.clips : [];
-          const lateClip = prevClips.find((c) => parseTimeToSeconds(c.timeStr) >= 84600);
-          if (lateClip) {
-            matchingClip = lateClip;
-          }
+          matchingClip = findMatchingClipInPool(prevClips);
         }
       } catch {}
     }
 
     if (matchingClip) {
-      const clipStartSec = parseTimeToSeconds(matchingClip.timeStr);
-      let offset = evSec - clipStartSec;
-      if (offset < -43200) offset += 86400;
-      if (offset > 43200) offset -= 86400;
-      const clampedOffset = Math.max(0, offset);
+      const clipStartSec = recordingDayPosition(matchingClip, targetDate);
+      const eventOffsetSec = actualEvSec - clipStartSec;
+      // Start 10 seconds before the motion event within the matching clip
+      const clampedOffset = Math.max(0, eventOffsetSec - 10);
+      activateEventCamera();
       openClipWithOffset(matchingClip, clampedOffset);
-      toast.info(`Spiele ${matchingClip.cameraName} ab ${formatMinutesToTime(evSec / 60)} Uhr (-10s vor Bewegung)`);
+      const startDayMin = (clipStartSec + clampedOffset) / 60;
+      toast.info(
+        `Spiele ${matchingClip.cameraName} ab ${formatMinutesToTime(startDayMin)} (-10s vor Bewegung um ${ev.timeStr} Uhr)`
+      );
     } else {
       if (["pending", "buffering", "merging"].includes(ev.motionRecordingStatus || "")) {
         toast.info(`Der Clip für ${ev.timeStr} Uhr wird noch erstellt.`);

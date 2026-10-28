@@ -180,8 +180,8 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
     const currentMin = currentDaySec / 60;
     const target =
       direction > 0
-        ? timelineMotionEvents.find((ev) => ev.totalMinutes > currentMin + 0.1) || timelineMotionEvents[0]
-        : [...timelineMotionEvents].reverse().find((ev) => ev.totalMinutes < currentMin - 0.1) ||
+        ? timelineMotionEvents.find((ev) => ev.totalMinutes > currentMin + 0.22) || timelineMotionEvents[0]
+        : [...timelineMotionEvents].reverse().find((ev) => ev.totalMinutes < currentMin - 0.05) ||
           timelineMotionEvents[timelineMotionEvents.length - 1];
     if (target) {
       if (timelineWindowMinutes > 120) {
@@ -344,9 +344,16 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
             }
             const recording = recordingAtPosition(seconds);
             const proximityMin = timelineWindowMinutes <= 15 ? 0.25 : timelineWindowMinutes <= 120 ? 1 : 4;
-            const motionEventNear = timelineMotionEvents.find(
-              (ev) => Math.abs(ev.totalMinutes - seconds / 60) <= proximityMin
-            );
+            const cursorMin = seconds / 60;
+            let motionEventNear: (typeof timelineMotionEvents)[number] | undefined;
+            let bestDiff = proximityMin;
+            for (const ev of timelineMotionEvents) {
+              const diff = Math.abs(ev.totalMinutes - cursorMin);
+              if (diff <= bestDiff) {
+                bestDiff = diff;
+                motionEventNear = ev;
+              }
+            }
             setHoverScrubber({
               pct,
               timeStr: formatTimelineTime(seconds),
@@ -458,15 +465,9 @@ export function PlaybackTimeline({ pb, embedded = false }: { pb: PlaybackState; 
                     data-scrub-marker
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (pb.selectedCameraId !== ev.cameraId) {
-                        pb.setSelectedCameraId(ev.cameraId);
-                        if (!pb.selectedCameraIds.includes(ev.cameraId)) {
-                          pb.setSelectedCameraIds([ev.cameraId]);
-                        }
-                      }
                       void playEvent(ev);
                     }}
-                    className="group/ev absolute -top-1.5 -bottom-1.5 z-40 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform w-5 -ml-2.5 hover:scale-125"
+                    className="group/ev absolute -top-1.5 -bottom-1.5 z-40 hover:z-50 cursor-pointer flex flex-col items-center justify-between pointer-events-auto transition-transform w-5 -ml-2.5 hover:scale-125"
                     style={{ left: `${leftPct}%` }}
                     title={`⚡ ${ev.cameraName} (${ev.timeStr} Uhr) – Klick: Kamera laden & 10s vorher starten`}
                   >

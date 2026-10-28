@@ -1903,9 +1903,53 @@ export default function CameraWallPage() {
                       </div>
                     </div>
 
-                    {/* Action Icons Row: Bearbeiten, Aufnahme, Löschen */}
-                    <div className="flex items-center justify-center gap-3 my-auto">
-                      {/* 1. Stift bearbeiten */}
+                    {/* Action Icons Row: Live, Aufnahmen, Bearbeiten, Aufnahme, Löschen */}
+                    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 my-auto px-1">
+                      {/* 1. Live streamen / stoppen */}
+                      <button
+                        type="button"
+                        disabled={liveLoading.has(camera.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCameraMenuId(null);
+                          setActiveCameraControlsId(null);
+                          void toggleLive(camera.id);
+                        }}
+                        className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
+                          isLive
+                            ? "border-sky-400 bg-sky-600 text-white hover:bg-sky-500 shadow-sky-600/40"
+                            : "border-sky-500/50 bg-sky-950/80 text-sky-300 hover:bg-sky-900 active:bg-sky-800 shadow-black/40"
+                        }`}
+                        title={isLive ? "Live-Stream stoppen" : "Live-Stream starten"}
+                        aria-label={isLive ? "Live-Stream stoppen" : "Live-Stream starten"}
+                      >
+                        {liveLoading.has(camera.id) ? (
+                          <span className="loading loading-spinner loading-xs text-white" />
+                        ) : isLive ? (
+                          <Square className="w-4 h-4 fill-white text-white" />
+                        ) : (
+                          <Play className="w-5 h-5 fill-current text-sky-400" />
+                        )}
+                      </button>
+
+                      {/* 2. Aufnahmen öffnen (Videos schauen) */}
+                      {camera.recordEnabled ? (
+                        <Link
+                          href={`/wiedergabe?cameraId=${encodeURIComponent(camera.id)}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCameraMenuId(null);
+                            setActiveCameraControlsId(null);
+                          }}
+                          className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-lg shadow-amber-600/40"
+                          title="Aufnahmen öffnen"
+                          aria-label="Aufnahmen öffnen"
+                        >
+                          <Film className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                        </Link>
+                      ) : null}
+
+                      {/* 3. Stift bearbeiten */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1914,14 +1958,14 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           openEditor(camera);
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
+                        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
                         title="Kamera bearbeiten"
                         aria-label="Kamera bearbeiten"
                       >
-                        <Pencil className="w-5 h-5" />
+                        <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
                       </button>
 
-                      {/* 2. Aufnahme starten / stoppen */}
+                      {/* 4. Aufnahme starten / stoppen */}
                       <button
                         type="button"
                         disabled={recordLoading.has(camera.id)}
@@ -1931,7 +1975,7 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           void toggleRecord(camera);
                         }}
-                        className={`flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
+                        className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
                           camera.recordEnabled
                             ? "border-rose-400 bg-rose-600 text-white hover:bg-rose-500 shadow-rose-600/40"
                             : "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-black/40"
@@ -1942,11 +1986,11 @@ export default function CameraWallPage() {
                         {camera.recordEnabled ? (
                           <Square className="w-4 h-4 fill-white text-white" />
                         ) : (
-                          <CircleDot className="w-5 h-5 text-rose-400" />
+                          <CircleDot className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
                         )}
                       </button>
 
-                      {/* 3. Mülleimer (Entfernen / Löschen) */}
+                      {/* 5. Mülleimer (Entfernen / Löschen) */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1957,11 +2001,11 @@ export default function CameraWallPage() {
                             removeCamera(camera.id);
                           }
                         }}
-                        className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
+                        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
                         title="Von Monitoren entfernen"
                         aria-label="Von Monitoren entfernen"
                       >
-                        <Trash2 className="w-5 h-5 text-white" />
+                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                       </button>
                     </div>
                   </div>

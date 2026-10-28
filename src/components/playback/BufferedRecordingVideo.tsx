@@ -253,6 +253,7 @@ export function BufferedRecordingVideo(props: Props) {
   const [active, setActive] = useState(0);
   const [retries, setRetries] = useState([0, 0]);
   const failed = useRef(false);
+  const previousAttemptSource = useRef(props.source);
   const latest = useRef({ props, slots, active });
   latest.current = { props, slots, active };
   useLayoutEffect(() => {
@@ -270,14 +271,21 @@ export function BufferedRecordingVideo(props: Props) {
   }, [props.source, props.nextSource, slots, active]);
   useEffect(() => {
     const current = latest.current;
+    const sourceChanged = previousAttemptSource.current !== current.props.source;
+    previousAttemptSource.current = current.props.source;
     if (failed.current && current.slots[current.active] === current.props.source) {
       failed.current = false;
       setRetries((values) => values.map((value, index) => index === current.active ? value + 1 : value));
       return;
     }
+    if (sourceChanged) return;
     const video = current.props.mediaRef.current;
-    if (video && video.readyState >= 1 && current.slots[current.active] === current.props.source) {
-      video.dispatchEvent(new Event("loadedmetadata"));
+    if (video && current.slots[current.active] === current.props.source) {
+      if (video.readyState >= 1) {
+        video.dispatchEvent(new Event("loadedmetadata"));
+      } else {
+        setRetries((values) => values.map((value, index) => index === current.active ? value + 1 : value));
+      }
     }
   }, [props.attempt]);
   return <>{slots.map((source, index) => <Slot {...props} key={`${index}-${retries[index]}`} source={source}

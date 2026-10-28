@@ -22,3 +22,5 @@ mediamtx.tar.gz
 test_*.js
 patch*
 scratch/
+prisma/*.db
+*.db

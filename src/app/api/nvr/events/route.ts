@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { effectiveRecordingMode } from "@/lib/recordingPolicy";
+import { recordingFileTime } from "@/lib/recordingTime";
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
@@ -80,28 +81,50 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    const defaultStoragePath = defaultStorage?.path || path.join(process.cwd(), "data", "recordings");
+    const fallbackLocalPath = path.resolve(process.cwd(), "data", "recordings");
+    const defaultStoragePath = defaultStorage?.path ? path.resolve(defaultStorage.path) : fallbackLocalPath;
     const cameraClipsCache = new Map<string, Array<{ fullPath: string; startMs: number; filename: string }>>();
     const getCameraClips = async (cameraId: string, camStoragePath?: string | null) => {
       if (cameraClipsCache.has(cameraId)) return cameraClipsCache.get(cameraId)!;
-      const camDir = path.join(camStoragePath || defaultStoragePath, cameraId);
+      const dirsToCheck = Array.from(
+        new Set(
+          [
+            camStoragePath ? path.resolve(camStoragePath) : null,
+            defaultStoragePath,
+            fallbackLocalPath,
+          ].filter((p): p is string => Boolean(p))
+        )
+      );
       const list: Array<{ fullPath: string; startMs: number; filename: string }> = [];
-      try {
-        if (fs.existsSync(camDir)) {
+      for (const baseDir of dirsToCheck) {
+        const camDir = path.join(baseDir, cameraId);
+        try {
+          if (!fs.existsSync(camDir)) continue;
           const files = await fsp.readdir(camDir);
           for (const f of files) {
+            if (f.startsWith(".") || /\.(?:partial|tmp)\./i.test(f)) continue;
             if (!/\.(?:mp4|m4s|ts)$/i.test(f)) continue;
             const m = f.match(/^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-            if (m) {
-              const startMs = Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}Z`);
-              if (!isNaN(startMs)) {
-                list.push({ fullPath: path.join(camDir, f), startMs, filename: f });
-              }
+            if (!m) continue;
+            if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              const diffDays = Math.abs(
+                (Date.parse(`${m[1]}T00:00:00Z`) - Date.parse(`${dateStr}T00:00:00Z`)) / 86400000
+              );
+              if (diffDays > 1) continue;
             }
+            const fullPath = path.join(camDir, f);
+            try {
+              const stat = await fsp.stat(fullPath);
+              if (!stat.isFile()) continue;
+              const { startMs } = recordingFileTime(f, stat.mtimeMs);
+              if (Number.isFinite(startMs)) {
+                list.push({ fullPath, startMs, filename: f });
+              }
+            } catch {}
           }
-          list.sort((a, b) => a.startMs - b.startMs);
-        }
-      } catch {}
+        } catch {}
+      }
+      list.sort((a, b) => a.startMs - b.startMs);
       cameraClipsCache.set(cameraId, list);
       return list;
     };
@@ -136,9 +159,23 @@ export async function GET(req: Request) {
         const camStorage = ev.camera.storageTarget?.enabled ? ev.camera.storageTarget.path : null;
         const camClips = await getCameraClips(ev.cameraId, camStorage);
         const evMs = d.getTime();
-        const segMs = ((ev.camera.recordSegmentMinutes || 15) + 1) * 60 * 1000;
-        const matched = camClips.find((c) => evMs >= c.startMs && evMs - c.startMs <= segMs)
-          || camClips.find((c) => Math.abs(evMs - c.startMs) <= 5 * 60 * 1000);
+        const segMs = (ev.camera.recordSegmentMinutes || 15) * 60 * 1000;
+        let matched: { fullPath: string; startMs: number; filename: string } | undefined;
+        for (let i = 0; i < camClips.length; i++) {
+          const curr = camClips[i];
+          const nextStartMs = i + 1 < camClips.length ? camClips[i + 1].startMs : Infinity;
+          const endMs = Math.min(curr.startMs + segMs + 15_000, nextStartMs);
+          if (evMs >= curr.startMs && evMs < endMs) {
+            matched = curr;
+            break;
+          }
+        }
+        if (!matched) {
+          matched = camClips.find((c, i) => {
+            const nextStartMs = i + 1 < camClips.length ? camClips[i + 1].startMs : Infinity;
+            return evMs >= c.startMs - 5_000 && evMs < Math.min(c.startMs + segMs + 15_000, nextStartMs);
+          });
+        }
         if (matched) {
           clipId = Buffer.from(matched.fullPath).toString("base64url");
           clipOffsetSec = Math.max(0, Math.floor((evMs - matched.startMs) / 1000));
