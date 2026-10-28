@@ -91,14 +91,14 @@
 
   .wall-grid {
     grid-template-columns: repeat(var(--wall-columns-mobile, 2), minmax(0, 1fr));
-    gap: 2px;
+    gap: 3px;
   }
 
   .camera-wall {
     width: auto;
     margin-inline: -6px;
     padding: 0;
-    border-radius: 3px;
+    border-radius: 4px;
   }
 
   .camera-wall .camera-wall-toolbar {
@@ -107,7 +107,8 @@
   }
 
   .camera-wall .camera-card {
-    border-radius: 3px;
+    border-radius: 8px;
+    min-height: 125px;
   }
 
   .camera-card:hover .camera-card-actions:not(.is-visible) {

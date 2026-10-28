@@ -1520,7 +1520,7 @@ export default function CameraWallPage() {
                 className={`camera-card group overflow-hidden flex flex-col justify-center ${
                   expandedCameraId === camera.id 
                     ? 'fixed inset-0 z-[99999] bg-black' 
-                    : `relative rounded-2xl border bg-black shadow-2xl transition-all ${
+                    : `relative rounded-xl sm:rounded-2xl border bg-black shadow-2xl transition-all ${
                         cameraMenuId === camera.id
                           ? 'z-40 ring-2 ring-indigo-500/80 shadow-[0_0_25px_rgba(99,102,241,0.35)]'
                           : isRecordingNow
@@ -1598,7 +1598,7 @@ export default function CameraWallPage() {
                       openExpanded(camera.id);
                     }
                   }}
-                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full aspect-video touch-manipulation'}`}
+                  className={`flex flex-col justify-center overflow-hidden bg-slate-900 relative cursor-grab active:cursor-grabbing ${expandedCameraId === camera.id ? 'camera-fullscreen-viewport w-full h-full touch-none overscroll-none select-none' : 'flex-1 w-full min-h-[125px] sm:min-h-0 aspect-[16/10] sm:aspect-video touch-manipulation'}`}
                 >
                   {expandedCameraId === camera.id ? (
                     <>
@@ -1830,7 +1830,7 @@ export default function CameraWallPage() {
                 {cameraMenuId === camera.id ? (
                   <div
                     data-pull-to-refresh-ignore="true"
-                    className="absolute inset-0 z-40 flex flex-col justify-between p-2 sm:p-3 rounded-2xl bg-slate-950/92 backdrop-blur-md border border-indigo-500/50 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+                    className="absolute inset-0 z-40 flex flex-col justify-between p-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-slate-950/92 backdrop-blur-md border border-indigo-500/50 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
                     onClick={(e) => {
                       e.stopPropagation();
                       if ((e.target as HTMLElement).closest("button, a")) return;
@@ -1869,12 +1869,12 @@ export default function CameraWallPage() {
                     }}
                   >
                     {/* Header: Camera Name + Fullscreen + Close */}
-                    <div className="flex items-center justify-between gap-1.5 border-b border-white/10 pb-1.5 px-0.5">
-                      <div className="min-w-0 flex items-center gap-1.5">
-                        <span className="truncate font-bold text-white text-xs sm:text-sm">{camera.name}</span>
+                    <div className="flex items-center justify-between gap-1 border-b border-white/10 pb-1 px-0.5">
+                      <div className="min-w-0 flex items-center gap-1">
+                        <span className="truncate font-bold text-white text-[11px] sm:text-sm">{camera.name}</span>
                         <span className="hidden sm:inline font-mono text-[10px] text-slate-400">{camera.ip}</span>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1882,11 +1882,11 @@ export default function CameraWallPage() {
                             setCameraMenuId(null);
                             openExpanded(camera.id);
                           }}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                          className="flex h-5 w-5 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
                           title="Vollbild"
                           aria-label="Vollbild"
                         >
-                          <Maximize2 className="w-3.5 h-3.5" />
+                          <Maximize2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -1895,16 +1895,16 @@ export default function CameraWallPage() {
                             setCameraMenuId(null);
                             setActiveCameraControlsId(null);
                           }}
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                          className="flex h-5 w-5 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
                           aria-label="Schließen"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                         </button>
                       </div>
                     </div>
 
                     {/* Action Icons Row: Live, Aufnahmen, Bearbeiten, Aufnahme, Löschen */}
-                    <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 my-auto px-1">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 my-auto px-0.5">
                       {/* 1. Live streamen / stoppen */}
                       <button
                         type="button"
@@ -1915,7 +1915,7 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           void toggleLive(camera.id);
                         }}
-                        className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
+                        className={`flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-lg sm:rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-md ${
                           isLive
                             ? "border-sky-400 bg-sky-600 text-white hover:bg-sky-500 shadow-sky-600/40"
                             : "border-sky-500/50 bg-sky-950/80 text-sky-300 hover:bg-sky-900 active:bg-sky-800 shadow-black/40"
@@ -1926,9 +1926,9 @@ export default function CameraWallPage() {
                         {liveLoading.has(camera.id) ? (
                           <span className="loading loading-spinner loading-xs text-white" />
                         ) : isLive ? (
-                          <Square className="w-4 h-4 fill-white text-white" />
+                          <Square className="w-3 h-3 sm:w-4 sm:h-4 fill-white text-white" />
                         ) : (
-                          <Play className="w-5 h-5 fill-current text-sky-400" />
+                          <Play className="w-3.5 h-3.5 sm:w-5 sm:h-5 fill-current text-sky-400" />
                         )}
                       </button>
 
@@ -1941,11 +1941,11 @@ export default function CameraWallPage() {
                             setCameraMenuId(null);
                             setActiveCameraControlsId(null);
                           }}
-                          className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-lg shadow-amber-600/40"
+                          className="flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-lg sm:rounded-xl border border-amber-400/50 bg-amber-600 text-white hover:bg-amber-500 active:scale-95 transition-all shadow-md shadow-amber-600/40"
                           title="Aufnahmen öffnen"
                           aria-label="Aufnahmen öffnen"
                         >
-                          <Film className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                          <Film className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-white" />
                         </Link>
                       ) : null}
 
@@ -1958,11 +1958,11 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           openEditor(camera);
                         }}
-                        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-600/40"
+                        className="flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-lg sm:rounded-xl border border-indigo-400/50 bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all shadow-md shadow-indigo-600/40"
                         title="Kamera bearbeiten"
                         aria-label="Kamera bearbeiten"
                       >
-                        <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Pencil className="w-3.5 h-3.5 sm:w-5 sm:h-5" />
                       </button>
 
                       {/* 4. Aufnahme starten / stoppen */}
@@ -1975,7 +1975,7 @@ export default function CameraWallPage() {
                           setActiveCameraControlsId(null);
                           void toggleRecord(camera);
                         }}
-                        className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-lg ${
+                        className={`flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-lg sm:rounded-xl border transition-all active:scale-95 disabled:opacity-50 shadow-md ${
                           camera.recordEnabled
                             ? "border-rose-400 bg-rose-600 text-white hover:bg-rose-500 shadow-rose-600/40"
                             : "border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-black/40"
@@ -1984,9 +1984,9 @@ export default function CameraWallPage() {
                         aria-label={camera.recordEnabled ? "Aufnahme stoppen" : "Aufnahme starten"}
                       >
                         {camera.recordEnabled ? (
-                          <Square className="w-4 h-4 fill-white text-white" />
+                          <Square className="w-3 h-3 sm:w-4 sm:h-4 fill-white text-white" />
                         ) : (
-                          <CircleDot className="w-4 h-4 sm:w-5 sm:h-5 text-rose-400" />
+                          <CircleDot className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-rose-400" />
                         )}
                       </button>
 
@@ -2001,11 +2001,11 @@ export default function CameraWallPage() {
                             removeCamera(camera.id);
                           }
                         }}
-                        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-lg shadow-red-600/40"
+                        className="flex h-8 w-8 sm:h-11 sm:w-11 items-center justify-center rounded-lg sm:rounded-xl border border-red-500/50 bg-red-600 text-white hover:bg-red-500 active:scale-95 transition-all shadow-md shadow-red-600/40"
                         title="Von Monitoren entfernen"
                         aria-label="Von Monitoren entfernen"
                       >
-                        <Trash2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                        <Trash2 className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-white" />
                       </button>
                     </div>
                   </div>
