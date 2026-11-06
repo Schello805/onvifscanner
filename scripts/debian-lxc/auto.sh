@@ -120,9 +120,9 @@ checkout_repo() {
     chown -R "$APP_USER:$APP_USER" "$APP_DIR" || true
     # Git refuses to operate on repos owned by other users when run as root ("dubious ownership").
     PREVIOUS_COMMIT="$(as_app_user "git -C '$APP_DIR' rev-parse HEAD")"
-    as_app_user "git -C '$APP_DIR' fetch --all --prune"
-    as_app_user "git -C '$APP_DIR' checkout -f main"
-    as_app_user "git -C '$APP_DIR' pull --ff-only"
+    as_app_user "git -C '$APP_DIR' fetch --all --tags --prune"
+    as_app_user "git -C '$APP_DIR' checkout -B main origin/main"
+    as_app_user "git -C '$APP_DIR' reset --hard origin/main"
     CURRENT_COMMIT="$(as_app_user "git -C '$APP_DIR' rev-parse HEAD")"
     if [[ "$PREVIOUS_COMMIT" == "$CURRENT_COMMIT" ]]; then
       SOURCE_CHANGED=false

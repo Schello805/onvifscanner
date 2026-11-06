@@ -11,6 +11,10 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ ! -x "$UPDATE_SCRIPT" && -x "$APP_DIR/scripts/debian-lxc/update.sh" ]]; then
+  UPDATE_SCRIPT="$APP_DIR/scripts/debian-lxc/update.sh"
+fi
+
 if [[ ! -x "$UPDATE_SCRIPT" ]]; then
   echo "Update-Skript nicht gefunden: $UPDATE_SCRIPT" >&2
   exit 1
@@ -20,6 +24,13 @@ if systemctl is-active --quiet "${UNIT_NAME}.service"; then
   echo '{"success":true,"alreadyRunning":true,"message":"Update oder Rollback läuft bereits."}'
   exit 0
 fi
+
+# Vorherige fehlgeschlagene/inaktive Units bereinigen, damit systemd-run nicht mit 'Unit already exists' fehlschlägt
+systemctl reset-failed "${UNIT_NAME}.service" 2>/dev/null || true
+systemctl stop "${UNIT_NAME}.service" 2>/dev/null || true
+
+LOG_FILE="/var/log/onvifscanner-update.log"
+touch "$LOG_FILE" 2>/dev/null || true
 
 RUNTIME_SCRIPT="$(mktemp /run/onvifscanner-update.XXXXXX)"
 cp "$UPDATE_SCRIPT" "$RUNTIME_SCRIPT"
@@ -31,10 +42,11 @@ if [[ -n "$TARGET_VERSION" ]]; then
     --collect \
     --no-block \
     --property=Type=exec \
+    --property=RemainAfterExit=no \
     --property=WorkingDirectory="$APP_DIR" \
     --setenv=TARGET_VERSION="$TARGET_VERSION" \
     --setenv=FORCE_REBUILD="true" \
-    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 1; /bin/bash "$1" 2>&1 | tee -a /var/log/onvifscanner-update.log' _ "$RUNTIME_SCRIPT" >/dev/null
   echo "{\"success\":true,\"message\":\"Rollback/Wechsel auf $TARGET_VERSION wurde im Hintergrund gestartet.\"}"
 else
   systemd-run \
@@ -42,7 +54,8 @@ else
     --collect \
     --no-block \
     --property=Type=exec \
+    --property=RemainAfterExit=no \
     --property=WorkingDirectory="$APP_DIR" \
-    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 2; /bin/bash "$1"' _ "$RUNTIME_SCRIPT" >/dev/null
+    /bin/bash -c 'trap '\''rm -f "$1"'\'' EXIT; sleep 1; /bin/bash "$1" 2>&1 | tee -a /var/log/onvifscanner-update.log' _ "$RUNTIME_SCRIPT" >/dev/null
   echo '{"success":true,"message":"Update wurde als Hintergrunddienst gestartet."}'
 fi

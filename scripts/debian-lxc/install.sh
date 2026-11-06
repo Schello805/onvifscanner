@@ -63,9 +63,9 @@ ensure_user() {
 checkout_repo() {
   if [[ -d "${APP_DIR}/.git" ]]; then
     chown -R "$APP_USER:$APP_USER" "$APP_DIR" || true
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' fetch --all --prune"
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' pull --ff-only"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' fetch --all --tags --prune"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -B main origin/main"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' reset --hard origin/main"
   else
     rm -rf "$APP_DIR"
     install -d -o "$APP_USER" -g "$APP_USER" "$APP_DIR"

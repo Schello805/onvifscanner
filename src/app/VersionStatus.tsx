@@ -114,10 +114,12 @@ export function VersionStatus(props: { currentVersion: string }) {
     const deadline = Date.now() + 10 * 60 * 1000;
     let serverWasOffline = false;
     let consecutiveSuccessfulChecks = 0;
+    let checkCount = 0;
 
     while (!controller.signal.aborted && Date.now() < deadline) {
       await new Promise((resolve) => window.setTimeout(resolve, 2_000));
       if (controller.signal.aborted) return;
+      checkCount += 1;
 
       const requestController = new AbortController();
       const abortRequest = () => requestController.abort();
@@ -140,6 +142,28 @@ export function VersionStatus(props: { currentVersion: string }) {
           return;
         }
 
+        // Periodically check update log for live progress
+        if (checkCount % 2 === 0 && !serverWasOffline) {
+          try {
+            const updateStatusRes = await fetch(`/api/update?ts=${Date.now()}`, {
+              cache: "no-store",
+              signal: requestController.signal,
+            });
+            if (updateStatusRes.ok) {
+              const statusData = (await updateStatusRes.json()) as { isRunning?: boolean; lastLog?: string };
+              if (statusData.lastLog) {
+                const lines = statusData.lastLog.split("\n").map((l) => l.trim()).filter(Boolean);
+                const lastLine = lines[lines.length - 1];
+                if (lastLine) {
+                  // Clean ANSI color codes from terminal log
+                  const cleanText = lastLine.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "").slice(0, 85);
+                  if (cleanText) setUpdateMessage(cleanText);
+                }
+              }
+            }
+          } catch {}
+        }
+
         if (serverWasOffline) {
           consecutiveSuccessfulChecks += 1;
           setUpdateMessage("Dienst ist wieder erreichbar. Version wird geprüft…");
@@ -147,7 +171,7 @@ export function VersionStatus(props: { currentVersion: string }) {
             window.location.reload();
             return;
           }
-        } else {
+        } else if (checkCount <= 2) {
           setUpdateMessage("App wird gebaut und neu gestartet…");
         }
       } catch {

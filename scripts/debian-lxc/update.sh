@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Sicherer Exit-Trap: Falls der Update-Vorgang abbricht, onvifscanner.service reaktivieren
+on_update_error() {
+  local exit_code=$?
+  if [[ $exit_code -ne 0 ]]; then
+    echo "[ERROR] Update-Vorgang fehlgeschlagen (Code: $exit_code). Starte onvifscanner.service wieder..." >&2
+    systemctl start onvifscanner.service 2>/dev/null || true
+  fi
+}
+trap on_update_error EXIT
+
 APP_DIR="${APP_DIR:-/opt/onvifscanner}"
 APP_USER="${APP_USER:-onvifscanner}"
 ENV_FILE="${ENV_FILE:-/etc/onvifscanner/onvifscanner.env}"
@@ -88,8 +98,9 @@ else
     runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f '$TARGET_VERSION'"
     FORCE_REBUILD=true
   else
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -f main"
-    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' pull --ff-only"
+    # Zuverlässig auf origin/main synchronisieren (verhindert Fast-Forward- und Merge-Konflikte)
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' checkout -B main origin/main"
+    runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}'; git -C '$APP_DIR' reset --hard origin/main"
   fi
 fi
 current_commit="$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse HEAD)"
@@ -187,7 +198,7 @@ installed_hash="$(cat "$dependency_marker" 2>/dev/null || true)"
 if [[ -x "$APP_DIR/node_modules/.bin/next" && -x "$APP_DIR/node_modules/.bin/prisma" && "$dependency_hash" == "$installed_hash" ]]; then
   echo "Node dependencies unchanged; skipping npm ci."
 else
-  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci"
+  runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && (NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm ci || NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false npm install)"
   printf '%s\n' "$dependency_hash" >"$dependency_marker"
   chown "$APP_USER:$APP_USER" "$dependency_marker"
   DEPENDENCIES_CHANGED=true
@@ -209,7 +220,16 @@ else
   echo "Database schema unchanged; skipping Prisma migration."
 fi
 
-runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=512'; cd '$APP_DIR' && npm run build"
+# Dynamischer Build-Speicher basierend auf verfügbarem RAM (mindestens 1024MB, bis 2048MB)
+total_mem_mb="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 1024)"
+build_mem_mb=1024
+if [[ "$total_mem_mb" -ge 2048 ]]; then
+  build_mem_mb=1536
+fi
+if [[ "$total_mem_mb" -ge 3500 ]]; then
+  build_mem_mb=2048
+fi
+runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR' NODE_OPTIONS='--max-old-space-size=${build_mem_mb}'; cd '$APP_DIR' && npm run build"
 if [[ "$RUN_NPM_AUDIT" == "true" ]]; then
   echo "Running runtime dependency audit (omit=dev)..."
   runuser -u "$APP_USER" -- bash -lc "export HOME='/home/${APP_USER}' NPM_CONFIG_CACHE='$NPM_CACHE_DIR'; cd '$APP_DIR' && npm audit --omit=dev || true"
@@ -231,5 +251,6 @@ fi
 install -m 0644 "$APP_DIR/deploy/onvifscanner.service" /etc/systemd/system/onvifscanner.service
 systemctl daemon-reload
 systemctl reset-failed onvifscanner.service || true
+trap - EXIT
 systemctl restart --no-block onvifscanner.service
 systemctl --no-pager --full --no-ask-password status onvifscanner.service || true

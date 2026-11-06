@@ -82,11 +82,8 @@ if [[ -n "$TARGET_VERSION" ]]; then
 else
   REMOTE_BRANCH="origin/${CURRENT_BRANCH}"
   if git rev-parse --verify "${REMOTE_BRANCH}" >/dev/null 2>&1; then
-    git pull --rebase origin "${CURRENT_BRANCH}" || {
-      log_warn "Rebase fehlgeschlagen, versuche Standard-Pull…"
-      git rebase --abort 2>/dev/null || true
-      git pull origin "${CURRENT_BRANCH}"
-    }
+    git checkout -B "${CURRENT_BRANCH}" "${REMOTE_BRANCH}"
+    git reset --hard "${REMOTE_BRANCH}"
   else
     log_warn "Kein Remote-Branch '${REMOTE_BRANCH}' gefunden, versuche 'git pull'…"
     git pull

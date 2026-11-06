@@ -9,6 +9,43 @@ export const dynamic = "force-dynamic";
 
 const execFileAsync = promisify(execFile);
 
+export async function GET() {
+  try {
+    const helperPath = "/usr/local/bin/onvifscanner-update-helper";
+    const isSystemInstallation =
+      fs.existsSync("/etc/systemd/system/onvifscanner.service") || fs.existsSync(helperPath);
+
+    let isRunning = false;
+    if (isSystemInstallation) {
+      try {
+        await execFileAsync("systemctl", ["is-active", "--quiet", "onvifscanner-update.service"], { timeout: 2000 });
+        isRunning = true;
+      } catch {
+        isRunning = false;
+      }
+    }
+
+    let lastLog = "";
+    const logPath = "/var/log/onvifscanner-update.log";
+    if (fs.existsSync(logPath)) {
+      try {
+        const content = fs.readFileSync(logPath, "utf8");
+        const lines = content.trim().split("\n");
+        lastLog = lines.slice(-25).join("\n");
+      } catch {}
+    }
+
+    return NextResponse.json({
+      isRunning,
+      isSystemInstallation,
+      helperInstalled: fs.existsSync(helperPath),
+      lastLog,
+    }, { headers: { "cache-control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     let targetVersion = "";
@@ -50,13 +87,15 @@ export async function POST(req: Request) {
           message: helperResult.message || (targetVersion ? `Rollback auf ${targetVersion} gestartet.` : "Update gestartet. App wird in Kürze neu geladen."),
           alreadyRunning: Boolean(helperResult.alreadyRunning),
         }, { headers: { "cache-control": "no-store" } });
-      } catch (error) {
-        const detail = error && typeof error === "object" && "stderr" in error
-          ? String(error.stderr).trim()
-          : "";
+      } catch (error: unknown) {
+        const err = error as { stderr?: string; stdout?: string; message?: string } | null;
+        const stderr = typeof err?.stderr === "string" ? err.stderr.trim() : "";
+        const stdout = typeof err?.stdout === "string" ? err.stdout.trim() : "";
+        const msg = typeof err?.message === "string" ? err.message.trim() : "";
+        const detail = stderr || stdout || msg || "Der Update-Dienst konnte nicht gestartet werden.";
         return NextResponse.json({
           success: false,
-          error: detail || "Der Update-Dienst konnte nicht gestartet werden.",
+          error: detail,
         }, { status: 500 });
       }
     }
