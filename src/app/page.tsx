@@ -1709,6 +1709,13 @@ export default function CameraWallPage() {
                         playbackUrl={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
                         className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
+                        audioButtonClassName={
+                          expandedCameraId === camera.id
+                            ? "bottom-[max(12px,env(safe-area-inset-bottom))] left-[max(12px,env(safe-area-inset-left))]"
+                            : camera.overlayPosition === "bottom-left"
+                            ? "top-2.5 right-2.5"
+                            : "bottom-2.5 left-2.5"
+                        }
                      />
                   ) : image?.src ? (
                     <>

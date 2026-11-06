@@ -11,6 +11,7 @@ type WebRtcPlayerProps = {
   style?: React.CSSProperties;
   iceServers?: RTCIceServer[];
   showAudioToggle?: boolean;
+  audioButtonClassName?: string;
 };
 
 export function WebRtcPlayer({
@@ -21,6 +22,7 @@ export function WebRtcPlayer({
   style,
   iceServers,
   showAudioToggle = true,
+  audioButtonClassName,
 }: WebRtcPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(!whepUrl);
@@ -226,9 +228,9 @@ export function WebRtcPlayer({
           onClick={toggleMute}
           title={isMuted ? "Ton einschalten" : "Ton stummschalten"}
           aria-label={isMuted ? "Ton einschalten" : "Ton stummschalten"}
-          className="absolute bottom-2.5 right-2.5 z-20 p-1.5 rounded-full bg-black/60 hover:bg-black/85 text-white/90 hover:text-white backdrop-blur-sm shadow-md transition-all active:scale-95 cursor-pointer pointer-events-auto"
+          className={`absolute ${audioButtonClassName ?? "bottom-2.5 left-2.5"} z-20 p-2 rounded-full border border-white/20 bg-black/70 hover:bg-black/90 text-white shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer pointer-events-auto`}
         >
-          {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+          {isMuted ? <VolumeX className="w-4 h-4 text-slate-300" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
         </button>
       )}
     </div>
