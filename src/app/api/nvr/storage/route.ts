@@ -171,6 +171,34 @@ export async function PATCH(req: Request) {
     const updateData: Record<string, any> = {};
 
     if (body.name !== undefined) updateData.name = String(body.name).trim();
+    if (body.path !== undefined) {
+      const rawPath = String(body.path).trim();
+      if (!rawPath) {
+        return NextResponse.json({ error: "Speicherpfad darf nicht leer sein." }, { status: 400 });
+      }
+      const resolvedPath = path.resolve(rawPath);
+      const duplicate = await prisma.storageTarget.findFirst({
+        where: { path: resolvedPath, id: { not: id } },
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          { error: `Dieser Pfad wird bereits von "${duplicate.name}" verwendet.` },
+          { status: 409 }
+        );
+      }
+      const autoCreate = body.autoCreate !== false;
+      const test = await testStoragePath(resolvedPath, autoCreate);
+      if (!test.ok) {
+        return NextResponse.json(
+          {
+            error: test.error || "Speicherpfad konnte nicht validiert werden.",
+            details: test,
+          },
+          { status: 400 }
+        );
+      }
+      updateData.path = resolvedPath;
+    }
     if (body.maxDays !== undefined) updateData.maxDays = Math.max(0, Number(body.maxDays));
     if (body.minFreeSpaceGb !== undefined) updateData.minFreeSpaceGb = Math.max(0, Number(body.minFreeSpaceGb));
     if (body.enabled !== undefined) updateData.enabled = Boolean(body.enabled);

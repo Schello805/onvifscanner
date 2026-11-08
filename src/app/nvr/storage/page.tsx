@@ -478,9 +478,12 @@ export default function StorageManagementPage() {
         body: JSON.stringify({
           id: editingTarget.id,
           name: editingTarget.name.trim(),
+          path: editingTarget.path.trim(),
+          autoCreate: true,
           maxDays: editingTarget.maxDays,
           minFreeSpaceGb: editingTarget.minFreeSpaceGb,
           enabled: editingTarget.enabled,
+          isDefault: editingTarget.isDefault,
         }),
       });
       const data = await res.json();
@@ -841,11 +844,11 @@ export default function StorageManagementPage() {
                     >
                       <Settings2 className="h-4 w-4" />
                     </button>
-                    {!target.isDefault && (
+                    {targets.length > 1 && (
                       <button
                         onClick={() => handleDelete(target.id, target.name)}
                         className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300 transition-colors"
-                        title="Speicherziel entfernen"
+                        title={target.isDefault ? "Speicherziel entfernen (Standard wird automatisch neu zugeteilt)" : "Speicherziel entfernen"}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -1446,9 +1449,17 @@ export default function StorageManagementPage() {
 
               <div>
                 <label className="block font-medium text-slate-300 mb-1">Pfad</label>
-                <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 font-mono text-slate-400 truncate">
-                  {editingTarget.path}
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={editingTarget.path}
+                  onChange={(e) => setEditingTarget({ ...editingTarget, path: e.target.value })}
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-white focus:border-cyan-500 focus:outline-none"
+                  placeholder="/media/... oder /mnt/..."
+                />
+                <p className="mt-1 text-[11px] text-slate-500 leading-tight">
+                  Absoluter Pfad auf dem Host oder gemountetes Verzeichnis. Nach einer Migration oder Umbenennung hier den neuen Pfad eintragen.
+                </p>
               </div>
 
               <div className="space-y-3 rounded-xl bg-slate-950/70 border border-slate-800 p-3">
@@ -1529,17 +1540,32 @@ export default function StorageManagementPage() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="enabledCheck"
-                  checked={editingTarget.enabled}
-                  onChange={(e) => setEditingTarget({ ...editingTarget, enabled: e.target.checked })}
-                  className="rounded border-slate-700 bg-slate-900 text-cyan-600 focus:ring-0"
-                />
-                <label htmlFor="enabledCheck" className="text-slate-300 cursor-pointer">
-                  Aktiviert (Aufnahmen auf dieses Ziel zulassen)
-                </label>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="enabledCheck"
+                    checked={editingTarget.enabled}
+                    onChange={(e) => setEditingTarget({ ...editingTarget, enabled: e.target.checked })}
+                    className="rounded border-slate-700 bg-slate-900 text-cyan-600 focus:ring-0"
+                  />
+                  <label htmlFor="enabledCheck" className="text-slate-300 cursor-pointer">
+                    Aktiviert (Aufnahmen auf dieses Ziel zulassen)
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="defaultCheck"
+                    checked={editingTarget.isDefault}
+                    onChange={(e) => setEditingTarget({ ...editingTarget, isDefault: e.target.checked })}
+                    className="rounded border-slate-700 bg-slate-900 text-cyan-600 focus:ring-0"
+                  />
+                  <label htmlFor="defaultCheck" className="text-slate-300 cursor-pointer">
+                    Als Standard-Speicherziel verwenden (für alle Kameras ohne explizite Zuweisung)
+                  </label>
+                </div>
               </div>
 
               <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
