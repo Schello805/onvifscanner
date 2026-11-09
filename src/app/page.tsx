@@ -299,8 +299,8 @@ export default function CameraWallPage() {
       return target instanceof Node && viewport.contains(target);
     };
     const preventGesture = (event: Event) => {
-      if (!eventBelongsToViewport(event)) return;
-      event.preventDefault();
+      // Unconditionally prevent iOS Safari page pinch-zoom while fullscreen camera is active
+      if (event.cancelable) event.preventDefault();
     };
     const preventNativeTouch = (event: TouchEvent) => {
       if (!eventBelongsToViewport(event) || isInteractiveControl(event.target)) return;
@@ -368,6 +368,34 @@ export default function CameraWallPage() {
       const nextY = (event.clientY - originY) * (1 - ratio) + current.y * ratio;
       applyMediaTransform({ scale: nextScale, x: nextX, y: nextY }, viewport, true);
     };
+
+    const handleResizeOrOrientation = () => {
+      const current = mediaTransformRef.current;
+      // If at or near 1x, reset cleanly to avoid orientation aspect jumps
+      if (current.scale <= 1.05) {
+        mediaTransformRef.current = { scale: 1, x: 0, y: 0 };
+        setMediaTransform({ scale: 1, x: 0, y: 0 });
+        if (mediaSurfaceRef.current) {
+          mediaSurfaceRef.current.style.transform = "translate3d(0px, 0px, 0) scale(1)";
+        }
+        resetMediaGesture([], false, false);
+        return;
+      }
+      // Re-clamp x and y to new viewport dimensions
+      const rect = viewport.getBoundingClientRect();
+      const maxX = (rect.width * (current.scale - 1)) / 2;
+      const maxY = (rect.height * (current.scale - 1)) / 2;
+      const clampedX = Math.min(maxX, Math.max(-maxX, current.x));
+      const clampedY = Math.min(maxY, Math.max(-maxY, current.y));
+      const updated = { scale: current.scale, x: clampedX, y: clampedY };
+      mediaTransformRef.current = updated;
+      setMediaTransform(updated);
+      if (mediaSurfaceRef.current) {
+        mediaSurfaceRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0) scale(${current.scale})`;
+      }
+      resetMediaGesture([], false, false);
+    };
+
     document.addEventListener("gesturestart", preventGesture, listenerOptions);
     document.addEventListener("gesturechange", preventGesture, listenerOptions);
     document.addEventListener("gestureend", preventGesture, listenerOptions);
@@ -378,6 +406,8 @@ export default function CameraWallPage() {
     viewport.addEventListener("touchend", handleTouchEnd, { passive: false });
     viewport.addEventListener("touchcancel", handleTouchEnd, { passive: false });
     viewport.addEventListener("wheel", handleWheel, { passive: false });
+    window.addEventListener("resize", handleResizeOrOrientation);
+    window.addEventListener("orientationchange", handleResizeOrOrientation);
     return () => {
       document.removeEventListener("gesturestart", preventGesture, true);
       document.removeEventListener("gesturechange", preventGesture, true);
@@ -389,6 +419,8 @@ export default function CameraWallPage() {
       viewport.removeEventListener("touchend", handleTouchEnd);
       viewport.removeEventListener("touchcancel", handleTouchEnd);
       viewport.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("resize", handleResizeOrOrientation);
+      window.removeEventListener("orientationchange", handleResizeOrOrientation);
       mediaTouchCountRef.current = 0;
       document.documentElement.style.touchAction = previousHtmlTouchAction;
       document.body.style.touchAction = previousBodyTouchAction;
@@ -1096,7 +1128,7 @@ export default function CameraWallPage() {
 
   function toggleMediaZoom() {
     const nextScale = mediaTransformRef.current.scale > 1 ? 1 : 2;
-    applyMediaTransform({ scale: nextScale, x: 0, y: 0 });
+    applyMediaTransform({ scale: nextScale, x: 0, y: 0 }, mediaViewportRef.current ?? undefined);
   }
 
   function resetMediaGesture(points: MediaPoint[], moved = false, wasMultiTouch = false) {
@@ -1184,8 +1216,8 @@ export default function CameraWallPage() {
       gesture.lastPointCount = points.length;
 
       if (
-        Math.abs(distance - gesture.startDistance) > 2
-        || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 2
+        Math.abs(distance - gesture.startDistance) > 8
+        || Math.hypot(centerX - gesture.startCenterX, centerY - gesture.startCenterY) > 8
       ) {
         gesture.moved = true;
       }
@@ -1213,7 +1245,7 @@ export default function CameraWallPage() {
     const stepX = point.x - gesture.prevCenterX;
     const stepY = point.y - gesture.prevCenterY;
 
-    if (mediaTransformRef.current.scale > 1 && (gesture.moved || Math.hypot(totalDeltaX, totalDeltaY) > 3)) {
+    if (mediaTransformRef.current.scale > 1 && (gesture.moved || Math.hypot(totalDeltaX, totalDeltaY) > 8)) {
       const current = mediaTransformRef.current;
       applyMediaTransform({
         scale: current.scale,
@@ -1489,7 +1521,7 @@ export default function CameraWallPage() {
             return (
               <article 
                 key={camera.id} 
-                draggable={!isFullscreen}
+                draggable={!isFullscreen && expandedCameraId !== camera.id}
                 onDragStart={(e) => {
                   setDraggedIndex(index);
                   e.dataTransfer.effectAllowed = "move";
@@ -1708,6 +1740,7 @@ export default function CameraWallPage() {
                         whepUrl={liveWhepUrls[camera.id]}
                         playbackUrl={livePlaybackUrls[camera.id]}
                         title={`Live-Stream ${camera.name}`}
+                        objectFit={expandedCameraId === camera.id ? "contain" : "cover"}
                         className={`w-full h-full border-0 pointer-events-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'}`}
                         audioButtonClassName={
                           expandedCameraId === camera.id
@@ -1723,7 +1756,8 @@ export default function CameraWallPage() {
                       <img
                         src={image.src}
                         alt={camera.name}
-                        className={`w-full h-full block transition-opacity duration-300 ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
+                        draggable={false}
+                        className={`w-full h-full block transition-opacity duration-300 pointer-events-none select-none ${expandedCameraId === camera.id ? 'object-contain' : 'object-cover'} ${
                           image.state === "error" ? "opacity-30 grayscale" : 
                           (image.state === "loading" && !isLive) ? "opacity-60 contrast-75 saturate-50" : ""
                         }`}

@@ -12,6 +12,7 @@ type WebRtcPlayerProps = {
   iceServers?: RTCIceServer[];
   showAudioToggle?: boolean;
   audioButtonClassName?: string;
+  objectFit?: "cover" | "contain";
 };
 
 export function WebRtcPlayer({
@@ -23,6 +24,7 @@ export function WebRtcPlayer({
   iceServers,
   showAudioToggle = true,
   audioButtonClassName,
+  objectFit,
 }: WebRtcPlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(!whepUrl);
@@ -199,13 +201,17 @@ export function WebRtcPlayer({
     };
   }, [whepUrl, iceServers]);
 
+  const fitClass = objectFit
+    ? (objectFit === "contain" ? "object-contain" : "object-cover")
+    : (className?.includes("object-contain") ? "object-contain" : "object-cover");
+
   if (useIframeFallback) {
     return (
       <iframe
         src={playbackUrl}
         title={title}
         allow="autoplay; fullscreen"
-        className={className}
+        className={`${className || ""} ${fitClass}`}
         style={style}
       />
     );
@@ -220,7 +226,7 @@ export function WebRtcPlayer({
         playsInline
         muted
         controls={false}
-        className="w-full h-full object-cover"
+        className={`w-full h-full pointer-events-none ${fitClass}`}
       />
       {showAudioToggle && (
         <button
