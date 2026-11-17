@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { isPrivateIpv4 } from "@/lib/net/ip";
 import { decryptSecret } from "@/lib/security";
 import { onvifSoapCall } from "@/lib/onvif/soap";
-import { probeOnvifFromXaddr } from "@/lib/onvif/probeOnvif";
+import { extractCapabilityXAddr, extractProfiles } from "@/lib/onvif/probeOnvif";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 type PtzSession = {
   ptzUrls: string[];
   profileToken: string;
+  alternativeTokens?: string[];
   credentials?: { username: string; password: string };
   expiresAt: number;
 };
@@ -47,12 +48,41 @@ function isSafeCameraHttpUrl(rawUrl: string, cameraIp: string): boolean {
   }
 }
 
+function extractPortFromUrl(raw: string): number | undefined {
+  try {
+    const u = new URL(raw);
+    if (u.port) {
+      const p = Number(u.port);
+      if (p > 0 && p <= 65535 && p !== 9997 && p !== 3000) return p;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+function normalizeServiceUrl(rawUrl: string, ip: string, defaultPort: number): string | undefined {
+  try {
+    const u = new URL(rawUrl);
+    u.hostname = ip;
+    if (!u.port && defaultPort !== 80) {
+      u.port = String(defaultPort);
+    }
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 async function resolvePtzSession(camera: {
   id: string;
   ip: string;
   username: string | null;
   password: string | null;
   snapshotUris: string;
+  streamUris?: string;
+  manufacturer?: string | null;
+  model?: string | null;
 }): Promise<PtzSession> {
   const cached = ptzSessionCache.get(camera.id);
   if (cached && cached.expiresAt > Date.now()) {
@@ -65,18 +95,15 @@ async function resolvePtzSession(camera: {
       ? { username: camera.username ?? "admin", password: plainPassword }
       : { username: "admin", password: "" };
 
-  // Infer preferred ports from snapshotUris if available
-  const ports = new Set<number>([80, 8899, 8000, 2020, 8080]);
+  // 1. Extract preferred ports directly from camera's stored snapshot and stream URLs
+  const preferredPorts: number[] = [];
   try {
-    const snaps = JSON.parse(camera.snapshotUris);
+    const snaps = JSON.parse(camera.snapshotUris || "[]");
     if (Array.isArray(snaps)) {
       for (const s of snaps) {
         if (typeof s === "string") {
-          const u = new URL(s);
-          if (u.port) {
-            const p = Number(u.port);
-            if (p > 0 && p <= 65535 && p !== 9997 && p !== 3000) ports.add(p);
-          }
+          const p = extractPortFromUrl(s);
+          if (p && !preferredPorts.includes(p)) preferredPorts.push(p);
         }
       }
     }
@@ -84,53 +111,130 @@ async function resolvePtzSession(camera: {
     // ignore
   }
 
-  const xaddrs: string[] = [];
-  for (const port of ports) {
-    const hostPort = port === 80 ? camera.ip : `${camera.ip}:${port}`;
-    xaddrs.push(`http://${hostPort}/onvif/device_service`);
-    xaddrs.push(`http://${hostPort}/onvif/devices`);
+  try {
+    const streams = JSON.parse(camera.streamUris || "[]");
+    if (Array.isArray(streams)) {
+      for (const s of streams) {
+        if (typeof s === "string") {
+          const p = extractPortFromUrl(s);
+          if (p && p !== 554 && !preferredPorts.includes(p)) preferredPorts.push(p);
+        }
+      }
+    }
+  } catch {
+    // ignore
   }
 
-  const probe = await probeOnvifFromXaddr({
-    ip: camera.ip,
-    xaddrs,
-    timeoutMs: 2200,
-    credentials
-  });
+  // 2. Vendor port hints based on manufacturer or model
+  const mfg = `${camera.manufacturer ?? ""} ${camera.model ?? ""}`.toLowerCase();
+  const vendorPorts: number[] = [];
+  if (mfg.includes("hikvision") || mfg.includes("ezviz") || mfg.includes("safire") || mfg.includes("reolink")) {
+    vendorPorts.push(8000, 80);
+  } else if (mfg.includes("tapo") || mfg.includes("tp-link")) {
+    vendorPorts.push(2020, 80);
+  } else if (mfg.includes("xiongmai") || mfg.includes("xm") || mfg.includes("besder")) {
+    vendorPorts.push(8899, 80);
+  } else if (mfg.includes("dahua") || mfg.includes("amcrest") || mfg.includes("imou")) {
+    vendorPorts.push(80, 8080);
+  }
 
+  const candidatePorts = Array.from(
+    new Set([...preferredPorts, ...vendorPorts, 80, 8899, 8000, 2020, 8080, 5000])
+  );
+
+  let detectedWorkingPort: number | undefined;
+  let resolvedPtzUrl: string | undefined;
+  let resolvedMediaUrl: string | undefined;
   const ptzUrls: string[] = [];
-  if (probe.ptzServiceUrl && isSafeCameraHttpUrl(probe.ptzServiceUrl, camera.ip)) {
-    ptzUrls.push(probe.ptzServiceUrl);
-  }
-  if (probe.deviceServiceUrl && isSafeCameraHttpUrl(probe.deviceServiceUrl, camera.ip)) {
+  let foundTokens: string[] = [];
+
+  // 3. Fast probe candidate ports with GetCapabilities (1200ms per port)
+  for (const port of candidatePorts.slice(0, 6)) {
+    const hostPort = port === 80 ? camera.ip : `${camera.ip}:${port}`;
+    const deviceUrl = `http://${hostPort}/onvif/device_service`;
+
     try {
-      const u = new URL(probe.deviceServiceUrl);
-      const base = `${u.protocol}//${u.host}`;
-      ptzUrls.push(`${base}/onvif/ptz_service`);
-      ptzUrls.push(`${base}/onvif/PTZ`);
-      ptzUrls.push(probe.deviceServiceUrl);
+      const caps = await onvifSoapCall({
+        url: deviceUrl,
+        action: "http://www.onvif.org/ver10/device/wsdl/GetCapabilities",
+        timeoutMs: 1200,
+        credentials,
+        body: `<tds:GetCapabilities xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><tds:Category>All</tds:Category></tds:GetCapabilities>`
+      });
+
+      if (caps.ok && caps.text) {
+        detectedWorkingPort = port;
+        const ptzRaw = extractCapabilityXAddr(caps.text, "PTZ");
+        const mediaRaw =
+          extractCapabilityXAddr(caps.text, "Media") ||
+          extractCapabilityXAddr(caps.text, "Media2");
+
+        if (ptzRaw) {
+          const norm = normalizeServiceUrl(ptzRaw, camera.ip, port);
+          if (norm && isSafeCameraHttpUrl(norm, camera.ip)) {
+            resolvedPtzUrl = norm;
+          }
+        }
+        if (mediaRaw) {
+          resolvedMediaUrl = normalizeServiceUrl(mediaRaw, camera.ip, port);
+        }
+        break;
+      }
     } catch {
-      ptzUrls.push(probe.deviceServiceUrl);
+      // try next port
     }
   }
-  for (const port of [8899, 80, 8000, 2020]) {
-    const hostPort = port === 80 ? camera.ip : `${camera.ip}:${port}`;
-    ptzUrls.push(`http://${hostPort}/onvif/ptz_service`);
-    ptzUrls.push(`http://${hostPort}/onvif/device_service`);
+
+  // 4. Query profile tokens if working port or media URL was found
+  const workingPort = detectedWorkingPort ?? candidatePorts[0] ?? 80;
+  const hostPort = workingPort === 80 ? camera.ip : `${camera.ip}:${workingPort}`;
+  const profileProbeUrl = resolvedMediaUrl || `http://${hostPort}/onvif/device_service`;
+
+  try {
+    const profRes = await onvifSoapCall({
+      url: profileProbeUrl,
+      action: "http://www.onvif.org/ver10/media/wsdl/GetProfiles",
+      timeoutMs: 1200,
+      credentials,
+      body: `<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl" />`
+    });
+    if (profRes.ok && profRes.text) {
+      const parsed = extractProfiles(profRes.text);
+      foundTokens = parsed.map((p) => p.token).filter(Boolean) as string[];
+    }
+  } catch {
+    // ignore
+  }
+
+  // 5. Build prioritized PTZ URLs
+  if (resolvedPtzUrl) {
+    ptzUrls.push(resolvedPtzUrl);
+  }
+  ptzUrls.push(`http://${hostPort}/onvif/ptz_service`);
+  ptzUrls.push(`http://${hostPort}/onvif/PTZ`);
+  ptzUrls.push(`http://${hostPort}/onvif/device_service`);
+
+  // Add fallbacks on other likely ports
+  for (const port of candidatePorts.filter((p) => p !== workingPort).slice(0, 3)) {
+    const hp = port === 80 ? camera.ip : `${camera.ip}:${port}`;
+    ptzUrls.push(`http://${hp}/onvif/ptz_service`);
+    ptzUrls.push(`http://${hp}/onvif/PTZ`);
   }
 
   const uniqueUrls = Array.from(new Set(ptzUrls)).filter((u) => isSafeCameraHttpUrl(u, camera.ip));
-  const profileToken =
-    probe.rtspUris?.[0]?.profileToken ??
-    probe.snapshotUris?.[0]?.profileToken ??
-    "000";
+  const primaryToken = foundTokens[0] || "Profile_1";
+  const alternativeTokens = Array.from(
+    new Set([...foundTokens.slice(1), "profile_1", "000", "01", "token1"])
+  ).filter((t) => t !== primaryToken);
 
   const session: PtzSession = {
     ptzUrls: uniqueUrls,
-    profileToken,
-    credentials: probe.credentials ?? credentials,
+    profileToken: primaryToken,
+    alternativeTokens,
+    credentials,
     expiresAt: Date.now() + 15 * 60_000
   };
+
   ptzSessionCache.set(camera.id, session);
   return session;
 }
@@ -164,24 +268,23 @@ export async function POST(request: Request) {
     }
 
     const session = await resolvePtzSession(camera);
-    const tokenXml = escapeXml(session.profileToken);
     const actionType = body.action === "stop" ? "stop" : "move";
+    const x = clampSpeed(body.x);
+    const y = clampSpeed(body.y);
+    const zoom = clampSpeed(body.zoom);
 
-    let soapAction: string;
-    let soapBody: string;
-
-    if (actionType === "stop") {
-      soapAction = "http://www.onvif.org/ver20/ptz/wsdl/Stop";
-      soapBody = `<tptz:Stop xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
+    const buildSoap = (token: string) => {
+      const tokenXml = escapeXml(token);
+      if (actionType === "stop") {
+        return {
+          action: "http://www.onvif.org/ver20/ptz/wsdl/Stop",
+          body: `<tptz:Stop xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
   <tptz:ProfileToken>${tokenXml}</tptz:ProfileToken>
   <tptz:PanTilt>true</tptz:PanTilt>
   <tptz:Zoom>true</tptz:Zoom>
-</tptz:Stop>`;
-    } else {
-      const x = clampSpeed(body.x);
-      const y = clampSpeed(body.y);
-      const zoom = clampSpeed(body.zoom);
-      soapAction = "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove";
+</tptz:Stop>`
+        };
+      }
       const panTiltXml =
         x !== 0 || y !== 0
           ? `<tt:PanTilt x="${x.toFixed(2)}" y="${y.toFixed(2)}" xmlns:tt="http://www.onvif.org/ver10/schema" />`
@@ -190,36 +293,49 @@ export async function POST(request: Request) {
         zoom !== 0
           ? `<tt:Zoom x="${zoom.toFixed(2)}" xmlns:tt="http://www.onvif.org/ver10/schema" />`
           : "";
-      soapBody = `<tptz:ContinuousMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
+      return {
+        action: "http://www.onvif.org/ver20/ptz/wsdl/ContinuousMove",
+        body: `<tptz:ContinuousMove xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl">
   <tptz:ProfileToken>${tokenXml}</tptz:ProfileToken>
   <tptz:Velocity>
     ${panTiltXml}
     ${zoomXml}
   </tptz:Velocity>
-  <tptz:Timeout>PT2S</tptz:Timeout>
-</tptz:ContinuousMove>`;
-    }
+</tptz:ContinuousMove>`
+      };
+    };
 
     let lastStatus = 0;
-    for (const url of session.ptzUrls.slice(0, 4)) {
-      try {
-        const res = await onvifSoapCall({
-          url,
-          action: soapAction,
-          timeoutMs: 1800,
-          credentials: session.credentials,
-          body: soapBody
-        });
-        lastStatus = res.status;
-        if (res.ok) {
-          // Put working URL first for subsequent PTZ commands
-          session.ptzUrls = [url, ...session.ptzUrls.filter((u) => u !== url)];
-          return NextResponse.json({ ok: true, action: actionType });
+    const tokensToTry = [session.profileToken, ...(session.alternativeTokens ?? [])];
+
+    for (const token of tokensToTry.slice(0, 3)) {
+      const { action: soapAction, body: soapBody } = buildSoap(token);
+
+      for (const url of session.ptzUrls.slice(0, 4)) {
+        try {
+          const res = await onvifSoapCall({
+            url,
+            action: soapAction,
+            timeoutMs: 1800,
+            credentials: session.credentials,
+            body: soapBody
+          });
+          lastStatus = res.status;
+          if (res.ok) {
+            // Put working URL and token first for subsequent PTZ commands
+            session.ptzUrls = [url, ...session.ptzUrls.filter((u) => u !== url)];
+            session.profileToken = token;
+            ptzSessionCache.set(camera.id, session);
+            return NextResponse.json({ ok: true, action: actionType });
+          }
+        } catch {
+          // try next URL
         }
-      } catch {
-        // try next URL
       }
     }
+
+    // Invalidate cache on total failure so next click re-probes cleanly
+    ptzSessionCache.delete(camera.id);
 
     return NextResponse.json(
       { error: `PTZ-Befehl wurde von der Kamera nicht unterstützt (HTTP ${lastStatus || "Timeout"}).` },

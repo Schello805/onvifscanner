@@ -43,8 +43,12 @@ export async function onvifSoapCall(args: {
     body: env12
   });
   const text12 = await res12.text();
-  if (res12.status !== 400 && res12.status !== 415) {
-    return { ok: res12.ok, status: res12.status, text: text12, soap: "1.2" };
+  if (res12.ok) {
+    return { ok: true, status: res12.status, text: text12, soap: "1.2" };
+  }
+  // Fallback to SOAP 1.1 if SOAP 1.2 failed with 400, 415, or 500 (SOAP Fault / VersionMismatch / unsupported content-type)
+  if (res12.status !== 400 && res12.status !== 415 && res12.status !== 500) {
+    return { ok: false, status: res12.status, text: text12, soap: "1.2" };
   }
 
   // Fallback: SOAP 1.1 (common for older Hikvision firmwares and some embedded stacks).

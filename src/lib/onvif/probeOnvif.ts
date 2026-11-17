@@ -402,7 +402,7 @@ async function probeSingleOnvifEndpoint(args: {
       deviceServiceUrl,
       mediaServiceUrl: mediaServiceUrl ?? undefined,
       mediaServiceUrl2: media2ServiceUrl ?? undefined,
-      ptzServiceUrl: ptzServiceUrl ? normalizeUriHost(ptzServiceUrl, args.ip, log, "PTZ") : undefined,
+      ptzServiceUrl: ptzServiceUrl ? normalizeUriHost(ptzServiceUrl, args.ip, log, "PTZ", deviceServicePort) : undefined,
       ptz: isPtz,
       rtspUris: rtspUris.length ? rtspUris : undefined,
       snapshotUris: snapshotUris.length ? snapshotUris : undefined,
@@ -428,7 +428,7 @@ async function probeSingleOnvifEndpoint(args: {
   }
 }
 
-function extractCapabilityXAddr(xml: string, serviceName: string): string | undefined {
+export function extractCapabilityXAddr(xml: string, serviceName: string): string | undefined {
   // In ONVIF GetCapabilities responses, endpoints are usually nested like:
   // <tt:Media> ... <tt:XAddr>http://ip/onvif/media_service</tt:XAddr> ... </tt:Media>
   const blockRe = new RegExp(
@@ -481,7 +481,7 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-function extractProfiles(
+export function extractProfiles(
   xml: string
 ): Array<{
   token?: string;
